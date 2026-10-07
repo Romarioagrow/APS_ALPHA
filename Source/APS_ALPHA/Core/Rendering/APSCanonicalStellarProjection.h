@@ -48,6 +48,11 @@ struct APS_ALPHA_API FAPSCanonicalStellarProjectionFrame
 	double VisualRadiusMinClassScale{0.60};
 	double VisualRadiusMaxClassScale{1.80};
 	bool bEnabled{false};
+	/**
+	 * Rio 05.10 (real scale experiment): this layer's physical length against the legacy 1e9-cm layout. Exactly 1 for
+	 * every legacy world; only far-star photometry reads it (GetLegacyLayoutRadiusSolar).
+	 */
+	double RealScaleLengthFactor{1.0};
 
 	/** Layer-local canonical coordinates composed into the shared root domain. */
 	FVector ComposeCanonicalRootUnits(const FVector& CanonicalUnits) const
@@ -273,6 +278,24 @@ namespace APSCanonicalStellarProjection
 			GetTypeHash(static_cast<uint32>(static_cast<uint64>(Quantized) >> 32u)));
 	}
 
+	/**
+	 * Rio 05.10 (real scale experiment): a relative quantum (sign and exponent exact, mantissa rounded to 30 of its 52
+	 * bits, ~1e-9) for real-scale magnitudes, where an absolute quantum overflows int64 (anchors beyond 9.2e16 cm) or
+	 * collapses (projection scales below 1e-15). Legacy hashes keep HashQuantizedDouble.
+	 */
+	inline uint32 HashRelativeDouble(const double Value)
+	{
+		if (!FMath::IsFinite(Value) || Value == 0.0)
+		{
+			return 0u;
+		}
+		uint64 Bits = 0;
+		FMemory::Memcpy(&Bits, &Value, sizeof(Bits));
+		const uint64 Rounded = (Bits + (uint64(1) << 21u)) >> 22u;
+		return HashCombine(GetTypeHash(static_cast<uint32>(Rounded)),
+			GetTypeHash(static_cast<uint32>(Rounded >> 32u)));
+	}
+
 	struct FNestedCatalogPermutation
 	{
 		int64 Count{0};
@@ -356,17 +379,21 @@ namespace APSCanonicalStellarProjection
 	 * stellar radii use ProjectPhysicalRadiusSolar and therefore remain comparable.
 	 * Positive sub-epsilon scales are expected at astronomical extents and must
 	 * remain exact so projection and inverse projection share one affine frame.
+	 * Rio 05.10 (real scale experiment): CanonicalCmPerUnit is the one root length
+	 * unit; legacy callers keep the historic 1e9 cm, so their frames are unchanged.
 	 */
 	inline bool ConfigureSharedHomeCentredFrames(
 		const double GalaxyHalfExtentUnits, const double ClusterHalfExtentUnits,
 		const double ClusterToGalaxyPositionScale, const FVector& HomeClusterLocalUnits,
 		const uint32 ContextHash, FAPSCanonicalStellarProjectionFrame& OutGalaxy,
-		FAPSCanonicalStellarProjectionFrame& OutCluster)
+		FAPSCanonicalStellarProjectionFrame& OutCluster,
+		const double CanonicalCmPerUnit = FullScaleCanonicalCmPerUnit)
 	{
 		const double SafeGalaxyExtent = FMath::Max(GalaxyHalfExtentUnits, 0.0);
 		const double SafeClusterExtent = FMath::Max(ClusterHalfExtentUnits, 0.0);
 		if (!FMath::IsFinite(ClusterToGalaxyPositionScale)
-			|| ClusterToGalaxyPositionScale <= 0.0)
+			|| ClusterToGalaxyPositionScale <= 0.0
+			|| !FMath::IsFinite(CanonicalCmPerUnit) || CanonicalCmPerUnit <= 0.0)
 		{
 			return false;
 		}
@@ -383,9 +410,9 @@ namespace APSCanonicalStellarProjection
 		}
 
 		const double GalaxyScale = GalaxyMaxProxyCoordinateCm
-			/ (AnchoredGalaxyExtent * FullScaleCanonicalCmPerUnit);
+			/ (AnchoredGalaxyExtent * CanonicalCmPerUnit);
 		const double ClusterScale = ClusterMaxProxyCoordinateCm
-			/ (AnchoredClusterExtent * FullScaleCanonicalCmPerUnit);
+			/ (AnchoredClusterExtent * CanonicalCmPerUnit);
 		const double SharedRootScale = FMath::Min(GalaxyScale, ClusterScale);
 		if (!FMath::IsFinite(SharedRootScale) || SharedRootScale <= 0.0)
 		{
@@ -399,13 +426,13 @@ namespace APSCanonicalStellarProjection
 			Frame = FAPSCanonicalStellarProjectionFrame{};
 			Frame.ContextHash = ContextHash;
 			Frame.LayerToRootPositionScale = LayerScale;
-			Frame.CanonicalAnchorCm = HomeRootUnits * FullScaleCanonicalCmPerUnit;
+			Frame.CanonicalAnchorCm = HomeRootUnits * CanonicalCmPerUnit;
 			Frame.RenderAnchorCm = FVector::ZeroVector;
-			Frame.CanonicalCmPerUnit = FullScaleCanonicalCmPerUnit;
+			Frame.CanonicalCmPerUnit = CanonicalCmPerUnit;
 			Frame.PositionScale = SharedRootScale;
 			Frame.CanonicalHalfExtentUnits = LayerHalfExtentUnits;
 			Frame.ProxyHalfExtentCm = LayerHalfExtentUnits * LayerScale
-				* FullScaleCanonicalCmPerUnit * SharedRootScale;
+				* CanonicalCmPerUnit * SharedRootScale;
 			Frame.MaxProxyCoordinateCm = LayerMaximumCm;
 			Frame.VisualRadiusFloorFraction = VisualFloorFraction;
 			Frame.VisualRadiusCeilingFraction = ImpostorCeilingFraction;
@@ -433,6 +460,19 @@ namespace APSCanonicalStellarProjection
 		const double Denominator = SolarRadiusCm * Frame.PositionScale;
 		return FMath::Abs(Denominator) > UE_DOUBLE_SMALL_NUMBER
 			? ProxyRadiusCm / Denominator : 0.0;
+	}
+
+	/**
+	 * Rio 05.10 (real scale experiment): an impostor radius from UnprojectPhysicalRadiusSolar, in the legacy layout's
+	 * solar radii. Far-star emission divides by the impostor's physical area; at real distances the same on-screen
+	 * impostor stands for a K-times larger sphere, which would dim every mesh star by 1/K^2 while the GPU points keep
+	 * their light. A legacy frame (factor exactly 1) returns the radius untouched.
+	 */
+	inline double GetLegacyLayoutRadiusSolar(
+		const FAPSCanonicalStellarProjectionFrame& Frame, const double RadiusSolar)
+	{
+		return Frame.RealScaleLengthFactor != 1.0 && FMath::IsFinite(Frame.RealScaleLengthFactor)
+			&& Frame.RealScaleLengthFactor > 0.0 ? RadiusSolar / Frame.RealScaleLengthFactor : RadiusSolar;
 	}
 
 	inline double GetAppliedVisualRadiusCm(const EAPSCanonicalStellarProxyLayer Layer,

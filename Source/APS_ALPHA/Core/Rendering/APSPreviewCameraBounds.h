@@ -8,6 +8,27 @@ struct FAPSPreviewCameraBounds
 	double MinimumCm{1.0};
 	double MaximumCm{30.0};
 
+	// Planet close-ups zoom the distance above the surface, not the enormous
+	// centre distance. Offset=0 preserves the stellar/system/transition law.
+	static double ApplyWheel(const double DistanceCm, const double SurfaceOffsetCm,
+		const double WheelDelta, const double MinimumCm, const double MaximumCm)
+	{
+		if (!FMath::IsFinite(DistanceCm) || !FMath::IsFinite(WheelDelta)
+			|| !FMath::IsFinite(SurfaceOffsetCm) || SurfaceOffsetCm < 0.0
+			|| !FMath::IsFinite(MinimumCm) || !FMath::IsFinite(MaximumCm)
+			|| MinimumCm <= SurfaceOffsetCm || MaximumCm < MinimumCm) return DistanceCm;
+		const double Clearance = FMath::Max(DistanceCm - SurfaceOffsetCm, MinimumCm - SurfaceOffsetCm);
+		return FMath::Clamp(SurfaceOffsetCm + Clearance * FMath::Pow(0.82, FMath::Clamp(WheelDelta, -1024.0, 1024.0)),
+			MinimumCm, MaximumCm);
+	}
+
+	static double WheelDeltaBetween(const double FromCm, const double ToCm, const double SurfaceOffsetCm)
+	{
+		if (!FMath::IsFinite(FromCm) || !FMath::IsFinite(ToCm) || !FMath::IsFinite(SurfaceOffsetCm)
+			|| SurfaceOffsetCm < 0.0 || FromCm <= SurfaceOffsetCm || ToCm <= SurfaceOffsetCm) return 0.0;
+		return FMath::Loge((ToCm - SurfaceOffsetCm) / (FromCm - SurfaceOffsetCm)) / FMath::Loge(0.82);
+	}
+
 	static FAPSPreviewCameraBounds Calculate(const double BodyRadiusCm,
 		const double FamilyEnvelopeCm, const double FitTangent, const double MinimumRatio)
 	{

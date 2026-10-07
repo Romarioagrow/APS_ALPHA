@@ -1,5 +1,6 @@
 #include "APSColonyTerminalSubsystem.h"
 
+#include "APSMissionTracker.h"
 #include "SAPSColonyTerminal.h"
 #include "APS_ALPHA/Gameplay/Colony/APSColonyConstructionSubsystem.h"
 #include "APS_ALPHA/Gameplay/Colony/APSColonyOnboardingSubsystem.h"
@@ -22,7 +23,7 @@
 
 namespace APSColonyTerminal
 {
-	/** The objective and hint sit just under the terminal. */
+	/** The Tab hint sits just under the terminal (the objective too, in the mission tracker's card at the same layer). */
 	constexpr int32 OverlayZOrder = 880;
 	constexpr double HintSeconds = 14.0;
 
@@ -44,13 +45,13 @@ void UAPSColonyTerminalSubsystem::Tick(float DeltaTime)
 {
 	if (bBound)
 	{
-		// Test capture: overview, colony and journal, a second apart, each with the UI.
+		// Test capture: the game view, then every tab (overview to shipyard), 1.5 s apart, each with the UI.
 		const double Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0;
 		if (ShotStage < 0 || Now < ShotStageSeconds)
 		{
 			return;
 		}
-		if (ShotStage > 7)
+		if (ShotStage > 29)
 		{
 			CloseTerminal();
 			ShotStage = -1;
@@ -72,19 +73,42 @@ void UAPSColonyTerminalSubsystem::Tick(float DeltaTime)
 		}
 		else if (TerminalWidget.IsValid())
 		{
+			// Two steps a tab: show it, then shoot it a moment later. A shot is taken with the next frame, so switching
+			// in the same tick as the request caught the next tab (01.10: the journal's shot showed the shipyard).
+			// Then the object window over the map and the construction catalogue (02.10, C4/C5).
+			// Rio 05.10 (star map): then MAP > STAR MAP and FLEET ORDERS with the STARS target picker.
 			static const TCHAR* TabNames[] = {TEXT("overview"), TEXT("map"), TEXT("colony"), TEXT("fleet"),
-				TEXT("divisions"), TEXT("journal")};
-			const int32 Tab = ShotStage - 2;
-			FScreenshotRequest::RequestScreenshot(FPaths::ScreenShotDir() / TEXT("ColonyTerminal")
-				/ FString::Printf(TEXT("%s_%s.png"), *FDateTime::Now().ToString(TEXT("%Y%m%d_%H%M%S")), TabNames[Tab]),
-				true, false);
-			if (Tab < 5)
+				TEXT("divisions"), TEXT("journal"), TEXT("shipyard"), TEXT("scheme"), TEXT("pilot"), TEXT("surface"),
+				TEXT("object"), TEXT("construction"), TEXT("starmap"), TEXT("fleetstars")};
+			const int32 Tab = (ShotStage - 2) / 2;
+			if ((ShotStage - 2) % 2 == 0)
 			{
-				TerminalWidget->ShowTab(Tab + 1);
+				if (Tab < 10)
+				{
+					TerminalWidget->ShowTab(Tab);
+				}
+				else if (Tab == 12)
+				{
+					TerminalWidget->ShowTab(10);
+				}
+				else
+				{
+					TerminalWidget->ShowTestOverlay(Tab == 13 ? 3 : Tab - 9);
+				}
+			}
+			else
+			{
+				FScreenshotRequest::RequestScreenshot(FPaths::ScreenShotDir() / TEXT("ColonyTerminal")
+					/ FString::Printf(TEXT("%s_%s.png"), *FDateTime::Now().ToString(TEXT("%Y%m%d_%H%M%S")), TabNames[Tab]),
+					true, false);
+				if (Tab == 11 || Tab == 13)
+				{
+					TerminalWidget->ShowTestOverlay(0);
+				}
 			}
 		}
 		++ShotStage;
-		ShotStageSeconds = Now + 1.5;
+		ShotStageSeconds = Now + 1.2;
 		return;
 	}
 	// Only the generated game's controller: other levels keep their own Tab (the authored single-play menu).
@@ -156,6 +180,18 @@ void UAPSColonyTerminalSubsystem::ToggleFleetCommand()
 	}
 }
 
+void UAPSColonyTerminalSubsystem::OpenTerminalTab(const int32 Tab)
+{
+	if (!TerminalWidget.IsValid())
+	{
+		ToggleTerminal();
+	}
+	if (TerminalWidget.IsValid())
+	{
+		TerminalWidget->ShowTab(Tab);
+	}
+}
+
 void UAPSColonyTerminalSubsystem::ToggleTerminal()
 {
 	if (TerminalWidget.IsValid())
@@ -216,60 +252,21 @@ void UAPSColonyTerminalSubsystem::ShowOverlays()
 		return;
 	}
 	const TWeakObjectPtr<UAPSColonyTerminalSubsystem> WeakThis(this);
-	const auto Objective = [WeakThis](const bool bTitle)
-	{
-		FText Title;
-		FText Body;
-		const UAPSColonyTerminalSubsystem* Self = WeakThis.Get();
-		const UAPSColonyOnboardingSubsystem* Onboarding = Self && Self->GetWorld()
-			? Self->GetWorld()->GetSubsystem<UAPSColonyOnboardingSubsystem>() : nullptr;
-		if (Onboarding)
-		{
-			Onboarding->GetObjective(Title, Body);
-		}
-		return bTitle ? Title : Body;
-	};
 	// Top left: the ship HUD holds the top right (navigation) and the bottom left (flight), the pilot's HUD the bottom
 	// left. In the top right the objective covered the ship's navigation block (u4-hud-ship-1, 30.09).
+	// Rio 03.10: the objective heads the mission tracker's card there (APSMissionTracker), with the tracked mission under
+	// it in the same style; as two panels at fixed offsets the tracker ran over the objective.
+	APSMissionTracker::SetObjective(GetWorld(), [WeakThis](FText& OutTitle, FText& OutBody)
+	{
+		const UAPSColonyTerminalSubsystem* Self = WeakThis.Get();
+		// Under the F10 map too: its 3D view between the panels let the objective show through (02.10 test shots).
+		const AGravityPlayerController* Controller = Self ? Cast<AGravityPlayerController>(Self->BoundController.Get()) : nullptr;
+		const UAPSColonyOnboardingSubsystem* Onboarding = Self && Self->GetWorld()
+			? Self->GetWorld()->GetSubsystem<UAPSColonyOnboardingSubsystem>() : nullptr;
+		return Self && Onboarding && !Self->IsTerminalOpen() && !(Controller && Controller->IsStrategicMapOpen())
+			&& Onboarding->GetObjective(OutTitle, OutBody) && !OutTitle.IsEmpty();
+	});
 	OverlayWidget = SNew(SOverlay)
-		+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Top).Padding(FMargin(24.0f, 96.0f, 0.0f, 0.0f))
-		[
-			SNew(SBox).WidthOverride(380.0f)
-			.Visibility_Lambda([WeakThis, Objective]()
-			{
-				const UAPSColonyTerminalSubsystem* Self = WeakThis.Get();
-				return Self && !Self->IsTerminalOpen() && !Objective(true).IsEmpty()
-					? EVisibility::HitTestInvisible : EVisibility::Collapsed;
-			})
-			[
-				ChamferPanel(
-					SNew(SHorizontalBox)
-					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Top)
-					[
-						IconBadge(EAPSChromeGlyph::Compass, Amber(), 30.0f)
-					]
-					+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center).Padding(11.0f, 0.0f, 0.0f, 0.0f)
-					[
-						SNew(SVerticalBox)
-						+ SVerticalBox::Slot().AutoHeight()
-						[
-							SNew(STextBlock).Text(LOCTEXT("ObjectiveLabel", "OBJECTIVE")).Font(Font("Bold", 8))
-							.ColorAndOpacity(Amber())
-						]
-						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f, 0.0f, 0.0f)
-						[
-							SNew(STextBlock).Text_Lambda([Objective]() { return Objective(true); })
-							.Font(Font("Bold", 12)).ColorAndOpacity(White()).AutoWrapText(true)
-						]
-						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f, 0.0f, 0.0f)
-						[
-							SNew(STextBlock).Text_Lambda([Objective]() { return Objective(false); })
-							.Font(Font("Regular", 9)).ColorAndOpacity(Muted()).AutoWrapText(true)
-						]
-					],
-					FMargin(12.0f, 9.0f), CyanDim())
-			]
-		]
 		+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Top).Padding(FMargin(0.0f, 28.0f, 0.0f, 0.0f))
 		[
 			SNew(SBox).WidthOverride(380.0f)
@@ -310,6 +307,7 @@ void UAPSColonyTerminalSubsystem::ShowOverlays()
 
 void UAPSColonyTerminalSubsystem::HideOverlays()
 {
+	APSMissionTracker::SetObjective(GetWorld(), nullptr);
 	if (OverlayContainer.IsValid() && GEngine && GEngine->GameViewport)
 	{
 		GEngine->GameViewport->RemoveViewportWidgetContent(OverlayContainer.ToSharedRef());

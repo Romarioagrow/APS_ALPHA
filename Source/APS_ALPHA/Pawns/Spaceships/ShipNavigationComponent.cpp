@@ -1,5 +1,9 @@
 #include "ShipNavigationComponent.h"
+#include "APSShipFlightModel.h"
+#include "Spaceship.h"
+#include "HAL/IConsoleManager.h"
 
+#include "APS_ALPHA/Core/World/APSWorldOriginSubsystem.h"
 #include "APS_ALPHA/Actors/Astro/CelestialBody.h"
 #include "APS_ALPHA/Actors/Astro/Moon.h"
 #include "APS_ALPHA/Actors/Astro/Planet.h"
@@ -16,8 +20,11 @@
 #include "APS_ALPHA/Core/Interfaces/NavigatableBody.h"
 #include "APS_ALPHA/Core/Structs/StarGenerationModel.h"
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationIdentityComponent.h"
+#include "APS_ALPHA/Gameplay/Expansion/APSStarSystems.h"
+#include "APS_ALPHA/Gameplay/Fleet/APSFleetCommand.h"
 #include "Components/HierarchicalInstancedStaticMeshComponent.h"
 #include "EngineUtils.h"
+#include "HAL/IConsoleManager.h"
 
 namespace APSShipNavigation
 {
@@ -27,6 +34,26 @@ namespace APSShipNavigation
 		Name.ReplaceInline(TEXT("_C_"), TEXT("_"));
 		Name.ReplaceInline(TEXT("_"), TEXT(" "));
 		return Name.ToUpper();
+	}
+
+	TAutoConsoleVariable<float> CVarSystemFold(TEXT("aps.Nav.SystemFold"), 6.0f,
+		TEXT("Rio 04.10 (\"outside a system its separate planets make no sense, show the system and its star\"): a star system ")
+		TEXT("whose worlds lie within 1/N of the distance to it (N = this; 6 is about 9.5 degrees) shows as one card at its ")
+		TEXT("star, its worlds, colonies, sites and fleet ships folded into it. 0 never folds."));
+
+	// Rio 06.10 (audit: T and the autopilot): in the night's batch T while the autopilot flew retargeted it, or switched
+	// it off on a contact without an actor; T is the HUD's browse key, as in 61532ed6, unless this asks otherwise.
+	TAutoConsoleVariable<int32> CVarCycleRetargetsAutopilot(TEXT("aps.Nav.CycleRetargetsAutopilot"), 0,
+		TEXT("1: T while the autopilot flies retargets it to the picked contact (contacts without an actor leave it alone). ")
+		TEXT("0: T only browses the HUD selection, as in 61532ed6; the autopilot's own target stays listed so T comes back ")
+		TEXT("to it."));
+
+	/** A star's spectral colour, lifted toward white so a card's text stays readable on the dark sky. */
+	FLinearColor CardColour(const FLinearColor& Star)
+	{
+		FLinearColor Colour = FMath::Lerp(Star, FLinearColor::White, 0.35f);
+		Colour.A = 0.95f;
+		return Colour;
 	}
 }
 
@@ -61,6 +88,7 @@ void UShipNavigationComponent::RefreshContacts(const FVector& ObserverLocation, 
 	RefreshElapsed = 0.0f;
 
 	const FString PreviousStableId = GetSelectedContact() ? GetSelectedContact()->StableId : FString();
+	KeepStableId = PreviousStableId;
 	Contacts.Reset();
 	DiscoveredContactCount = 0;
 
@@ -80,8 +108,21 @@ void UShipNavigationComponent::RefreshContacts(const FVector& ObserverLocation, 
 		}
 	}
 
+	// Star systems the civilization knows or holds (Rio 02.10: "beacons for the star systems"): their anchors.
+	for (TActorIterator<AActor> It(World); It; ++It)
+	{
+		if (IsValid(*It) && It->ActorHasTag(TEXT("APS.StarSystem")))
+		{
+			AddActorContact(*It, ObserverLocation);
+		}
+	}
 	DiscoveredContactCount = Contacts.Num();
+	FoldDistantSystems(ObserverLocation, PreviousStableId);
 	AddGeneratedStarContacts(ObserverLocation);
+	if (bShowNearStarLabels)
+	{
+		AddNearStarLabels(ObserverLocation);
+	}
 	Contacts.Sort([](const FShipNavigationContact& Left, const FShipNavigationContact& Right)
 	{
 		return Left.DistanceCentimeters < Right.DistanceCentimeters;
@@ -91,6 +132,14 @@ void UShipNavigationComponent::RefreshContacts(const FVector& ObserverLocation, 
 		Contacts.SetNum(MaximumContacts, EAllowShrinking::No);
 	}
 	RestoreSelection(PreviousStableId);
+}
+
+FVector FShipNavigationContact::GetWorldLocation() const
+{
+	// Rio 06.10 (still ship): a ship owing its travel stays put and the world's actors stay where they were; seen from the
+	// ship they are at their place + the sky offset (zero without a debt). Catalogue places are given that way already.
+	const AActor* Live = Actor.Get();
+	return Live ? UAPSWorldOriginSubsystem::SkyPlace(*Live) : FixedWorldLocation;
 }
 
 void UShipNavigationComponent::AddActorContact(AActor* Actor, const FVector& ObserverLocation)
@@ -105,7 +154,7 @@ void UShipNavigationComponent::AddActorContact(AActor* Actor, const FVector& Obs
 	Contact.FixedWorldLocation = Actor->GetActorLocation();
 	Contact.StableId = Actor->GetPathName();
 	Contact.DisplayName = APSShipNavigation::SanitizeObjectName(Actor->GetName());
-	Contact.DistanceCentimeters = FVector::Distance(ObserverLocation, Actor->GetActorLocation());
+	Contact.DistanceCentimeters = FVector::Distance(ObserverLocation, Contact.GetWorldLocation());
 
 	if (const ACelestialBody* Body = Cast<ACelestialBody>(Actor); Body && !Body->AstroName.IsNone())
 	{
@@ -124,7 +173,23 @@ void UShipNavigationComponent::AddActorContact(AActor* Actor, const FVector& Obs
 		}
 	}
 
-	if (const AStar* Star = Cast<AStar>(Actor))
+	FGuid SystemId;
+	if (FAPSStarSystems::AnchorSystem(Actor, SystemId))
+	{
+		// A system's beacon: its name and what is known; a claimed one is charted always, like the colony.
+		const FAPSStarSystems* Stars = APSStarSystemsFind(GetWorld());
+		const FAPSStarSystemInfo* Info = Stars ? Stars->Find(SystemId) : nullptr;
+		Contact.Type = EShipNavigationContactType::StarSystem;
+		Contact.TypeLabel = Stars && Stars->IsClaimed(SystemId) ? TEXT("BEACON") : TEXT("STAR SYSTEM");
+		if (Info)
+		{
+			Contact.DisplayName = Info->Name;
+			Contact.Detail = FString::Printf(TEXT("%s%s%s"), *Info->Spectral, Info->Spectral.IsEmpty() ? TEXT("") : TEXT("  "),
+				*APSStars::KnowledgeName(Stars->GetKnowledge(SystemId)).ToString());
+		}
+		Contact.bOwnColony = Stars && Stars->IsClaimed(SystemId);
+	}
+	else if (const AStar* Star = Cast<AStar>(Actor))
 	{
 		Contact.Type = EShipNavigationContactType::Star;
 		Contact.TypeLabel = TEXT("STAR");
@@ -140,6 +205,12 @@ void UShipNavigationComponent::AddActorContact(AActor* Actor, const FVector& Obs
 		{
 			Contact.Detail = Enum->GetDisplayNameTextByValue(static_cast<int64>(Moon->MoonType)).ToString().ToUpper();
 		}
+		// Rio 04.10: a world not surveyed yet says what the maps say (NO DATA), not its type.
+		if (const FAPSFleetCommand* Fleet = APSFleetFind(GetWorld());
+			Fleet && Fleet->GetSurvey(Moon) == APSFleet::ESurvey::Unknown)
+		{
+			Contact.Detail = APSFleet::SurveyName(APSFleet::ESurvey::Unknown).ToString();
+		}
 	}
 	else if (Actor->IsA<APlanet>())
 	{
@@ -149,6 +220,11 @@ void UShipNavigationComponent::AddActorContact(AActor* Actor, const FVector& Obs
 		if (const UEnum* Enum = StaticEnum<EPlanetType>())
 		{
 			Contact.Detail = Enum->GetDisplayNameTextByValue(static_cast<int64>(Planet->PlanetType)).ToString().ToUpper();
+		}
+		if (const FAPSFleetCommand* Fleet = APSFleetFind(GetWorld());
+			Fleet && Fleet->GetSurvey(Planet) == APSFleet::ESurvey::Unknown)
+		{
+			Contact.Detail = APSFleet::SurveyName(APSFleet::ESurvey::Unknown).ToString();
 		}
 	}
 	else if (Actor->IsA<ASpaceStation>())
@@ -191,7 +267,14 @@ void UShipNavigationComponent::AddActorContact(AActor* Actor, const FVector& Obs
 			Contact.DisplayName = TEXT("HOME COLONY");
 		}
 	}
-	if (!IsContactTypeVisible(Contact.Type) && !Contact.bOwnColony && Contact.StableId != PinnedCourseId)
+	// The ancient sites (Gameplay/Ancients) are always charted, under their own label.
+	const bool bAncient = Actor->ActorHasTag(TEXT("APS.Ancient.Site"));
+	if (bAncient)
+	{
+		Contact.TypeLabel = TEXT("ANCIENT SITE");
+	}
+	if (!IsContactTypeVisible(Contact.Type) && !Contact.bOwnColony && Contact.StableId != PinnedCourseId && !bAncient
+		&& Contact.StableId != KeepStableId)
 	{
 		return;
 	}
@@ -287,6 +370,185 @@ void UShipNavigationComponent::AddGeneratedStarContacts(const FVector& ObserverL
 	Contacts.Append(MoveTemp(VirtualStars));
 }
 
+void UShipNavigationComponent::FoldDistantSystems(const FVector& ObserverLocation, const FString& KeepId)
+{
+	const TArray<FFoldedSystem> Before = MoveTemp(FoldedSystems);
+	FoldedSystems.Reset();
+	UWorld* World = GetWorld();
+	const double Factor = APSShipNavigation::CVarSystemFold.GetValueOnGameThread();
+	if (!World || !(Factor > 0.0))
+	{
+		return;
+	}
+	// Every star system with worlds: its system actor (the nearest above its planets; a generated home system may hang
+	// under the cluster or the generator, shared with others), the star they circle, how far out they reach.
+	struct FSystem
+	{
+		AActor* Root{nullptr};
+		AStar* Star{nullptr};
+		double ExtentCm{0.0};
+		int32 Planets{0};
+	};
+	TArray<FSystem, TInlineAllocator<8>> Systems;
+	for (TActorIterator<APlanet> It(World); It; ++It)
+	{
+		APlanet* Planet = *It;
+		if (!IsValid(Planet))
+		{
+			continue;
+		}
+		AActor* Root = nullptr;
+		AStar* Star = nullptr;
+		for (AActor* Parent = Planet->GetAttachParentActor(); Parent; Parent = Parent->GetAttachParentActor())
+		{
+			Star = Star ? Star : Cast<AStar>(Parent);
+			if (Parent->IsA<AStarSystem>())
+			{
+				Root = Parent;
+				break;
+			}
+		}
+		if (!Star)
+		{
+			continue;
+		}
+		Root = Root ? Root : Star;
+		FSystem* System = Systems.FindByPredicate([Root](const FSystem& Each) { return Each.Root == Root; });
+		if (!System)
+		{
+			System = &Systems.AddDefaulted_GetRef();
+			System->Root = Root;
+			System->Star = Star;
+		}
+		System->ExtentCm = FMath::Max(System->ExtentCm, FVector::Dist(Planet->GetActorLocation(), System->Star->GetActorLocation()));
+		++System->Planets;
+	}
+	const FAPSStarSystems* Stars = APSStarSystemsFind(World);
+	for (const FSystem& System : Systems)
+	{
+		// Rio 06.10 (still ship): the star where the ship sees it (the review: folded cards and labels used raw places).
+		const FVector StarLocation = UAPSWorldOriginSubsystem::SkyPlace(*System.Star);
+		const double Distance = FVector::Dist(ObserverLocation, StarLocation);
+		// Folded once its worlds lie within a few degrees; it unfolds a fifth nearer, so the cards never flicker at the edge.
+		const bool bWasFolded = Before.ContainsByPredicate([&System](const FFoldedSystem& Each) { return Each.Root.Get() == System.Root; });
+		if (Distance < System.ExtentCm * Factor * (bWasFolded ? 0.8 : 1.0))
+		{
+			continue;
+		}
+		// Its worlds, colonies, stations and sites (attached under it, or loose within the reach of its worlds) fold in; a
+		// course or the selected target stays apart.
+		const double RadiusCm = System.ExtentCm * 1.25 + 1.0e9;
+		FoldedSystems.Add({System.Root, System.Star, RadiusCm});
+		const FString StarId = System.Star->GetPathName();
+		Contacts.RemoveAll([&](const FShipNavigationContact& Contact)
+		{
+			const AActor* Actor = Contact.Actor.Get();
+			if (!Actor || Contact.StableId == KeepId || Contact.StableId == PinnedCourseId || Contact.StableId == StarId)
+			{
+				return false;
+			}
+			for (const AActor* Parent = Actor; Parent; Parent = Parent->GetAttachParentActor())
+			{
+				if (Parent == System.Root)
+				{
+					return true;
+				}
+			}
+			return FVector::DistSquared(UAPSWorldOriginSubsystem::SkyPlace(*Actor), StarLocation) < FMath::Square(RadiusCm);
+		});
+		// The card: the system's catalogue name (as on the maps), its class and its worlds; the star's own contact (a
+		// course to it) becomes the card.
+		FShipNavigationContact* Summary = Contacts.FindByPredicate([&StarId](const FShipNavigationContact& Each)
+		{
+			return Each.StableId == StarId;
+		});
+		if (!Summary)
+		{
+			Summary = &Contacts.AddDefaulted_GetRef();
+		}
+		const FAPSStarSystemInfo* Info = Stars ? Stars->Get(Stars->FindContaining(StarLocation)) : nullptr;
+		Summary->Actor = System.Star;
+		Summary->FixedWorldLocation = StarLocation;
+		Summary->StableId = StarId;
+		Summary->Type = EShipNavigationContactType::StarSystem;
+		Summary->bSystemSummary = true;
+		Summary->bVirtualContact = false;
+		Summary->DistanceCentimeters = Distance;
+		Summary->HierarchyLabel.Reset();
+		Summary->DisplayName = Info && !Info->Name.IsEmpty() ? Info->Name.ToUpper()
+			: !System.Star->AstroName.IsNone() ? System.Star->AstroName.ToString().ToUpper()
+			: APSShipNavigation::SanitizeObjectName(System.Star->GetName());
+		Summary->TypeLabel = Info && Info->bHome ? TEXT("HOME SYSTEM") : TEXT("STAR SYSTEM");
+		const FString Spectral = Info && !Info->Spectral.IsEmpty() ? Info->Spectral
+			: System.Star->FullSpectralClass.IsNone() ? FString() : System.Star->FullSpectralClass.ToString().ToUpper();
+		Summary->Detail = FString::Printf(TEXT("%s%s%d %s"), *Spectral, Spectral.IsEmpty() ? TEXT("") : TEXT("   |   "),
+			System.Planets, System.Planets == 1 ? TEXT("PLANET") : TEXT("PLANETS"));
+		Summary->MarkerColour = Info ? APSShipNavigation::CardColour(Info->Colour) : FLinearColor::Transparent;
+	}
+}
+
+void UShipNavigationComponent::AddNearStarLabels(const FVector& ObserverLocation)
+{
+	UWorld* World = GetWorld();
+	const FAPSStarSystems* Stars = APSStarSystemsFind(World);
+	if (!World || !Stars || !Stars->IsReady() || NearStarLabelCount <= 0)
+	{
+		return;
+	}
+	// A system whose star stands here shows its worlds or its folded card already; a label would only double it.
+	TArray<FVector, TInlineAllocator<8>> Standing;
+	for (TActorIterator<AStar> It(World); It; ++It)
+	{
+		if (IsValid(*It))
+		{
+			Standing.Add(UAPSWorldOriginSubsystem::SkyPlace(**It));
+		}
+	}
+	TArray<int32> Nearest;
+	Stars->FindNearest(ObserverLocation, NearStarLabelCount + Standing.Num(), Nearest);
+	int32 Added = 0;
+	for (const int32 Index : Nearest)
+	{
+		const FAPSStarSystemInfo* Info = Stars->Get(Index);
+		if (!Info || Added >= NearStarLabelCount)
+		{
+			continue;
+		}
+		const double Near = FMath::Max(Info->RoomCm * 0.5, APSStars::AstronomicalUnitCm);
+		if (Standing.ContainsByPredicate([Info, Near](const FVector& At) { return FVector::DistSquared(At, Info->Location) < Near * Near; }))
+		{
+			continue;
+		}
+		FShipNavigationContact Contact;
+		Contact.FixedWorldLocation = Info->Location;
+		Contact.StableId = FString::Printf(TEXT("STAR_SYSTEM:%s"), *Info->Id.ToString(EGuidFormats::DigitsWithHyphensLower));
+		Contact.DisplayName = Info->Name.ToUpper();
+		Contact.TypeLabel = Stars->IsClaimed(Info->Id) ? TEXT("BEACON") : TEXT("STAR");
+		Contact.Detail = FString::Printf(TEXT("%s%s%s"), *Info->Spectral, Info->Spectral.IsEmpty() ? TEXT("") : TEXT("   |   "),
+			*APSStars::KnowledgeName(Stars->GetKnowledge(Info->Id)).ToString());
+		Contact.Type = EShipNavigationContactType::StarSystem;
+		Contact.DistanceCentimeters = FVector::Distance(ObserverLocation, Info->Location);
+		Contact.bVirtualContact = true;
+		Contact.bStarLabel = true;
+		Contact.MarkerColour = APSShipNavigation::CardColour(Info->Colour);
+		Contacts.Add(MoveTemp(Contact));
+		++Added;
+	}
+}
+
+bool UShipNavigationComponent::IsInFoldedSystem(const FVector& WorldLocation) const
+{
+	for (const FFoldedSystem& System : FoldedSystems)
+	{
+		const AActor* Star = System.Star.Get();
+		if (Star && FVector::DistSquared(WorldLocation, UAPSWorldOriginSubsystem::SkyPlace(*Star)) < FMath::Square(System.RadiusCm))
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
 bool UShipNavigationComponent::IsContactTypeVisible(EShipNavigationContactType Type) const
 {
 	switch (Type)
@@ -333,6 +595,9 @@ bool UShipNavigationComponent::SelectContact(const FString& StableId)
 
 bool UShipNavigationComponent::SetCourse(const FString& StableId)
 {
+	// Rio 06.10 (audit): a course that cannot be charted gives back the pin it replaced (a terminal course, the autopilot's
+	// target) instead of dropping it.
+	const FString PreviousPin = PinnedCourseId;
 	PinnedCourseId = StableId;
 	if (const AActor* Owner = GetOwner())
 	{
@@ -342,14 +607,22 @@ bool UShipNavigationComponent::SetCourse(const FString& StableId)
 	{
 		return true;
 	}
-	PinnedCourseId.Reset();
+	PinnedCourseId = PreviousPin;
 	return false;
 }
 
 void UShipNavigationComponent::CycleTarget(int32 Direction)
 {
-	// A target picked by hand releases a course pinned from the terminal.
-	PinnedCourseId.Reset();
+	static IConsoleVariable* const SetsCourse = IConsoleManager::Get().FindConsoleVariable(TEXT("aps.Nav.AutopilotSetsCourse"));
+	const ASpaceship* Ship = Cast<ASpaceship>(GetOwner());
+	// A target picked by hand releases a course pinned from the terminal. Rio 06.10 (audit: T split from the autopilot):
+	// the autopilot's own target, pinned when it engaged (aps.Nav.AutopilotSetsCourse), stays pinned and listed, so T
+	// browses the contacts and comes back to it.
+	const AActor* ApTarget = (Ship && Ship->FlightModel) ? Ship->FlightModel->GetAutopilotTarget() : nullptr;
+	if (!(ApTarget && SetsCourse && SetsCourse->GetInt() != 0 && PinnedCourseId == ApTarget->GetPathName()))
+	{
+		PinnedCourseId.Reset();
+	}
 	if (Contacts.IsEmpty())
 	{
 		SelectedContactIndex = INDEX_NONE;
@@ -359,6 +632,23 @@ void UShipNavigationComponent::CycleTarget(int32 Direction)
 	SelectedContactIndex = SelectedContactIndex == INDEX_NONE
 		? 0
 		: (SelectedContactIndex + Step + Contacts.Num()) % Contacts.Num();
+	// Rio 06.10 (the HUD course and the autopilot must never name two targets): with aps.Nav.CycleRetargetsAutopilot 1 a
+	// target picked by hand while the autopilot flies retargets it; a contact without an actor (a catalogue entry it
+	// cannot fly to) leaves the autopilot as it is.
+	if (SetsCourse && SetsCourse->GetInt() != 0 && APSShipNavigation::CVarCycleRetargetsAutopilot.GetValueOnGameThread() != 0
+		&& Ship && Ship->FlightModel && Ship->FlightModel->IsAutopilotEngaged())
+	{
+		const FShipNavigationContact* Selected = GetSelectedContact();
+		if (AActor* Target = Selected ? Selected->Actor.Get() : nullptr)
+		{
+			if (Target != Ship->FlightModel->GetAutopilotTarget())
+			{
+				// The pin kept above belonged to the target the autopilot now leaves (the night's batch dropped it here too).
+				PinnedCourseId.Reset();
+				Ship->FlightModel->EngageAutopilot(Target);
+			}
+		}
+	}
 }
 
 FString UShipNavigationComponent::FormatDistance(double DistanceCentimeters)

@@ -167,6 +167,7 @@ TSharedPtr<FPlanetModel> UPlanetGenerator::CreatePlanetModelFromGeneratedWorld(c
 	PlanetModel->RadiusKM = FMath::Max(1.0, static_cast<double>(GeneratedWorld->PlanetRadius));
 	PlanetModel->Radius = PlanetModel->RadiusKM / EarthRadiusKm;
 	PlanetModel->AtmosphereHeight = FMath::Max(0.0, GeneratedWorld->AtmosphereHeight);
+	PlanetModel->CloudSettings = GeneratedWorld->CloudSettings.Sanitized();
 	PlanetModel->SurfaceSeed = FMath::Max(0, GeneratedWorld->PlanetSurfaceSeed);
 	PlanetModel->SurfaceFeatureScale = FMath::Clamp(GeneratedWorld->SurfaceFeatureScale, 0.25, 4.0);
 	PlanetModel->SurfaceReliefScale = FMath::Clamp(GeneratedWorld->SurfaceReliefScale, 0.25, 2.5);
@@ -274,6 +275,7 @@ void UPlanetGenerator::ApplyModel(APlanet* PlanetActor, TSharedPtr<FPlanetModel>
 	PlanetActor->RadiusKM = PlanetGenerationModel->RadiusKM;
 	PlanetActor->AffectionRadiusKM = PlanetGenerationModel->RadiusKM;
 	PlanetActor->AtmosphereHeight = PlanetGenerationModel->AtmosphereHeight;
+	PlanetActor->CloudSettings = PlanetGenerationModel->CloudSettings.Sanitized();
 	PlanetActor->WorldScapeSeed = PlanetGenerationModel->SurfaceSeed;
 	PlanetActor->SurfaceFeatureScale = PlanetGenerationModel->SurfaceFeatureScale;
 	PlanetActor->SurfaceReliefScale = PlanetGenerationModel->SurfaceReliefScale;

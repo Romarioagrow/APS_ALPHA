@@ -2,8 +2,11 @@
 
 #include "APSPlanetSurfaceProfile.h"
 #include "APSLivingTerrainPalette.h"
+#include "APSTerrestrialMaterialPalette.h"
 #include "APSLivingBiomeTransfer.h"
 #include "APSOrbitalMacroVariation.h"
+#include "APSTerrainContinuityMaterial.h"
+#include "APS_ALPHA/Core/World/APSWorldShiftEvents.h"
 #include "HAL/IConsoleManager.h"
 #include "Components/SceneComponent.h"
 #include "Misc/CoreDelegates.h"
@@ -95,8 +98,8 @@ namespace APSNativeTerrainMaterial
         // TransformUpdated. Read the final root location after an origin shift,
         // not the offset itself (the hierarchy has already applied it once).
         const TWeakObjectPtr<USceneComponent> WeakRoot(PlanetRoot);
-        FCoreDelegates::PostWorldOriginOffset.AddWeakLambda(Material,
-            [WeakMaterial, WeakRoot](UWorld* World, FIntVector, FIntVector)
+        APSWorldShiftEvents::BindPostShift(Material,
+            [WeakMaterial, WeakRoot](UWorld* World)
             {
                 USceneComponent* LiveRoot = WeakRoot.Get();
                 if (IsValid(LiveRoot) && LiveRoot->GetWorld() == World)
@@ -111,9 +114,11 @@ namespace APSNativeTerrainMaterial
     {
         if (!IsValid(Material)) return;
         const FAPSPlanetSurfacePalette& P = Profile.Palette;
-        auto Set = [Material](const TCHAR* Name, const FLinearColor& Color)
+        const bool bRefineTerra = APSTerrestrialMaterialPalette::Enabled()
+            && APSTerrestrialMaterialPalette::Allows(Profile.PlanetType, GetPathNameSafe(Material->Parent.Get()));
+        auto Set = [Material, bRefineTerra](const TCHAR* Name, const FLinearColor& Color)
         {
-            Material->SetVectorParameterValue(Name, Color);
+            Material->SetVectorParameterValue(Name, bRefineTerra ? APSTerrestrialMaterialPalette::Refine(Name, Color) : Color);
         };
         // Native humid and dry branches use different parameter names. Updating
         // only Color1..5 leaves the dry branch in the reference Earth's palette.
@@ -126,8 +131,10 @@ namespace APSNativeTerrainMaterial
         Set(TEXT("Color5"), P.Dryland); // Native Color5 is savanna, not the snow cap.
         // Scope the refinement to generated SharedTerra instances. In particular,
         // never alter a bespoke catalog parent or the authored native reference.
-        if (IsValid(Material->Parent.Get()) && Material->Parent->GetPathName() ==
-            TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Shared/MI_APS_SharedTerra.MI_APS_SharedTerra"))
+        const bool bGeneratedTerra = IsValid(Material->Parent.Get()) &&
+            (Material->Parent->GetPathName() == TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Shared/MI_APS_SharedTerra.MI_APS_SharedTerra")
+                || Material->Parent->GetPathName() == APSTerrainContinuityMaterial::TemplatePath);
+        if (bGeneratedTerra)
         {
             const IConsoleVariable* Detail = IConsoleManager::Get().FindConsoleVariable(
                 TEXT("aps.Surface.LivingPaletteDetail"));
@@ -147,8 +154,7 @@ namespace APSNativeTerrainMaterial
         Set(TEXT("2_Color4"), P.Dryland);
         Set(TEXT("Color1_3"), P.Peak);
         Set(TEXT("Color2_3"), P.Highland);
-        if (IsValid(Material->Parent.Get()) && Material->Parent->GetPathName() ==
-            TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Shared/MI_APS_SharedTerra.MI_APS_SharedTerra"))
+        if (bGeneratedTerra)
         {
             const FLinearColor Rock = APSLivingTerrainPalette::ExposedRock(Profile);
             Set(TEXT("2_Color3"), Rock);
@@ -157,19 +163,23 @@ namespace APSNativeTerrainMaterial
         Set(TEXT("SlopeColor"), P.Slope);
         Set(TEXT("ColotTint"), FLinearColor::White);
         Set(TEXT("EmissiveColor"), P.Emissive);
+        if (bRefineTerra)
+            UE_LOG(LogTemp, Display, TEXT("[APS.TerrestrialPalette] material=%s vegetationChroma=.52 coastChroma=.65 dryChroma=.62 luminancePreserved=1 exposureUnchanged=1 geometryUnchanged=1 extraTextureSamples=0"), *Material->GetPathName());
 		// Generated shared materials already contain a continuous physical-distance
 		// normal filter. Its former 200..700 km range left mesh-dependent slope/UV
 		// weights fully active across coarse orbital rings, exposing a square LOD0.
 		// Finish that filter before orbit, identically in menu and gameplay. Ground
 		// shading below 2 km, displaced geometry and collision are unchanged.
-		const UMaterial* Master = Material->GetMaterial();
-		if (IsValid(Master) && Master->GetPathName() ==
-			TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Shared/M_APS_SharedWorldScapeTerrain.M_APS_SharedWorldScapeTerrain"))
+		const auto Graph = APSPlanetSurfaceMaterialPolicy::TerrainGraph(Material);
+		const bool bContinuous = Graph == APSPlanetSurfaceMaterialPolicy::ETerrainGraph::Continuous;
+		if (bContinuous || Graph == APSPlanetSurfaceMaterialPolicy::ETerrainGraph::Shared)
 		{
-			Material->SetScalarParameterValue(TEXT("APS_FarNormalStartCm"), 200000.0f);
-			Material->SetScalarParameterValue(TEXT("APS_FarNormalEndCm"), 2000000.0f);
-			Material->SetScalarParameterValue(TEXT("APS_OrbitalMacroMode"),
-				APSOrbitalMacroVariation::Allows(Profile.PlanetType) ? 1.0f : 0.0f);
+			APSPlanetSurfaceMaterialPolicy::ApplyFarNormalPolicy(Material);
+			// One authored colour field from ground to orbit. Mode1 substitutes a
+			// different procedural albedo pattern between 5 and 50 km; distance may
+			// filter detail, but must not change the surface's identity.
+			Material->SetScalarParameterValue(TEXT("APS_OrbitalMacroMode"), 0.0f);
+			if (bContinuous) Material->SetScalarParameterValue(TEXT("APS_NormalMacroWarpMode"), 1.0f);
 		}
         // Retain template texture sizes and all other layer/normal transfers.
         // The APS simplified graph's HeightContrast/WarpedScale controls are not

@@ -38,6 +38,13 @@ struct APS_ALPHA_API FAPSCivilizationFootprintRequest
 	/** Support-plane clearance; asset-specific pivot offsets remain caller-owned. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "APS|Surface Placement")
 	double SurfaceClearanceCm{25.0};
+
+	/**
+	 * Surface direction (world, from the body centre) the search starts from; zero keeps the seed site. A surface start
+	 * passes a point just ahead of the pilot, so the colony and the landed ship stand in view (Rio, 30.09).
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "APS|Surface Placement")
+	FVector PreferredUp{FVector::ZeroVector};
 };
 
 USTRUCT(BlueprintType)

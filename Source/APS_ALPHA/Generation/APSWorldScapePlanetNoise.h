@@ -26,6 +26,18 @@ public:
 	// value-sampler workers. Never reconstruct this from a command line on workers.
 	bool UsesCoastalReliefCandidate() const { return bCoastalReliefCandidate; }
 
+	/**
+	 * Collision-only signed displacement of THIS configured generator, including
+	 * its coastal flag and optional unified-lava envelope. Immutable while sampled.
+	 * Does not sample material/climate channels or WorldScape volume overrides.
+	 * Caller must supply native root noise coordinates/settings, not world space.
+	 * Native collision integration is not enabled yet; use only after the owning
+	 * root's heightmap/volume/custom-sampler guards and end-to-end validation.
+	 */
+	double SampleCollisionHeight(CustomNoise& NoiseClass, const DVector& Position,
+		const DVector& PlanetPosition, double NoiseScale, double NoiseIntensity,
+		double PlanetScale, double Latitude) const;
+
 	virtual FNoiseData GetNoise(
 		CustomNoise NoiseClass, const DVector& Position, const DVector& PlanetPosition,
 		double NoiseScale, double NoiseIntensity, double PlanetScale, bool FlatWorld,

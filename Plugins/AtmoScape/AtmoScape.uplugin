@@ -1,0 +1,35 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "3.0",
+	"FriendlyName": "AtmoScape",
+	"Description": "Accured Atmospheric Scattering based to Scratchapixel",
+	"Category": "Rendering",
+	"CreatedBy": "iolaCorp Studio",
+	"CreatedByURL": "iolacorp.com",
+	"DocsURL": "https://www.scratchapixel.com/lessons/procedural-generation-virtual-worlds/simulating-sky",
+	"MarketplaceURL": "",
+	"SupportURL": "https://discord.gg/JD8jvKpmkh",
+	"CanContainContent": true,
+	"IsBetaVersion": false,
+	"IsExperimentalVersion": false,
+	"Installed": false,
+	"Plugins": [
+		{
+			"Name": "EditorScriptingUtilities",
+			"Enabled": true
+		}
+	],
+	"Modules": [
+		{
+			"Name": "AtmoScape",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		},
+		{
+			"Name": "AtmoScapeEditor",
+			"Type": "Editor",
+			"LoadingPhase": "PreDefault"
+		}
+	]
+}

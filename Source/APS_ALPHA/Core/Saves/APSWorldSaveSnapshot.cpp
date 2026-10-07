@@ -1,5 +1,7 @@
 #include "APSWorldSaveSnapshot.h"
 
+#include "APS_ALPHA/Generation/APSBodyNames.h"
+
 #include "APS_ALPHA/Core/Structs/PlanetarySystemGenerationModel.h"
 #include "APS_ALPHA/Core/Model/SpawnParameters.h"
 #include "APS_ALPHA/Core/Model/GeneratedWorld.h"
@@ -56,6 +58,7 @@ namespace
 		Model.SurfaceCraterScale = Data.SurfaceCraterScale;
 		Model.SurfaceRoughnessScale = Data.SurfaceRoughnessScale;
 		Model.AtmosphereHeight = Data.AtmosphereHeight;
+		Model.CloudSettings = Data.CloudSettings.Sanitized();
 		Model.AtmosphereOpacity = Data.AtmosphereOpacity;
 		Model.AtmosphereMultiScattering = Data.AtmosphereMultiScattering;
 		Model.AtmosphereRayleighScattering = Data.AtmosphereRayleighScattering;
@@ -103,6 +106,8 @@ UGeneratedWorld* APSWorldSaveSnapshot::Restore(const UGameSave* Save, UObject* O
 	}
 
 	bool bRestoredSnapshot = false;
+	// A snapshot from before 02.10 has no NameStyle tag: it keeps the legacy names. Newer snapshots overwrite this.
+	Model->NameStyle = APSBodyNames::LegacyStyle;
 	if (!Save->GeneratedWorldModelData.IsEmpty())
 	{
 		FMemoryReader Reader(Save->GeneratedWorldModelData, true);
@@ -112,8 +117,18 @@ UGeneratedWorld* APSWorldSaveSnapshot::Restore(const UGameSave* Save, UObject* O
 		Archive.Close();
 		bRestoredSnapshot = !Reader.IsError();
 		Reader.Close();
+		if (!bRestoredSnapshot)
+		{
+			// Rio 06.10 (audit: saves): the legacy summary has no seed (a slot hash stands in) and none of the newer fields,
+			// so substituting it for a present snapshot silently loaded another world under the save's name.
+			UE_LOG(LogTemp, Error,
+				TEXT("[APS.Save] Slot %s: model snapshot (%d bytes, version %d) is unreadable; refusing legacy-summary substitution"),
+				*SlotName, Save->GeneratedWorldModelData.Num(), Save->SaveFormatVersion);
+			return nullptr;
+		}
 	}
 
+	// Only a save without a snapshot (before the snapshot existed) falls back to the legacy summary.
 	if (!bRestoredSnapshot)
 	{
 		if (Save->GeneratedWorldsDataArray.IsEmpty())
@@ -128,8 +143,44 @@ UGeneratedWorld* APSWorldSaveSnapshot::Restore(const UGameSave* Save, UObject* O
 	Model->HomePlanetarySystem = nullptr;
 	Model->HomePlanet = nullptr;
 	Model->InhabitedPlanets = Save->InhabitedPlanetsDataArray;
+	// Rio 03.10 (a save audit): every load and save added the home world once more (Mevelex had three for one).
+	RemoveDuplicateInhabitedPlanets(Model->InhabitedPlanets);
 	Model->GenerationSeed = FMath::Max(Model->GenerationSeed, 1);
 	return Model;
+}
+
+bool APSWorldSaveSnapshot::IsSameInhabitedPlanet(const FPlanetData& A, const FPlanetData& B)
+{
+	return A.PlanetOrder == B.PlanetOrder && A.PlanetRadiusKM == B.PlanetRadiusKM
+		&& FMath::IsNearlyEqual(A.OrbitRadius, B.OrbitRadius, 1.0e-6);
+}
+
+void APSWorldSaveSnapshot::RecordInhabitedPlanet(TArray<FPlanetData>& Planets, const FPlanetData& Planet)
+{
+	if (FPlanetData* Existing = Planets.FindByPredicate([&Planet](const FPlanetData& Entry)
+		{
+			return IsSameInhabitedPlanet(Entry, Planet);
+		}))
+	{
+		*Existing = Planet;
+		return;
+	}
+	Planets.Add(Planet);
+}
+
+void APSWorldSaveSnapshot::RemoveDuplicateInhabitedPlanets(TArray<FPlanetData>& Planets)
+{
+	for (int32 Index = Planets.Num() - 1; Index > 0; --Index)
+	{
+		for (int32 Earlier = 0; Earlier < Index; ++Earlier)
+		{
+			if (IsSameInhabitedPlanet(Planets[Earlier], Planets[Index]))
+			{
+				Planets.RemoveAt(Index);
+				break;
+			}
+		}
+	}
 }
 
 bool APSWorldSaveSnapshot::CaptureSpawnParameters(const USpawnParameters* Parameters,

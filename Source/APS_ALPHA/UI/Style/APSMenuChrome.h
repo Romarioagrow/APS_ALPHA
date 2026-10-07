@@ -6,6 +6,8 @@
 #include "Styling/AppStyle.h"
 #include "Widgets/SLeafWidget.h"
 
+class STextBlock;
+
 /**
  * The main menu's visual language, shared (Rio, 30.09: UI for new mechanics in the project's common style, like the
  * menu). Chamfered cards, badges, line glyphs, section headings and the menu palette, extracted verbatim from
@@ -34,7 +36,9 @@ enum class EAPSChromeGlyph : uint8
 	Fleet,
 	Infrastructure,
 	Divisions,
-	System
+	System,
+	/** Rio 05.10 (star map): the STAR level, three stars on a faint ring. */
+	Stars
 };
 
 /** Small code-native line icons keep the Slate-only menu readable before the
@@ -135,8 +139,19 @@ public:
 				Center + FVector2D(Radius * 0.62f, Radius * 0.70f), Center + FVector2D(-Radius * 0.62f, Radius * 0.70f)}, true);
 			break;
 		case EAPSChromeGlyph::Profile:
-			Circle(Center + FVector2D(0.0f, -Radius * 0.43f), Radius * 0.36f, Radius * 0.36f);
-			Circle(Center + FVector2D(0.0f, Radius * 0.68f), Radius * 0.78f, Radius * 0.62f);
+			{
+				// Head and shoulders spanning -0.76..0.80 of the radius: centred on the box (Rio 03.10: the old full-ellipse
+				// body hung 1.3 radii down and the person sat low in its badge).
+				Circle(Center + FVector2D(0.0f, -Radius * 0.42f), Radius * 0.34f, Radius * 0.34f);
+				TArray<FVector2D> Shoulders;
+				for (int32 Index = 0; Index <= 16; ++Index)
+				{
+					const float Angle = UE_PI + UE_PI * static_cast<float>(Index) / 16.0f;
+					Shoulders.Add(Center + FVector2D(FMath::Cos(Angle) * Radius * 0.74f,
+						Radius * 0.80f + FMath::Sin(Angle) * Radius * 0.62f));
+				}
+				Draw(Shoulders, true);
+			}
 			break;
 		case EAPSChromeGlyph::Settings:
 			Circle(Center, Radius * 0.42f, Radius * 0.42f);
@@ -240,6 +255,21 @@ public:
 			Circle(Center, Radius * 0.20f, Radius * 0.20f);
 			Circle(Center, Radius * 0.72f, Radius * 0.46f, -0.28f);
 			Circle(Center + FVector2D(Radius * 0.68f, -Radius * 0.23f), Radius * 0.12f, Radius * 0.12f);
+			break;
+		case EAPSChromeGlyph::Stars:
+			Circle(Center, Radius * 0.95f, Radius * 0.95f);
+			for (const FVector3f& Spot : {FVector3f(-0.35f, -0.25f, 0.30f), FVector3f(0.42f, 0.05f, 0.22f),
+				FVector3f(-0.05f, 0.48f, 0.16f)})
+			{
+				TArray<FVector2D> Star;
+				for (int32 Index = 0; Index < 8; ++Index)
+				{
+					const float Angle = -UE_PI * 0.5f + UE_PI * static_cast<float>(Index) / 4.0f;
+					const float R = Radius * Spot.Z * (Index % 2 == 0 ? 1.0f : 0.35f);
+					Star.Add(Center + FVector2D(Spot.X * Radius + FMath::Cos(Angle) * R, Spot.Y * Radius + FMath::Sin(Angle) * R));
+				}
+				Draw(Star, true, 0.9f);
+			}
 			break;
 		}
 		return LayerId;
@@ -419,9 +449,42 @@ namespace APSChrome
 	APS_ALPHA_API FLinearColor Muted();
 	APS_ALPHA_API FLinearColor Success();
 	APS_ALPHA_API FLinearColor Scrim();
+	/** Rio 06.10 themes: Amber on hover, text on a solid Amber fill, and the shared metric tile (dark inset, quiet
+	 * rim) the terminal's pages drew from their own static brushes. */
+	APS_ALPHA_API FLinearColor AmberBright();
+	APS_ALPHA_API FLinearColor OnAmber();
+	APS_ALPHA_API const FSlateBrush* MetricTileBrush();
 
 	/** Orbitron for "Bold" display text, the engine font for body text, as in the menu. */
 	APS_ALPHA_API FSlateFontInfo Font(FName Typeface, int32 Size);
+
+	/**
+	 * Rio 03.10 ("everywhere the text strictly centred by height and width"). Slate centres a text's line box, not its
+	 * letters: the box is ascender - descender tall and the baseline sits one ascender below its top (hhea metrics, read
+	 * from the font files). Orbitron (1000 units: ascender 750, descender -250, cap height 720) keeps its capitals 0.03 em
+	 * under the top of the box and 0.25 em over its bottom, so an upper-case label reads 0.11 em high; Roboto (2048 units:
+	 * 1900, -500, cap height 1456) only 0.014 em. Returns the shift that centres capitals of this font, in Slate units,
+	 * positive downwards.
+	 */
+	APS_ALPHA_API float CapsCenterOffset(const FSlateFontInfo& Font);
+
+	/** CapsCenterOffset as a render translation: the glyphs move, the layout does not. Use on a centred label:
+	 * SNew(STextBlock).Font(F).Justification(ETextJustify::Center).RenderTransform(APSChrome::CapsCenterShift(F)) */
+	APS_ALPHA_API TOptional<FSlateRenderTransform> CapsCenterShift(const FSlateFontInfo& Font);
+
+	/** The same for a label of symbols alone (< > + - v x): they sit on the x-height's middle, 0.07 em under the
+	 * capitals' in Orbitron (0.04 em down in its box; Roboto's sit 0.08 em low, so they move up). */
+	APS_ALPHA_API float SymbolCenterOffset(const FSlateFontInfo& Font);
+	APS_ALPHA_API TOptional<FSlateRenderTransform> SymbolCenterShift(const FSlateFontInfo& Font);
+
+	/** An upper-case label centred both ways in its box: centred justification plus CapsCenterShift. Put it in a slot
+	 * (or a button) that centres it, e.g. SButton.HAlign(HAlign_Center).VAlign(VAlign_Center). */
+	APS_ALPHA_API TSharedRef<STextBlock> CenteredLabel(const TAttribute<FText>& Text, const FSlateFontInfo& Font,
+		const TAttribute<FSlateColor>& Color);
+
+	/** The menu's button padding for a label in this font: Horizontal (at least 14) each side and the same air above and
+	 * below the line at every size (10 pt: 11, 15 pt: 14, 18 pt: 16 Slate units). */
+	APS_ALPHA_API FMargin ButtonPadding(const FSlateFontInfo& Font, float Horizontal = 16.0f);
 
 	/** A filled chamfered card with a thin accent frame. */
 	APS_ALPHA_API TSharedRef<SWidget> ChamferPanel(TSharedRef<SWidget> Content, const FMargin& Padding,

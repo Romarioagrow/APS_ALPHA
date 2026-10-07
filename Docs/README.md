@@ -25,6 +25,7 @@
 | Interaction / Production | [APS-81](coordination/DEV_GAMEPLAY_APS_81_INTERACTION_PRODUCTION.md) | Проверять интеграцию по коду, не только старую строку Status |
 | Quest / Onboarding | [APS-80](coordination/DEV_QUEST_ONBOARDING_APS80.md) | События, identity, persistence API; не свидетельство полного прохождения игры |
 | Звёзды | [Checkpoint 12 сентября](StellarRenderingCheckpoint/README.md) | Исторический; более поздняя пользовательская приёмка — 27 сентября |
+| Визуальный ориентир | [Снимки NASA](Design/VISUAL_NORTH_STAR.md) | Канон Rio от 08.10 для всего космоса; эталон — галактика в меню генерации |
 
 ## Архив вне репозитория
 

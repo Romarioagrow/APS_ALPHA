@@ -1,6 +1,9 @@
 #include "APSObjectLightingSubsystem.h"
+#include "APSStellarVisualSubsystem.h"
 
+#include "APS_ALPHA/Actors/Astro/PlanetaryBody.h"
 #include "APS_ALPHA/Actors/Tech/SpaceStation.h"
+#include "APS_ALPHA/Pawns/Characters/CustomGravityCharacter.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
 #include "Components/DirectionalLightComponent.h"
 #include "Components/LocalLightComponent.h"
@@ -21,6 +24,10 @@ namespace APSObjectLighting
 	TAutoConsoleVariable<float> CVarObjectFill(
 		TEXT("aps.Lighting.ObjectFill"), 1.8f,
 		TEXT("Camera-aligned fill (lux) on lighting channel 1 for ships, stations and pilots, so their shadow side stays readable. 0 disables."));
+	TAutoConsoleVariable<float> CVarObjectFillBacklit(
+		TEXT("aps.Lighting.ObjectFillBacklit"), 3.0f,
+		TEXT("Rio 04.10: extra object fill while the camera faces the star (the hull's night side in view), as a multiple of the ")
+		TEXT("plain fill: 3 makes it four times as bright looking straight at the star. 0 keeps it even."));
 	TAutoConsoleVariable<float> CVarObjectFillInStation(
 		TEXT("aps.Lighting.ObjectFillInStation"), 0.0f,
 		TEXT("Object fill (lux) while the pawn is inside a station gravity volume; interiors have their own lamps."));
@@ -50,6 +57,21 @@ namespace APSObjectLighting
 
 	const FName ObjectFillTag(TEXT("APSObjectFillLight"));
 	const FLinearColor ObjectFillColor(0.86f, 0.9f, 1.0f, 1.0f);
+
+	TAutoConsoleVariable<float> CVarNightFill(
+		TEXT("aps.Planet.NightFill"), 0.6f,
+		TEXT("Rio 04.10 evening: lux of the faint light travelling towards the star that lights a world's night side seen ")
+		TEXT("from orbit (above 60 km; below, the near-surface fill does it). The star key is about 9.5. 0 = black night side."));
+	/** Its own name, and the surface fill's: the star key search skips it and the water takes it for its one fill. */
+	const FName NightFillTag(TEXT("APSOrbitalNightFillLight"));
+	const FName SurfaceFillTag(TEXT("APSGameplaySurfaceFillLight"));
+	const FLinearColor NightFillColor(0.55f, 0.68f, 1.0f, 1.0f);
+	/** The near-surface fill ends at 50 km (APSPlanetSurfaceFill); this one starts above 60 km, so the two never meet. */
+	constexpr double NightFillFromAltitudeCm = 6000000.0;
+	constexpr double NightFillFullAltitudeCm = 15000000.0;
+	/** Far from the world (its centre this many radii away) the fill fades: its night side is small by then. */
+	constexpr double NightFillFullRadii = 8.0;
+	constexpr double NightFillEndRadii = 12.0;
 }
 
 bool UAPSObjectLightingSubsystem::ShouldCreateSubsystem(UObject* Outer) const
@@ -94,6 +116,7 @@ void UAPSObjectLightingSubsystem::Tick(float DeltaTime)
 		RefreshObjects();
 	}
 	UpdateObjectFill(CameraLocation, CameraRotation, bInsideStation);
+	UpdateNightFill(DeltaTime);
 	ApplyStationLightScale();
 	UpdateExposure();
 }
@@ -101,9 +124,20 @@ void UAPSObjectLightingSubsystem::Tick(float DeltaTime)
 void UAPSObjectLightingSubsystem::UpdateObjectFill(
 	const FVector& CameraLocation, const FRotator& CameraRotation, bool bInsideStation)
 {
-	const float Intensity = FMath::Max(0.0f, bInsideStation
+	float Intensity = FMath::Max(0.0f, bInsideStation
 		? APSObjectLighting::CVarObjectFillInStation.GetValueOnGameThread()
 		: APSObjectLighting::CVarObjectFill.GetValueOnGameThread());
+	// Rio 04.10 ("in a far system the ship turned black"): the key light comes from the star the ship flies into, so the
+	// chase camera sees the hull's night side, lit by the plain fill alone. Facing the star, the fill grows.
+	const UAPSStellarVisualSubsystem* Stellar = GetWorld() ? GetWorld()->GetSubsystem<UAPSStellarVisualSubsystem>() : nullptr;
+	FVector StarLocation;
+	FString StarIdentity;
+	if (!bInsideStation && Intensity > 0.0f && Stellar && Stellar->GetActiveStellarTarget(StarLocation, StarIdentity))
+	{
+		const float Backlit = FMath::Clamp(static_cast<float>(FVector::DotProduct(CameraRotation.Vector(),
+			(StarLocation - CameraLocation).GetSafeNormal())), 0.0f, 1.0f);
+		Intensity *= 1.0f + FMath::Max(APSObjectLighting::CVarObjectFillBacklit.GetValueOnGameThread(), 0.0f) * Backlit;
+	}
 	ADirectionalLight* Fill = ObjectFillLight.Get();
 	UDirectionalLightComponent* Component = Fill ? Cast<UDirectionalLightComponent>(Fill->GetLightComponent()) : nullptr;
 	if (Intensity <= 0.0f)
@@ -155,6 +189,112 @@ void UAPSObjectLightingSubsystem::UpdateObjectFill(
 	}
 }
 
+void UAPSObjectLightingSubsystem::UpdateNightFill(const float DeltaTime)
+{
+	UWorld* World = GetWorld();
+	const APlayerController* PlayerController = World ? World->GetFirstPlayerController() : nullptr;
+	const APawn* Pawn = PlayerController ? PlayerController->GetPawn() : nullptr;
+	const float Lux = FMath::Max(0.0f, APSObjectLighting::CVarNightFill.GetValueOnGameThread());
+	float Wanted = 0.0f;
+	bool bNearSurface = false;
+	FVector RayDirection = FVector::ZeroVector;
+	// Gameplay pawns only: the menu's planet preview has its own fill, and its water expects exactly one.
+	if (World && Lux > 0.0f && Pawn && (Pawn->IsA<ACustomGravityCharacter>() || Pawn->IsA<APilotingVehicle>()))
+	{
+		const FVector Observer = Pawn->GetActorLocation();
+		const APlanetaryBody* Nearest = nullptr;
+		double NearestAltitudeCm = TNumericLimits<double>::Max();
+		double NearestRadiusCm = 0.0;
+		for (TActorIterator<APlanetaryBody> It(World); It; ++It)
+		{
+			const double RadiusCm = IsValid(*It) ? It->GetWorldScapeBodyRadiusCm() : 0.0;
+			if (!FMath::IsFinite(RadiusCm) || RadiusCm <= 1.0)
+			{
+				continue;
+			}
+			const double AltitudeCm = FVector::Distance(Observer, It->GetActorLocation()) - RadiusCm;
+			bNearSurface |= AltitudeCm <= APSObjectLighting::NightFillFromAltitudeCm;
+			if (AltitudeCm < NearestAltitudeCm)
+			{
+				Nearest = *It;
+				NearestAltitudeCm = AltitudeCm;
+				NearestRadiusCm = RadiusCm;
+			}
+		}
+		const UAPSStellarVisualSubsystem* Stellar = World->GetSubsystem<UAPSStellarVisualSubsystem>();
+		FVector StarLocation;
+		FString StarIdentity;
+		if (Nearest && !bNearSurface && Stellar && Stellar->GetActiveStellarTarget(StarLocation, StarIdentity))
+		{
+			const double In = FMath::SmoothStep(APSObjectLighting::NightFillFromAltitudeCm,
+				APSObjectLighting::NightFillFullAltitudeCm, NearestAltitudeCm);
+			const double CentreRadii = (NearestAltitudeCm + NearestRadiusCm) / NearestRadiusCm;
+			const double Out = 1.0 - FMath::SmoothStep(APSObjectLighting::NightFillFullRadii,
+				APSObjectLighting::NightFillEndRadii, CentreRadii);
+			Wanted = static_cast<float>(Lux * In * Out);
+			// Exactly against the star key's rays (UAPSStellarVisualSubsystem aims those from the star at the pawn): a
+			// surface either faces the star and keeps its look, or faces away and receives only this.
+			RayDirection = (StarLocation - Observer).GetSafeNormal();
+		}
+	}
+	ADirectionalLight* Fill = NightFillLight.Get();
+	UDirectionalLightComponent* Component = Fill ? Cast<UDirectionalLightComponent>(Fill->GetLightComponent()) : nullptr;
+	// Near a surface the accepted surface fill lights the night; it and this one are never on together (the water's
+	// lighting takes exactly one fill), so this one goes out at once there; at 60 km it has faded to nothing anyway.
+	NightFillIntensity = bNearSurface || RayDirection.IsNearlyZero() ? 0.0f
+		: FMath::FInterpTo(NightFillIntensity, Wanted, DeltaTime, 1.5f);
+	if (NightFillIntensity <= 0.001f)
+	{
+		NightFillIntensity = 0.0f;
+		if (Component && Component->IsVisible())
+		{
+			Component->SetVisibility(false);
+		}
+		return;
+	}
+	if (!Component)
+	{
+		FActorSpawnParameters SpawnParameters;
+		SpawnParameters.ObjectFlags |= RF_Transient;
+		SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		Fill = World->SpawnActor<ADirectionalLight>(ADirectionalLight::StaticClass(), FVector::ZeroVector,
+			RayDirection.Rotation(), SpawnParameters);
+		Component = Fill ? Cast<UDirectionalLightComponent>(Fill->GetLightComponent()) : nullptr;
+		if (!Component)
+		{
+			return;
+		}
+		Fill->Tags.AddUnique(APSObjectLighting::NightFillTag);
+		Fill->Tags.AddUnique(APSObjectLighting::SurfaceFillTag);
+		Fill->SetActorEnableCollision(false);
+		Component->SetMobility(EComponentMobility::Movable);
+		// As the surface fill: no second shadow, no glint on the oceans, not a sun for the atmosphere.
+		Component->SetCastShadows(false);
+		Component->SetAtmosphereSunLight(false);
+		Component->SetForwardShadingPriority(0);
+		Component->SetVolumetricScatteringIntensity(0.0f);
+		Component->SetSpecularScale(0.0f);
+		Component->SetLightingChannels(true, false, false);
+		Component->SetLightColor(APSObjectLighting::NightFillColor);
+		Component->SetIntensity(NightFillIntensity);
+		NightFillLight = Fill;
+		UE_LOG(LogAPSObjectLighting, Log, TEXT("[APS.Lighting] night fill created (%.2f lux wanted)"), Wanted);
+	}
+	if (!Component->IsVisible())
+	{
+		Component->SetVisibility(true);
+	}
+	const FRotator Rotation = RayDirection.Rotation();
+	if (!Fill->GetActorRotation().Equals(Rotation, 0.05f))
+	{
+		Fill->SetActorRotation(Rotation);
+	}
+	if (!FMath::IsNearlyEqual(Component->Intensity, NightFillIntensity, 0.001f))
+	{
+		Component->SetIntensity(NightFillIntensity);
+	}
+}
+
 void UAPSObjectLightingSubsystem::RefreshObjects()
 {
 	UWorld* World = GetWorld();
@@ -169,9 +309,12 @@ void UAPSObjectLightingSubsystem::RefreshObjects()
 			It.RemoveCurrent();
 		}
 	}
+	// Rio 04.10 ("ships are black from afar, light up close; lighting must not depend on the player"): every refresh
+	// checks every mesh again, not once per actor. A ship's own setup (boarding, its class, parts added later) could
+	// clear channel 1 after the first opt-in, leaving that ship without the fill for good.
 	const auto OptIn = [this](AActor* Actor)
 	{
-		if (!IsValid(Actor) || OptedInActors.Contains(Actor))
+		if (!IsValid(Actor))
 		{
 			return;
 		}
@@ -288,6 +431,10 @@ void UAPSObjectLightingSubsystem::Deinitialize()
 	if (ADirectionalLight* Fill = ObjectFillLight.Get())
 	{
 		Fill->Destroy();
+	}
+	if (ADirectionalLight* NightFill = NightFillLight.Get())
+	{
+		NightFill->Destroy();
 	}
 	if (APostProcessVolume* Volume = ExposureVolume.Get())
 	{

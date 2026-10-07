@@ -6,6 +6,8 @@
 #include "PlanetaryProceduralGenerator.h"
 #include "WorldScapeCore/Public/WorldScapeRoot.h"
 #include "CoreMinimal.h"
+#include "APS_ALPHA/Core/Enums/CharSpawnPlace.h"
+#include "Engine/TimerHandle.h"
 #include "APS_ALPHA/Actors/BaseActor.h"
 #include "APS_ALPHA/Core/Enums/AstroGenerationLevel.h"
 #include "APS_ALPHA/Core/Enums/PlanetarySystemType.h"
@@ -90,6 +92,7 @@ struct FAPSPreviewAtmosphereState
 {
 	TWeakObjectPtr<USceneComponent> AtmosphereRoot;
 	TWeakObjectPtr<AWorldScapeRoot> ProfileRoot;
+	TWeakObjectPtr<UStaticMeshComponent> GasVisual;
 	uint32 Signature{0};
 };
 
@@ -109,7 +112,7 @@ struct APS_ALPHA_API FAPSPreviewBodyEntry
 	/** Actor-free HISM system used by the cluster browser. */
 	int32 ClusterSystemInstanceIndex{INDEX_NONE};
 	/** Optional hierarchy focus for actor roots such as Galaxy or Cluster. */
-	int32 PreviewFocusValue{INDEX_NONE};
+	int32 PreviewFocusValue{INDEX_NONE}; bool bHighlighted{false}; // the system a click selected in the cluster
 };
 
 /**
@@ -156,12 +159,23 @@ class APS_ALPHA_API AAstroGenerator : public ABaseActor
 	GENERATED_BODY()
 
 public:
+	/** A surface start's pilot placement (TryFinalizeSurfaceSpawn), read by the arrival curtain. */
+	enum class ESurfaceSpawnState : uint8 { None, Pending, Final, Failed };
+	ESurfaceSpawnState GetSurfaceSpawnState() const { return SurfaceSpawnState; }
+	/** The civilization starter set (HQ, station, shipyard, fleet, pilot) stands in the world. */
+	bool IsStarterHierarchySpawned() const { return bStarterHierarchySpawned; }
+
 	AAstroGenerator();
 	
 	virtual void OnConstruction(const FTransform& Transform) override;
 
 	/** Transactionally spawns and validates the selected starter hierarchy. */
 	bool SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> StartPlanetModel);
+
+	/** Pending is not a committed hierarchy and must not release saved-world replay. */
+	bool IsGeneratedStarterCommitPending() const { return bGeneratedStarterCommitPending; }
+	bool HasGeneratedStarterCommitFailed() const { return bGeneratedStarterCommitFailed; }
+	uint64 GetGeneratedStarterCommitSerial() const { return GeneratedStarterCommitSerial; }
 
 	UFUNCTION(BlueprintPure, Category = "World Generation|Civilization")
 	int32 GetGeneratedStartingFleetSize() const { return GeneratedStartingFleet.Num(); }
@@ -221,6 +235,7 @@ public:
 	bool UsesContinuousPreviewFrame() const;
 	const FAPSContinuousPreviewFrame& GetContinuousPreviewFrame() const { return ContinuousPreviewFrame; }
 	const FAPSContinuousPreviewOrbit& GetContinuousPreviewOrbit() const { return ContinuousPreviewOrbit; }
+	bool IsPreviewCameraTransitionActive() const { return bPreviewCameraTransitionActive; }
 	/** Angular space available around the optical axis inside the actual menu panel. */
 	void SetContinuousPreviewFramingTangent(double Tangent);
 	bool GetContinuousPreviewClusterLocation(int32 InstanceIndex, FVector& OutLocation) const;
@@ -250,6 +265,11 @@ public:
 	bool GetPreviewSystemEditContext(FString& OutAddress, FStarSystemModel& OutModel) const;
 	int32 GetPreviewHomePlanetCount() const;
 	AStarSystem* GetPreviewHomeSystem() const { return GeneratedHomeStarSystem; }
+	/** Rio 05.10 (real scale experiment): REAL SCALE applies to this build (it needs the canonical full-scale frame). */
+	bool UsesRealScale() const;
+	/** Rio 05.10: the applied real-scale layout for the menu card, in cm: the galaxy's nominal radius, the radius holding
+	 * 90% of the cluster's systems and their median neighbour distance. False when REAL SCALE is off or not composed. */
+	bool GetRealScaleSummary(double& OutGalaxyRadiusCm, double& OutClusterRadiusCm, double& OutNeighbourSpacingCm) const;
 
 	UFUNCTION(BlueprintCallable, Category = "World Generation|Preview")
 	void FocusPreviewTarget(EAstroPreviewFocus NewFocus, APlayerController* PlayerController = nullptr);
@@ -267,6 +287,16 @@ public:
 	bool FocusPreviewClusterSystemAtScreenPosition(
 		APlayerController* PlayerController, const FVector2D& ScreenPosition, float MaxPixelDistance = 28.0f);
 	bool FocusPreviewClusterSystem(int32 InstanceIndex, APlayerController* PlayerController = nullptr);
+	/**
+	 * Rio 02.10 ("pick any system without blowing up the PC"): a click selects the catalogue system under the cursor
+	 * and shows its record without materializing its stars and planets; a double-click still focuses it.
+	 */
+	bool SelectPreviewClusterSystemAtScreenPosition(APlayerController* PlayerController, const FVector2D& ScreenPosition,
+		float MaxPixelDistance = 28.0f);
+	int32 GetHighlightedPreviewClusterSystem() const { return HighlightedPreviewClusterSystemIndex; }
+	/** The catalogue system drawn nearest the cursor within the distance (INDEX_NONE: none). */
+	int32 FindPreviewClusterSystemAtScreenPosition(APlayerController* PlayerController, const FVector2D& ScreenPosition,
+		float MaxPixelDistance) const;
 	int32 GetPreviewGalaxyRenderedStarCount() const;
 	int64 GetPreviewGalaxyModeledStarCount() const;
 	int32 GetPreviewClusterRenderedStarCount() const;
@@ -282,7 +312,18 @@ public:
 	uint8 GetGameplayStellarSuppression(const FAPSGameplayStellarKey& Key) const;
 	void SetGameplayStellarSuppression(const FAPSGameplayStellarKey& Key,
 		EAPSGameplayStellarSuppression Reason, bool bSuppressed);
+	/**
+	 * Rio 01.10 ("how many stars fall into our system"): in a game the cluster proxies standing inside the home system's
+	 * realistic orbits are suppressed as the composition-time SYSTEM exclusion does: not drawn, not charted, not flown to.
+	 * Returns how many were newly suppressed.
+	 */
+	int32 SuppressClusterProxies(const TArray<int32>& InstanceIndices); bool SetGalaxyProxyMaterialized(int64 CatalogIndex, bool bMaterialized); // Rio 03.10 ("every star reachable"): a galaxy ISM star stood up as a system is hidden like a materialized cluster proxy (one line keeps UHT line numbers)
 	uint64 GetGameplayUnknownStellarMutationSerial() const { return GameplayUnknownStellarMutationSerial; }
+	/** Rio 04.10 (an ~80 ms hitch whenever cruise materialized or released a star system): mutations that re-size the whole
+	 * star catalogue. Single proxies hidden or shown again only bump TransformMutationSerial (readers re-validate) and are
+	 * handed out here, so the stellar view re-sizes just those points. */
+	uint64 GetCanonicalStellarBatchMutationSerial() const { return CanonicalStellarBatchMutationSerial; }
+	void ConsumeCanonicalStellarPointMutations(TArray<FAPSGameplayStellarKey>& OutKeys);
 	UStarGenerator* GetGameplayStellarAppearanceGenerator() const { return StarGenerator; }
 	/** Resolves one exact rendered instance back to its canonical record and base projection. */
 	bool GetCanonicalStellarProxyRecord(
@@ -315,6 +356,9 @@ public:
 	AActor* GetSelectedPreviewBodyActor() const { return SelectedPreviewBodyActor.Get(); }
 	/** World-space sphere used by Slate to draw a stable scope boundary. */
 	bool GetPreviewFocusSphere(EAstroPreviewFocus Focus, FVector& OutCenter, double& OutRadius) const;
+	/** Rio 05.10 (the menu's scale ruler): the physical distance, in cm, from the preview camera to the focus's centre
+	 * (continuous preview only; it keeps every direction exact, so a length there spans the same angle on screen). */
+	bool GetPreviewFocusPhysicalDistance(EAstroPreviewFocus Focus, double& OutDistanceCm) const;
 	/**
 	 * Rendered 3D guide shell diagnostics. HomeStar addresses the amber stellar
 	 * influence shell; HomeSystem addresses the coral system boundary shell.
@@ -496,6 +540,7 @@ protected:
 		TWeakObjectPtr<APlanetaryBody> WeakBody, FVector SurfaceOutward,
 		FVector ViewDirection, int32 AttemptIndex, uint64 FinalizationSerial);
 	uint64 SurfaceSpawnFinalizationSerial{0};
+	ESurfaceSpawnState SurfaceSpawnState{ESurfaceSpawnState::None};
 
 	/** Surface patch selected by ResolveSpawnLocation and consumed by the gameplay handoff. */
 	TWeakObjectPtr<APlanetaryBody> ResolvedSurfaceSpawnBody;
@@ -583,8 +628,53 @@ protected:
 	void SetPreviewWorldScapeBody(APlanetaryBody* Body);
 	void UpdatePreviewWorldScape();
 
+	/**
+	 * Rio 03.10 A/B (aps.Preview.PlanetWorldScape 1): the selected PLANET body is drawn by its own live WorldScape
+	 * terrain+ocean root, built with the gameplay ground budget and observed from the preview camera. The closed globe
+	 * stays the loading/coverage fallback; exactly one of the two solid layers is visible at a time.
+	 */
+	bool WantsPreviewLiveWorldScape() const;
+	void UpdatePreviewLiveWorldScape();
+	void SyncPreviewLiveWorldScapeTransform();
+	bool EvaluatePreviewLiveWorldScapePresentation();
+	bool IsPreviewLiveWorldScapeCovered() const;
+	void RetirePreviewLiveWorldScape(const TCHAR* Reason, bool bRefreshGlobes);
+	/** Polls (or, with bForce, destroys) a retired live pair. True while its WorldScape workers still run. */
+	bool DrainRetiredPreviewLiveWorldScape(bool bForce);
+	TWeakObjectPtr<APlanetarySurfaceGenerator> PreviewLiveSurfaceGenerator;
+	TWeakObjectPtr<AWorldScapeRoot> PreviewLiveWorldScapeRoot;
+	TWeakObjectPtr<APlanetaryBody> PreviewLiveWorldScapeBody;
+	TWeakObjectPtr<APlanetarySurfaceGenerator> RetiringPreviewLiveSurfaceGenerator;
+	TWeakObjectPtr<AWorldScapeRoot> RetiringPreviewLiveWorldScapeRoot;
+	/** Observer submitted to WorldScape and the current camera, in the root's unscaled local (ECEF) frame. */
+	FVector PreviewLiveObserverEcef{FVector::ZeroVector};
+	FVector PreviewLiveCameraEcef{FVector::ZeroVector};
+	FVector PreviewLiveQuietObserverEcef{FVector::ZeroVector};
+	/**
+	 * Clipmap currently published by the live root, in planet radii: ring plane normal, outer ring centre on that
+	 * plane and its half side; the angle is the approximate cap it covers, for the log.
+	 */
+	FVector PreviewLiveCommittedTangent{FVector::ZeroVector};
+	FVector PreviewLiveCommittedRingCenter{FVector::ZeroVector};
+	double PreviewLiveCommittedHalfSide{0.0};
+	double PreviewLiveCommittedCoverageDegrees{0.0};
+	double PreviewLiveQuietSince{-1.0};
+	uint64 PreviewLiveQuietSinceFrame{0};
+	double PreviewLiveBuildStarted{0.0};
+	double PreviewLiveRetryAfter{0.0};
+	bool bPreviewLiveConfigured{false};
+	bool bPreviewLiveObserverValid{false};
+	bool bPreviewLiveValidationDirty{false};
+	bool bPreviewLiveBatchInFlight{false};
+	bool bPreviewLiveCommitted{false};
+	bool bPreviewLiveSurfacePresented{false};
+	bool bPreviewLiveCoverageLost{false};
+	bool bPreviewLiveTickNeeded{false};
+
 	EAstroPreviewFocus PreviewFocus{EAstroPreviewFocus::HomePlanet};
 	int32 SelectedPreviewClusterSystemIndex{INDEX_NONE};
+	/** A cluster system selected with a click: its record only, nothing materialized. */
+	int32 HighlightedPreviewClusterSystemIndex{INDEX_NONE};
 	/** Exact body selected from the hierarchy; root buttons fall back to the authored home body. */
 	TWeakObjectPtr<AActor> SelectedPreviewBodyActor;
 	/** Mesh-only PLANET presentation centres; generated actor transforms stay authoritative. */
@@ -738,6 +828,7 @@ protected:
 	void FinalizeCanonicalStellarProjectionBuild();
 	void NoteCanonicalStellarProxyUpload();
 	void NoteCanonicalStellarProxyMutation(bool bClassifiedGameplayWrite = false);
+	void NoteCanonicalStellarPointMutation(const FAPSGameplayStellarKey& Key);
 	uint32 BuildCanonicalStellarProjectionContextHash() const;
 	uint32 BuildCanonicalStellarDatasetInputHash() const;
 	uint32 BuildCanonicalStellarManifestHash(const FAPSCanonicalStellarDataset& Dataset) const;
@@ -748,6 +839,13 @@ protected:
 		const FClusterStarSystemRecord& Record);
 	bool ComposeCanonicalStellarProjection(const FVector& HomeClusterLocalUnits);
 	bool RefreshCanonicalClusterProxy(int32 InstanceIndex);
+	/**
+	 * Rio 05.10 (real scale experiment): the root cm per catalogue unit and the cluster's layout scale of a REAL SCALE
+	 * build. Reads the values sealed in the dataset, else measures the catalogue (median neighbour distances of the galaxy
+	 * and the home cluster against aps.Galaxy.RealScaleSpacingPc) and seals them into a dataset still under construction.
+	 */
+	bool ResolveRealScaleLayout(double LegacyClusterToGalaxyScale, double& OutCanonicalCmPerUnit,
+		double& OutClusterToGalaxyScale);
 
 	void GenerateGalaxiesCluster();
 
@@ -780,10 +878,18 @@ protected:
 	uint64 CanonicalStellarProjectionBuildCounter{0u};
 	TMap<FAPSGameplayStellarKey, uint8> GameplayStellarSuppression;
 	uint64 GameplayUnknownStellarMutationSerial{0};
+	uint64 CanonicalStellarBatchMutationSerial{0};
+	TArray<FAPSGameplayStellarKey> PendingStellarPointMutations;
 	bool bCanonicalStellarProjectionComposed{false};
 	bool bConsumedFinalizedCanonicalStellarDataset{false};
 	bool bCanonicalStellarDatasetValidated{false};
 	bool bCanonicalStellarDatasetRejected{false};
+	/** Rio 05.10 (real scale experiment): the model's REAL SCALE (ApplyWorldModel), and the cluster's median neighbour
+	 * distance and the radius holding 90% of its systems as applied (cm, 0 when OFF); plain members, so no Blueprint
+	 * default can switch the experiment on. */
+	bool bRealScale{false};
+	double RealScaleNeighbourSpacingCm{0.0};
+	double RealScaleClusterRadiusCm{0.0};
 
 	UPROPERTY(VisibleAnywhere, Category = "Generated Astro Actros")
 	AStarCluster* GeneratedStarCluster;
@@ -827,6 +933,23 @@ protected:
 	/** Prevents a second generation callback from duplicating the committed civilization starter set. */
 	UPROPERTY(Transient)
 	bool bStarterHierarchySpawned{false};
+
+	void BeginGeneratedStarterCommit(const TSharedPtr<FPlanetModel>& PlanetModel);
+	void ContinueGeneratedStarterCommit(uint64 ExpectedSerial);
+	void CancelGeneratedStarterCommit();
+	APlanetaryBody* GetGeneratedStarterSurfaceBody() const;
+	FTimerHandle GeneratedStarterCommitTimer;
+	TSharedPtr<FPlanetModel> PendingStarterPlanetModel;
+	TWeakObjectPtr<UGeneratedWorld> PendingStarterWorldModel;
+	TWeakObjectPtr<UWorld> PendingStarterWorld;
+	TWeakObjectPtr<APlanet> PendingStarterHomePlanet;
+	TWeakObjectPtr<APlanetaryBody> PendingStarterSurfaceBody;
+	ECharSpawnPlace PendingStarterSpawnPlace{ECharSpawnPlace::PlanetSurface};
+	double GeneratedStarterCommitDeadline{0.0};
+	uint64 GeneratedStarterCommitSerial{0};
+	bool bGeneratedStarterCommitPending{false};
+	bool bGeneratedStarterCommitFailed{false};
+	bool bGeneratedStarterCommitDeferred{false};
 
 	UPROPERTY(VisibleAnywhere, Category = "Generated Astro Actros")
 	AActor* GeneratedWorld;
@@ -960,6 +1083,9 @@ public:
 
 	UPROPERTY(EditAnywhere, Category = "Galaxy")
 	int GalaxyStarCount{100000000};
+
+	/** Rio 03.10: STARS slider (UGeneratedWorld::GalaxyPlacedStarCount); 0 keeps the historic render budgets. */
+	int32 GalaxyPlacedStarCount{0};
 
 	UPROPERTY(EditAnywhere, Category = "Galaxy")
 	double GalaxyStarDensity{10.0};

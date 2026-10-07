@@ -2,6 +2,7 @@
 
 #include "APSSharedWaterMaterial.h"
 #include "APSSharedLavaMaterial.h"
+#include "APSCoastalWaterMaterial.h"
 #include "Engine/World.h"
 
 // Generated APS source MICs only. All liquids inherit saved shared family
@@ -27,6 +28,12 @@ namespace APSSharedGeneratedLiquidMaterial
         case EAPSPlanetLiquidType::Lava: return APSSharedLavaMaterial::TemplatePath();
         default: return nullptr;
         }
+    }
+    inline const TCHAR* TemplatePath(const FAPSResolvedPlanetSurfaceProfile& Profile)
+    {
+        if (APSCoastalWaterMaterial::EnabledFor(Profile))
+            return APSShoreWaterMaterial::Enabled() ? APSShoreWaterMaterial::TemplatePath : APSCoastalWaterMaterial::TemplatePath;
+        return TemplatePath(Profile.LiquidType);
     }
     inline bool AllowsProfile(const FAPSResolvedPlanetSurfaceProfile& Profile, bool bManualPlanet)
     {
@@ -54,6 +61,7 @@ namespace APSSharedGeneratedLiquidMaterial
     }
     inline bool IsFamilyInstance(UMaterialInterface* Material, EAPSPlanetLiquidType Type)
     {
+        if (Type == EAPSPlanetLiquidType::Water && APSCoastalWaterMaterial::IsInstance(Material)) return true;
         const TCHAR* Path = TemplatePath(Type);
         if (!Path || !IsValid(Material)) return false;
         const bool bMatchingMaster = Type == EAPSPlanetLiquidType::Lava
@@ -90,13 +98,20 @@ namespace APSSharedGeneratedLiquidMaterial
         if (!HasSavedParameterAuthority(Material, Type) || !IsValid(World)) return false;
         const auto* Resource = Material->GetMaterialResource(World->GetFeatureLevel());
         const auto* Map = Resource ? Resource->GetGameThreadShaderMap() : nullptr;
-        return Resource && Resource->IsGameThreadShaderMapComplete() && Resource->GetCompileErrors().Num() == 0
+        return Resource && Resource->IsGameThreadShaderMapComplete()
+#if WITH_EDITOR
+            // Compiler diagnostics are editor-only; cooked builds still require
+            // a complete shader map and the actual mesh vertex factory below.
+            && Resource->GetCompileErrors().Num() == 0
+#endif
             && Map && Map->GetMeshShaderMap(&FLocalVertexFactory::StaticType);
     }
     inline bool BindFrame(UMaterialInstanceDynamic* Material, EAPSPlanetLiquidType Type,
         USceneComponent* Frame, double PresentationScale)
     {
         if (!IsFamilyInstance(Material, Type)) return false;
+        if (Type == EAPSPlanetLiquidType::Water && APSCoastalWaterMaterial::IsInstance(Material))
+            return APSCoastalWaterMaterial::BindFrame(Material, Frame, PresentationScale);
         return Type == EAPSPlanetLiquidType::Lava
             ? APSSharedLavaMaterial::BindFrame(Material, Frame, PresentationScale)
             : APSSharedAmmoniaMaterial::BindFrame(Material, Frame, PresentationScale);
@@ -108,7 +123,7 @@ namespace APSSharedGeneratedLiquidMaterial
         const EAPSPlanetLiquidType Type = Profile.LiquidType;
         if (!AllowsProfile(Profile, bManualPlanet)
             || (!ShouldMigrate(Source, Profile, bManualPlanet) && !IsFamilyInstance(Source, Type))) return nullptr;
-        UMaterialInstance* Template = LoadObject<UMaterialInstance>(nullptr, TemplatePath(Type));
+        UMaterialInstance* Template = LoadObject<UMaterialInstance>(nullptr, TemplatePath(Profile));
         if (!HasSavedParameterAuthority(Template, Type)) return nullptr;
         UMaterialInstanceDynamic* Result = UMaterialInstanceDynamic::Create(Template, Outer);
         if (!IsValid(Result)) return nullptr;

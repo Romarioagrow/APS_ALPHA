@@ -1,0 +1,22 @@
+APOSFERA ground vehicle audio
+
+Rover engine loops:
+"racing car engine sound loops" by domasx2
+https://opengameart.org/content/racing-car-engine-sound-loops
+CC0 1.0: https://creativecommons.org/publicdomain/zero/1.0/
+Source: loop_0.wav. The author states the current version was remade from a public-domain recording.
+
+Rover starter:
+"Car engine start 01" by looneybits
+https://opengameart.org/content/car-engine-start-01
+CC0 1.0: https://creativecommons.org/publicdomain/zero/1.0/
+Source: generic_car_startengine.wav.
+
+Hover and drone:
+Energy Fields SFX Pack by Monitor Lizards
+https://www.fab.com/listings/497d53e3-be95-4174-8786-433558a8a849
+Used under the license associated with the owner's acquisition.
+Sources: A_PF_ElectricEnergy_Loop, A_PF_Moving_Loop, A_PF_MovingAviaBlades_Loop.
+Edits: mono conversion, excerpts, pitch, equalization, level adjustment and loop crossfades.
+The marketplace originals are unchanged; these edits remain subject to the source asset license.
+No endorsement by the source authors is implied.

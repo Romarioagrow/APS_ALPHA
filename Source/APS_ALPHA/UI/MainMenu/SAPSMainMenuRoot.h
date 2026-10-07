@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "APS_ALPHA/UI/MainMenu/APSWorldBrowserMetadata.h"
 #include "APS_ALPHA/UI/MainMenu/WorldGenerationViewModel.h"
 #include "Styling/SlateTypes.h"
 #include "Widgets/SCompoundWidget.h"
@@ -10,6 +11,7 @@ class SWorldGenerationPanel;
 struct FStreamableHandle;
 class SBox;
 class SButton;
+class SMenuAnchor;
 class SWidgetSwitcher;
 class UClass;
 class UGameSave;
@@ -26,16 +28,13 @@ enum class EAPSMenuPage : uint8
 	Settings
 };
 
-/** Code-native visual language for the Choose Your Path cards.  Keeping the
- * motif explicit avoids coupling navigation semantics to localized card text. */
-enum class EAPSPathVisual : uint8
+/** Rio 06.10: NEW WORLD's paths (Docs/Design/MAIN_MENU_OBSERVATORY.md section 3.4); PLANET waits for Planet Lab. */
+enum class EAPSNewWorldPath : uint8
 {
-	LiveSystem,
-	WorldArchive,
-	CivilizationNetwork,
-	GalaxySynthesis,
-	PlanetLaboratory,
-	StoryArchive
+	SingleGame,
+	Civilization,
+	Space,
+	Planet
 };
 
 enum class EAPSGenerationSurfaceControl : uint8;
@@ -55,12 +54,17 @@ struct FAPSExistingWorldEntry
 	int64 FileSizeBytes{0};
 	bool bMetadataLoaded{false};
 	bool bFavorite{false};
+	/** Rio 03.10: the true home system from a version 2 sidecar. Older records only echo the menu's editor buffer (a G
+	 * star and one frozen planet in almost every save), so the browser does not present their system fields as facts. */
+	bool bSystemRecorded{false};
+	FAPSWorldSystemRecord System;
 };
 
+/** Rio 03.10: MY WORLDS was dropped. It listed exactly ALL WORLDS: every save is made by this game on this machine, and
+ * no record tells "mine" from anything else. */
 enum class EAPSWorldCollection : uint8
 {
 	All,
-	MyWorlds,
 	Favorites,
 	Recent
 };
@@ -80,6 +84,17 @@ enum class EAPSWorldFilterKind : uint8
 	Environment
 };
 
+/** One choice of a world browser filter: built from the scanned worlds, with how many the choice would show. */
+struct FAPSWorldFilterOption
+{
+	/** Empty for ANY. */
+	FString Key;
+	FText Label;
+	int32 Count{0};
+};
+
+enum class EAPSSettingsTab : uint8;
+
 class SAPSMainMenuRoot final : public SCompoundWidget
 {
 public:
@@ -89,9 +104,15 @@ public:
 	SLATE_END_ARGS()
 
 	SAPSMainMenuRoot();
+	virtual ~SAPSMainMenuRoot() override;
 	void Construct(const FArguments& InArgs);
 	virtual bool SupportsKeyboardFocus() const override { return true; }
+	/** Rio 06.10: the Observatory landing page's letter keys (C N W P S, Q twice, Enter). */
+	virtual FReply OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent) override;
 	void ApplyExistingWorldMetadata(const FString& SlotName, const UGameSave* Save);
+	/** Rio 06.10 checks (aps.Menu.Open, aps.Menu.ThemeShots): opens a page by name (Landing, NewWorld, Worlds, Settings,
+	 * Profile) and, for Settings, a tab (Video, Graphics, Audio, Interface). False for an unknown name. */
+	bool OpenPageByName(const FString& Page, const FString& Tab);
 
 #if WITH_DEV_AUTOMATION_TESTS
 	/** Opens and inspects the real Choose Your Path page for rendered UI tests. */
@@ -117,6 +138,17 @@ public:
 
 private:
 	void Navigate(EAPSMenuPage NewPage);
+	/** Rio 06.10: the button styles from the active interface theme (APSMenu::ApplyTheme first). */
+	void BuildButtonStyles();
+	/** Rio 06.10: a theme switch (SETTINGS / INTERFACE) recolours the menu at once: palette, styles, this page. */
+	void HandleThemeChanged();
+	void RebuildCurrentPage();
+	FDelegateHandle ThemeChangedHandle;
+	/** Rio 06.10: SINGLE GAME's maps as a grid of cards with a rendered preview (Content/Slate/MapPreviews). */
+	TSharedRef<SWidget> BuildAuthoredMapGrid();
+	TSharedPtr<FSlateBrush> MapPreviewBrush;
+	/** Rio 06.10: the SETTINGS page's open tab, kept while a theme switch rebuilds the page. */
+	EAPSSettingsTab SettingsTab{};
 	TSharedRef<SWidget> BuildLandingPage();
 	TSharedRef<SWidget> BuildChoosePathPage();
 	TSharedRef<SWidget> BuildExistingWorldsPage();
@@ -127,10 +159,13 @@ private:
 		TSoftClassPtr<UUserWidget>& WidgetClass, TWeakObjectPtr<UUserWidget>& WidgetInstance,
 		const FText& LoadingText);
 	TSharedRef<SWidget> BuildHeader(const FText& SectionTitle, bool bShowBack = true);
-	TSharedRef<SWidget> BuildPathCard(const FText& Title, const FText& Description,
-		EAPSPathVisual Visual, const FLinearColor& Accent, FSimpleDelegate Action,
-		bool bLarge = false, bool bEnabled = true);
 	TSharedRef<SWidget> BuildSpawnCard(EAPSStartAssetSlot Slot, const FText& Label);
+	/** Rio 06.10: a card's classes as a grid of large cards over the page (the CLASS button opens it, Esc closes). */
+	void OpenSpawnPicker(EAPSStartAssetSlot Slot);
+	void CloseSpawnPicker();
+	TSharedRef<SWidget> BuildSpawnPicker(EAPSStartAssetSlot Slot);
+	TSharedPtr<SBox> SpawnPickerHost;
+	bool bSpawnPickerOpen{false};
 
 	void LoadVisualResources();
 	void BeginAuxiliaryMenuLoad();
@@ -142,9 +177,38 @@ private:
 		float InDeltaTime) override;
 	void RebuildExistingWorldGrid();
 	void RebuildExistingWorldDetails();
-	const FSlateBrush* GetExistingWorldImage(const FAPSExistingWorldEntry& Entry) const;
+	/** Rio 03.10: the confirmation modal of DELETE WORLD, shown over the browser while PendingDeleteWorld is set. */
+	TSharedRef<SWidget> BuildDeleteWorldDialog();
+	/** False for non-world slots and for a world a running game holds (OutReason says why). */
+	bool CanDeleteExistingWorld(const FAPSExistingWorldEntry& Entry, FText* OutReason = nullptr) const;
+	/** A load of the slot being handed to gameplay here, or another game world in this process playing it. */
+	bool IsWorldSlotInUse(const FString& SlotName) const;
+	FReply RequestDeleteExistingWorld();
+	FReply CancelDeleteExistingWorld();
+	FReply ConfirmDeleteExistingWorld();
+	/** Removes one world's save and sidecar (the in-use and non-world checks first); OutFailure says why not. */
+	bool DeleteWorldFiles(const FAPSExistingWorldEntry& Entry, FString& OutFailure, bool bLogEach);
+	/** Rio 03.10: DELETE ALL removes every world the collection, search and filters list (ListedWorlds), after a
+	 * confirmation whose button arms only after a countdown. */
+	TSharedRef<SWidget> BuildDeleteAllDialog();
+	FReply RequestDeleteListedWorlds();
+	FReply CancelDeleteListedWorlds();
+	FReply ConfirmDeleteListedWorlds();
 	void BeginExistingWorldMetadataLoad();
+	/** Collection, search and every filter. */
 	bool PassesExistingWorldFilters(const FAPSExistingWorldEntry& Entry) const;
+	bool PassesWorldCollectionAndSearch(const FAPSExistingWorldEntry& Entry) const;
+	bool MatchesWorldFilter(const FAPSExistingWorldEntry& Entry, EAPSWorldFilterKind Kind) const;
+	/** True when the collection, the search or a filter narrows the list. */
+	bool HasWorldNarrowing() const;
+	/** Rebuilds the options of every filter from the scanned worlds, counted under the other filters. */
+	void RebuildWorldFilterOptions();
+	/** Grid, then the selection (dropped if no longer listed), then the details. */
+	void ApplyExistingWorldView();
+	TSharedRef<SWidget> BuildWorldFilterMenu(EAPSWorldFilterKind Kind);
+	FReply ToggleWorldFilterMenu(EAPSWorldFilterKind Kind);
+	FReply SelectWorldFilter(EAPSWorldFilterKind Kind, FString Key);
+	FReply ClearWorldFilters();
 	FText GetWorldCollectionLabel(EAPSWorldCollection Collection) const;
 	FText GetWorldSortLabel() const;
 	FText GetWorldFilterLabel(EAPSWorldFilterKind Kind) const;
@@ -165,6 +229,13 @@ private:
 
 	FReply Back();
 	FReply OpenChoosePath();
+	/** CONTINUE: opens the newest world (LatestWorld). */
+	FReply ContinueLatestWorld();
+	/** NEW WORLD: picks a path card (PLANET is not ready and is never picked), and runs the picked path. */
+	FReply PickNewWorldPath(EAPSNewWorldPath Path);
+	FReply RunNewWorldPath();
+	bool IsSplashVisible() const;
+	EActiveTimerReturnType TickSplash(double InCurrentTime, float InDeltaTime);
 	FReply StartSingleGame();
 	FReply OpenExistingWorlds();
 	FReply OpenAstronomicalGeneration(EAstroPreviewFocus Focus, EAPSGenerationRoute Route);
@@ -179,7 +250,6 @@ private:
 	FReply SetWorldCollection(EAPSWorldCollection Collection);
 	FReply CycleWorldSort();
 	FReply ToggleWorldView();
-	FReply CycleWorldFilter(EAPSWorldFilterKind Kind);
 	FReply ToggleWorldFavorite(TSharedPtr<FAPSExistingWorldEntry> Entry);
 	FReply ToggleWorldDetails();
 	FReply QuitGame();
@@ -198,11 +268,35 @@ private:
 	TSharedPtr<SBox> ExistingWorldDetailsHost;
 	TArray<TSharedPtr<FAPSExistingWorldEntry>> ExistingWorlds;
 	TSharedPtr<FAPSExistingWorldEntry> SelectedWorld;
+	/** Rio 06.10: the newest world, CONTINUE's target; set whenever the landing page is built. */
+	TSharedPtr<FAPSExistingWorldEntry> LatestWorld;
+	/** The start-up title screen over the menu, and its lift (TickSplash). */
+	TSharedPtr<SWidget> Splash;
+	double SplashShownAt{-1.0};
+	double SplashLiftStarted{-1.0};
+	int32 SplashCalmFrames{0};
+	/** The landing page's Q: the first press arms it, a second one before this time quits. */
+	double QuitArmedUntil{0.0};
+	/** NEW WORLD's picked path, kept while the menu stays open. */
+	EAPSNewWorldPath NewWorldPath{EAPSNewWorldPath::Civilization};
+	/** The world the delete confirmation asks about; the modal is open while it is set. */
+	TSharedPtr<FAPSExistingWorldEntry> PendingDeleteWorld;
+	/** One line in the details panel: "... was deleted", or why a deletion failed; cleared by the next selection. */
+	FText WorldBrowserNotice;
+	/** The worlds DELETE ALL asks about; its modal is open while this is not empty. */
+	TArray<TSharedPtr<FAPSExistingWorldEntry>> PendingBulkDelete;
+	/** Application time at which the DELETE ALL confirmation arms. */
+	double BulkDeleteArmTime{0.0};
+	/** What the grid lists now: collection, search and filters applied, before paging. */
+	TArray<TSharedPtr<FAPSExistingWorldEntry>> ListedWorlds;
 	FString WorldSearch;
 	int32 ExistingWorldPage{0};
 	EAPSWorldCollection WorldCollection{EAPSWorldCollection::All};
 	EAPSWorldSortMode WorldSortMode{EAPSWorldSortMode::LastPlayed};
-	TMap<EAPSWorldFilterKind, int32> WorldFilterIndices;
+	/** The chosen option key of each filter; absent = ANY. Survives rescans. */
+	TMap<EAPSWorldFilterKind, FString> WorldFilterChoices;
+	TMap<EAPSWorldFilterKind, TArray<FAPSWorldFilterOption>> WorldFilterOptions;
+	TMap<EAPSWorldFilterKind, TSharedPtr<SMenuAnchor>> WorldFilterAnchors;
 	uint32 ExistingWorldDirectoryFingerprint{0};
 	double NextExistingWorldRefreshTime{0.0};
 	bool bShowTechnicalWorldDetails{false};
@@ -210,6 +304,9 @@ private:
 
 	TMap<EAPSStartAssetSlot, TArray<TSoftClassPtr<AActor>>> SpawnClassOptions;
 	TMap<EAPSStartAssetSlot, int32> SpawnClassIndices;
+	/** Option captions aligned with SpawnClassOptions, fixed when the list is built: loading a class while picking no
+	 * longer renames it or its twins (Rio 02.10). */
+	mutable TMap<EAPSStartAssetSlot, TArray<FText>> SpawnClassCaptions;
 	/** Baked Blueprint thumbnails aligned with SpawnClassOptions; null where none was baked. */
 	TMap<EAPSStartAssetSlot, TArray<TSharedPtr<FSlateBrush>>> SpawnClassThumbnails;
 	/** One brush per Blueprint package, so each thumbnail texture loads once. */
@@ -237,16 +334,17 @@ private:
 	FSlateBrush ClusterImage;
 	FSlateBrush CivilizationImage;
 	FSlateBrush BackgroundImage;
-	FSlateBrush WorldMultiPlanetImage;
-	FSlateBrush WorldSinglePlanetImage;
-	FSlateBrush WorldHabitableZoneImage;
-	FSlateBrush WorldGasGiantsImage;
-	FSlateBrush WorldNoPlanetsImage;
 
 	FButtonStyle PrimaryButtonStyle;
 	FButtonStyle SecondaryButtonStyle;
 	FButtonStyle CardButtonStyle;
 	FButtonStyle DisabledCardButtonStyle;
+	/** Secondary at rest, muted red under the pointer (DELETE WORLD). */
+	FButtonStyle DangerButtonStyle;
+	/** The confirmation's DELETE: red at rest. */
+	FButtonStyle DangerConfirmButtonStyle;
+	/** A row of a filter dropdown: bare at rest, lit under the pointer. */
+	FButtonStyle DropdownOptionStyle;
 	FScrollBarStyle ScrollBarStyle;
 
 #if WITH_DEV_AUTOMATION_TESTS

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "APSNativeTerrainMaterial.h"
-#include "HAL/IConsoleManager.h"
+#include "APSUnifiedLavaAssets.h"
 
 /** One native WorldScape shading stack for closed PLANET meshes and live terrain.
  * The graph consumes physical centimetres in a planet-fixed frame. Geometry may
@@ -10,13 +10,6 @@
  */
 namespace APSSharedTerrainMaterial
 {
-    inline bool AllowsLegacyDiagnosticFallback()
-    {
-        const IConsoleVariable* Variable = IConsoleManager::Get().FindConsoleVariable(
-            TEXT("aps.Surface.SharedTerrainLegacyDiagnosticFallback"));
-        return Variable && Variable->GetInt() != 0;
-    }
-
     inline bool IsGeneratedCatalogStack(UMaterialInterface* Material)
     {
         const UMaterial* Master = IsValid(Material) ? Material->GetMaterial() : nullptr;
@@ -40,7 +33,47 @@ namespace APSSharedTerrainMaterial
     {
         const UMaterial* Master = IsValid(Material) ? Material->GetMaterial() : nullptr;
         return IsValid(Master) && (Master->GetPathName() == MasterPath()
-            || Master->GetPathName() == TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/UnifiedLava/M_APS_UnifiedLavaSurface.M_APS_UnifiedLavaSurface"));
+            || Master->GetPathName() == APSTerrainContinuityMaterial::MasterPath
+            || Master->GetPathName() == TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/UnifiedLava/M_APS_UnifiedLavaSurface.M_APS_UnifiedLavaSurface")
+            || (APSUnifiedLavaAssets::DetailCandidate()
+                && Master->GetPathName() == APSUnifiedLavaAssets::MasterPath()));
+    }
+
+    inline bool IsStockGeneratedTemplate(UMaterialInstance* Material)
+    {
+        if (!IsValid(Material)) return false;
+        const FString Path = Material->GetPathName();
+        // Exact stock assets only: a bespoke instance of the same master keeps
+        // its authored overrides and must not be reparented by this migration.
+        for (const TCHAR* Family : {TEXT("Rocky"), TEXT("Temperate"), TEXT("Oceanic"), TEXT("Biosphere"),
+            TEXT("Desert"), TEXT("Cryogenic"), TEXT("Magmatic"), TEXT("Metallic"), TEXT("ExoticChemical")})
+        {
+            if (Path == FString::Printf(TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Materials/MI_APS_WS_%s.MI_APS_WS_%s"), Family, Family))
+                return true;
+        }
+        return Path == TemplatePath(EAPSPlanetSurfaceArchetype::Rocky)
+            || Path == TemplatePath(EAPSPlanetSurfaceArchetype::Magmatic)
+            || Path == APSTerrainContinuityMaterial::TemplatePath
+            || Path == APSUnifiedLavaAssets::TemplatePath();
+    }
+
+    inline const TCHAR* TemplatePath(const FAPSResolvedPlanetSurfaceProfile& Profile)
+    {
+        return APSTerrainContinuityMaterial::Enabled() && APSTerrainContinuityMaterial::Allows(Profile.PlanetType)
+            && Profile.Archetype != EAPSPlanetSurfaceArchetype::Magmatic
+            ? APSPlanetSurfaceMaterialPolicy::SelectedContinuousTemplatePath(Profile.PlanetType)
+            : TemplatePath(Profile.Archetype);
+    }
+
+    inline bool IsExactTemplate(UMaterialInstance* Material,
+        const FAPSResolvedPlanetSurfaceProfile& Profile)
+    {
+        const bool bContinuous = APSTerrainContinuityMaterial::Allows(Profile.PlanetType)
+            && Profile.Archetype != EAPSPlanetSurfaceArchetype::Magmatic;
+        return IsValid(Material) && Material->GetPathName() == TemplatePath(Profile)
+            && IsValid(Material->GetMaterial())
+            && Material->GetMaterial()->GetPathName() == (bContinuous
+                ? APSTerrainContinuityMaterial::MasterPath : MasterPath());
     }
 
     // Called only through an exact stack-specific guard.
@@ -123,8 +156,8 @@ namespace APSSharedTerrainMaterial
             {
                 WriteFrame(WeakMaterial.Get(), Updated, PresentationScale);
             });
-        FCoreDelegates::PostWorldOriginOffset.AddWeakLambda(Material,
-            [WeakMaterial, WeakRoot, PresentationScale](UWorld* World, FIntVector, FIntVector)
+        APSWorldShiftEvents::BindPostShift(Material,
+            [WeakMaterial, WeakRoot, PresentationScale](UWorld* World)
             {
                 USceneComponent* Root = WeakRoot.Get();
                 if (IsValid(Root) && Root->GetWorld() == World)
@@ -138,8 +171,8 @@ namespace APSSharedTerrainMaterial
         USceneComponent* PlanetRoot, double PresentationScale)
     {
         UMaterialInstance* Template = LoadObject<UMaterialInstance>(nullptr,
-            TemplatePath(Profile.Archetype));
-        if (!IsSharedStack(Template)) return nullptr;
+            TemplatePath(Profile));
+        if (!IsExactTemplate(Template, Profile)) return nullptr;
         UMaterialInstanceDynamic* Result = UMaterialInstanceDynamic::Create(Template, Outer);
         if (!IsValid(Result)) return nullptr;
         APSNativeTerrainMaterial::ApplyPalette(Result, Profile);

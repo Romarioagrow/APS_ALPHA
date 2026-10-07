@@ -1,0 +1,182 @@
+// Rio 03.10 (galaxy phase 3): shared helpers of the GPU star renderer (points, composite, glow).
+// HLSL 2018 and 2021 compatible: no vector && / || / ?: (scalar only).
+
+#pragma once
+
+#include "/Engine/Private/Common.ush"
+
+// Matches APSStarRenderer::DecodeIntensity: I = 2^((Code - 128) / 8); code 0 is dark.
+float ApsDecodeIntensity(uint Code)
+{
+	return Code == 0u ? 0.0 : exp2((float(Code) - 128.0) * 0.125);
+}
+
+// 32-bit pixel key, max-ordered by brightness:
+// [31..16] log2 brightness (1/1024 stop, offset 32 stops), [15..12] sub-pixel x, [11..8] sub-pixel y, [7..0] colour.
+uint ApsEncodeKey32(float Brightness, float2 Sub, uint ColorIndex)
+{
+	const float LogCode = clamp((log2(max(Brightness, 1.0e-9)) + 32.0) * 1024.0, 1.0, 65535.0);
+	const uint SubX = min(uint(saturate(Sub.x) * 16.0), 15u);
+	const uint SubY = min(uint(saturate(Sub.y) * 16.0), 15u);
+	return (uint(LogCode) << 16) | (SubX << 12) | (SubY << 8) | (ColorIndex & 0xFFu);
+}
+
+void ApsDecodeKey32(uint Key, out float Brightness, out float2 Sub, out uint ColorIndex)
+{
+	Brightness = Key == 0u ? 0.0 : exp2(float(Key >> 16) * (1.0 / 1024.0) - 32.0);
+	Sub = (float2(float((Key >> 12) & 15u), float((Key >> 8) & 15u)) + 0.5) * (1.0 / 16.0);
+	ColorIndex = Key & 0xFFu;
+}
+
+// 64-bit pixel key as uint2(low, high) for PackUlongType: high = float bits of the (positive) brightness,
+// low = [31..24] sub-pixel x, [23..16] sub-pixel y, [15..8] colour, [7..0] unused.
+uint2 ApsEncodeKey64(float Brightness, float2 Sub, uint ColorIndex)
+{
+	const uint SubX = min(uint(saturate(Sub.x) * 256.0), 255u);
+	const uint SubY = min(uint(saturate(Sub.y) * 256.0), 255u);
+	return uint2((SubX << 24) | (SubY << 16) | ((ColorIndex & 0xFFu) << 8), asuint(max(Brightness, 0.0)));
+}
+
+void ApsDecodeKey64(uint2 Key, out float Brightness, out float2 Sub, out uint ColorIndex)
+{
+	Brightness = asfloat(Key.y);
+	Sub = (float2(float((Key.x >> 24) & 0xFFu), float((Key.x >> 16) & 0xFFu)) + 0.5) * (1.0 / 256.0);
+	ColorIndex = (Key.x >> 8) & 0xFFu;
+}
+
+// Normal CDF, smooth tanh fit (error ~1e-3); the argument is clamped so tanh never sees inf.
+float ApsPhi(float X)
+{
+	const float A = clamp(0.7978845608 * (X + 0.044715 * X * X * X), -12.0, 12.0);
+	return 0.5 + 0.5 * tanh(A);
+}
+
+// Share of a unit Gaussian (sigma in pixels) that lands in the pixel whose centre is D away.
+float ApsPixelGaussian(float D, float Sigma)
+{
+	const float InvSigma = 1.0 / max(Sigma, 0.05);
+	return ApsPhi((D + 0.5) * InvSigma) - ApsPhi((D - 0.5) * InvSigma);
+}
+
+// Energy-conserving point spread: a tight core plus a brightness-dependent halo, integrated over the pixel,
+// so a star moving by a fraction of a pixel keeps its total light (no crawl).
+float ApsStarPsf(float2 D, float CoreSigma, float HaloSigma, float HaloWeight)
+{
+	const float Core = ApsPixelGaussian(D.x, CoreSigma) * ApsPixelGaussian(D.y, CoreSigma);
+	const float Halo = ApsPixelGaussian(D.x, HaloSigma) * ApsPixelGaussian(D.y, HaloSigma);
+	return lerp(Core, Halo, HaloWeight);
+}
+
+// Integral over one ray segment of the normalised Laplace profile exp(-|u|/H) / (2H), where the height u
+// runs linearly from Ua to Ub over Length. Exact, so thin disks and dust lanes do not alias between steps.
+float ApsLaplaceSegment(float Ua, float Ub, float H, float Length)
+{
+	const float Du = Ub - Ua;
+	if (abs(Du) < 1.0e-3 * H)
+	{
+		const float Um = 0.5 * (Ua + Ub);
+		return exp(-abs(Um) / H) / (2.0 * H) * Length;
+	}
+	const float Fa = 0.5 * sign(Ua) * (1.0 - exp(-abs(Ua) / H));
+	const float Fb = 0.5 * sign(Ub) * (1.0 - exp(-abs(Ub) / H));
+	return (Fb - Fa) / Du * Length;
+}
+
+// Same for a normalised Gaussian of standard deviation Sigma.
+float ApsGaussSegment(float Ua, float Ub, float Sigma, float Length)
+{
+	const float Du = Ub - Ua;
+	if (abs(Du) < 1.0e-3 * Sigma)
+	{
+		const float Um = 0.5 * (Ua + Ub) / Sigma;
+		return exp(-0.5 * Um * Um) * (0.3989422804 / Sigma) * Length;
+	}
+	return (ApsPhi(Ub / Sigma) - ApsPhi(Ua / Sigma)) / Du * Length;
+}
+
+// Same for a flat slab with the variance Sigma^2 (half width sqrt(3) Sigma).
+float ApsUniformSegment(float Ua, float Ub, float Sigma, float Length)
+{
+	const float HalfWidth = 1.7320508 * Sigma;
+	const float Du = Ub - Ua;
+	if (abs(Du) < 1.0e-3 * Sigma)
+	{
+		return abs(0.5 * (Ua + Ub)) < HalfWidth ? Length / (2.0 * HalfWidth) : 0.0;
+	}
+	const float Fa = clamp(Ua / (2.0 * HalfWidth), -0.5, 0.5);
+	const float Fb = clamp(Ub / (2.0 * HalfWidth), -0.5, 0.5);
+	return (Fb - Fa) / Du * Length;
+}
+
+// Thin (disk) profile with variance Sigma^2: Shape -1 exponential, 0 Gaussian, +1 flat slab. Mixtures of
+// equal-variance profiles keep the variance, and E|u| / Sigma is linear in the weight (how the builder fits it).
+float ApsThinSegment(float Ua, float Ub, float Sigma, float Shape, float Length)
+{
+	const float LaplaceWeight = saturate(-Shape);
+	const float UniformWeight = saturate(Shape);
+	float Result = (1.0 - LaplaceWeight - UniformWeight) * ApsGaussSegment(Ua, Ub, Sigma, Length);
+	if (LaplaceWeight > 0.0)
+	{
+		Result += LaplaceWeight * ApsLaplaceSegment(Ua, Ub, Sigma * 0.70710678, Length);
+	}
+	if (UniformWeight > 0.0)
+	{
+		Result += UniformWeight * ApsUniformSegment(Ua, Ub, Sigma, Length);
+	}
+	return Result;
+}
+
+// Slab test; returns (enter, exit) along Dir (unit or not), exit < enter when missed.
+float2 ApsRayBox(float3 Origin, float3 Dir, float3 BoxMin, float3 BoxMax)
+{
+	float3 SafeDir;
+	SafeDir.x = abs(Dir.x) > 1.0e-12 ? Dir.x : 1.0e-12;
+	SafeDir.y = abs(Dir.y) > 1.0e-12 ? Dir.y : 1.0e-12;
+	SafeDir.z = abs(Dir.z) > 1.0e-12 ? Dir.z : 1.0e-12;
+	const float3 InvDir = 1.0 / SafeDir;
+	const float3 T0 = (BoxMin - Origin) * InvDir;
+	const float3 T1 = (BoxMax - Origin) * InvDir;
+	const float3 TNear = min(T0, T1);
+	const float3 TFar = max(T0, T1);
+	return float2(max(max(TNear.x, TNear.y), TNear.z), min(min(TFar.x, TFar.y), TFar.z));
+}
+
+// Rio 04.10 ("the character's outline and the horizon ripple against the stars"): the scene depth under a viewport point
+// at render resolution, the nearest surface (reverse Z: the largest device Z) of the 3x3 render pixels around it. A star
+// beside a silhouette then stays hidden whichever way the frame's sub-pixel jitter moved that edge.
+float ApsNearestDeviceZ(Texture2D DepthTexture, uint4 DepthRect, float2 ViewportUV)
+{
+	const float2 DepthPixelF = float2(DepthRect.xy) + ViewportUV * float2(DepthRect.zw);
+	const int2 Lowest = int2(DepthRect.xy);
+	const int2 Highest = int2(DepthRect.xy + DepthRect.zw) - int2(1, 1);
+	const int2 Centre = int2(floor(DepthPixelF));
+	float Nearest = 0.0;
+	UNROLL
+	for (int Dy = -1; Dy <= 1; ++Dy)
+	{
+		UNROLL
+		for (int Dx = -1; Dx <= 1; ++Dx)
+		{
+			const int2 Pixel = clamp(Centre + int2(Dx, Dy), Lowest, Highest);
+			Nearest = max(Nearest, DepthTexture.Load(int3(Pixel, 0)).r);
+		}
+	}
+	return Nearest;
+}
+
+// The scene depth of the one render pixel under a viewport point.
+float ApsSceneDeviceZ(Texture2D DepthTexture, uint4 DepthRect, float2 ViewportUV)
+{
+	const float2 DepthPixelF = float2(DepthRect.xy) + ViewportUV * float2(DepthRect.zw);
+	const int2 Pixel = clamp(int2(floor(DepthPixelF)), int2(DepthRect.xy), int2(DepthRect.xy + DepthRect.zw) - int2(1, 1));
+	return DepthTexture.Load(int3(Pixel, 0)).r;
+}
+
+// Render-space position of a local point under the observer far envelope (FFarEnvelope).
+// Directions from the observer are exact; only the distance is compressed.
+float3 ApsPresentPosition(float3 Rel, float Dist, float4x4 LocalRotation, float CompressA, float CompressB,
+	float3 ObserverTranslated)
+{
+	const float RenderScale = CompressA / (1.0 + CompressB * Dist);
+	return ObserverTranslated + mul(Rel, (float3x3)LocalRotation) * RenderScale;
+}

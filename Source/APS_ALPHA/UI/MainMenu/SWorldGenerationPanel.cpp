@@ -1,7 +1,11 @@
 #include "SWorldGenerationPanel.h"
+#include "APS_ALPHA/UI/Style/APSUINumber.h"
 #include "SAPSChamferedOverlay.h"
 #include "APSPreviewAnnotationLayout.h"
+#include "APSGenerationModelCard.h"
+#include "APS_ALPHA/Actors/Astro/APSBodyDesignation.h"
 #include "APSAtmosphereColorControl.h"
+#include "APSAtmosphereControlBounds.h"
 #include "ProfilingDebugging/CsvProfiler.h"
 
 CSV_DECLARE_CATEGORY_EXTERN(APSPreview);
@@ -9,6 +13,7 @@ CSV_DECLARE_CATEGORY_EXTERN(APSPreview);
 #include "APS_ALPHA/Core/Enums/AstroGenerationLevel.h"
 #include "APS_ALPHA/Core/Enums/GalaxyClass.h"
 #include "APS_ALPHA/Core/Enums/GalaxyType.h"
+#include "APS_ALPHA/Generation/APSGalaxyMorphology.h"
 #include "APS_ALPHA/Core/Enums/OrbitDistributionType.h"
 #include "APS_ALPHA/Core/Enums/PlanetHabitability.h"
 #include "APS_ALPHA/Core/Enums/PlanetarySystemType.h"
@@ -26,8 +31,12 @@ CSV_DECLARE_CATEGORY_EXTERN(APSPreview);
 #include "APS_ALPHA/Actors/Astro/PlanetOrbit.h"
 #include "APS_ALPHA/Core/Rendering/APSPreviewVisibility.h"
 #include "APS_ALPHA/Actors/Astro/Star.h"
+#include "APS_ALPHA/Actors/Astro/StarSystem.h"
 #include "APS_ALPHA/UI/MainMenu/WorldGenerationViewModel.h"
 #include "APS_ALPHA/UI/Style/APSUIStyle.h"
+#include "APS_ALPHA/UI/Style/APSMenuChrome.h"
+#include "APS_ALPHA/UI/Style/APSSlateLineGuard.h"
+#include "APS_ALPHA/UI/Style/APSUITheme.h"
 #include "Engine/Font.h"
 #include "Fonts/FontMeasure.h"
 #include "Framework/Application/SlateApplication.h"
@@ -51,6 +60,7 @@ CSV_DECLARE_CATEGORY_EXTERN(APSPreview);
 #include "Widgets/Input/SSpinBox.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
+#include "Widgets/Layout/SGridPanel.h"
 #include "Widgets/Layout/SScrollBox.h"
 #include "Widgets/Layout/SWidgetSwitcher.h"
 #include "Widgets/SLeafWidget.h"
@@ -274,10 +284,14 @@ namespace APSGenerationUI
 			for (int32 Level = 0; Level < Depth; ++Level)
 			{
 				const float X = 7.0f + static_cast<float>(Level) * 14.0f;
-				FSlateDrawElement::MakeLines(OutDrawElements, LayerId, Geometry.ToPaintGeometry(),
-					TArray<FVector2D>{FVector2D(X, 0.0f), FVector2D(X, Size.Y)},
-					ESlateDrawEffect::None,
-					FLinearColor(DrawColor.R, DrawColor.G, DrawColor.B, 0.22f), true, 1.0f);
+				const TArray<FVector2D> BranchPoints{FVector2D(X, 0.0f), FVector2D(X, Size.Y)};
+				if (APSSlateLineGuard::IsDrawable(BranchPoints))
+				{
+					FSlateDrawElement::MakeLines(OutDrawElements, LayerId, Geometry.ToPaintGeometry(),
+						BranchPoints,
+						ESlateDrawEffect::None,
+						FLinearColor(DrawColor.R, DrawColor.G, DrawColor.B, 0.42f), true, 1.0f);
+				}
 			}
 			if (Depth > 0)
 			{
@@ -518,27 +532,45 @@ namespace APSGenerationUI
 	{
 		return FLinearColor::FromSRGBColor(FColor(R, G, B, A));
 	}
-	const FLinearColor Panel = SRGB(8, 32, 42, 238);
-	const FLinearColor Cyan = SRGB(67, 214, 236);
-	const FLinearColor CyanDim = SRGB(27, 83, 96, 176);
-	const FLinearColor Amber = SRGB(242, 181, 29);
-	const FLinearColor White = SRGB(234, 246, 248);
-	const FLinearColor SecondaryText = SRGB(145, 171, 178);
+	// Rio 06.10: the generation chrome follows the interface theme; ApplyTheme() (SWorldGenerationPanel::Construct)
+	// copies it in. The values below are Classic, the look until 06.10. Only colours and type change, no logic.
+	static FLinearColor Panel = SRGB(8, 32, 42, 238);
+	static FLinearColor Cyan = SRGB(67, 214, 236);
+	static FLinearColor CyanDim = SRGB(27, 83, 96, 176);
+	static FLinearColor Amber = SRGB(242, 181, 29);
+	static FLinearColor White = SRGB(234, 246, 248);
+	static FLinearColor SecondaryText = SRGB(145, 171, 178);
 	TWeakObjectPtr<UFont> DisplayFont;
 	TWeakObjectPtr<UFont> BodyFont;
-	const FSlateRoundedBoxBrush ControlBrush(FLinearColor(0.003f, 0.016f, 0.028f, 0.94f), 6.0f, CyanDim, 1.0f);
-	const FSlateRoundedBoxBrush BadgeBrush(FLinearColor(0.005f, 0.045f, 0.070f, 0.98f), 16.0f, Cyan, 1.0f);
-	const FLinearColor HierarchyRowFill(0.003f, 0.022f, 0.038f, 0.94f);
-	const FLinearColor HierarchyHoverFill(0.010f, 0.075f, 0.105f, 0.98f);
-	const FLinearColor HierarchyPressedFill(0.015f, 0.115f, 0.155f, 1.0f);
-	const FLinearColor SelectedFill(Amber.R, Amber.G, Amber.B, 0.12f);
+	static FSlateRoundedBoxBrush ControlBrush(FLinearColor(0.003f, 0.016f, 0.028f, 0.94f), 6.0f, CyanDim, 1.0f);
+	/** Designation chips (A7.02): a tighter corner than controls, so the text keeps clear room inside (Rio 02.10). */
+	static FSlateRoundedBoxBrush ChipBrush(FLinearColor(0.003f, 0.016f, 0.028f, 0.94f), 3.0f, CyanDim, 1.0f);
+	static FSlateRoundedBoxBrush BadgeBrush(FLinearColor(0.005f, 0.045f, 0.070f, 0.98f), 16.0f, Cyan, 1.0f);
+	static FLinearColor HierarchyRowFill(0.003f, 0.022f, 0.038f, 0.94f);
+	static FLinearColor HierarchyHoverFill(0.010f, 0.075f, 0.105f, 0.98f);
+	static FLinearColor HierarchyPressedFill(0.015f, 0.115f, 0.155f, 1.0f);
+	static FLinearColor SelectedFill(Amber.R, Amber.G, Amber.B, 0.22f);
+	static FLinearColor AncestorFill(Cyan.R, Cyan.G, Cyan.B, 0.08f);
 
 	FSlateFontInfo Font(const FName Typeface, int32 Size)
 	{
+		// Rio 06.10: Chakra Petch for bold labels, Exo 2 otherwise (aps.UI.LegacyFonts 1: Orbitron, Roboto).
+		if (!APSUITheme::UsesLegacyFonts())
+		{
+			return Typeface == TEXT("Bold") ? APSUITheme::DisplayFont(Typeface, Size) : APSUITheme::BodyFont(Typeface, Size);
+		}
 		if (!DisplayFont.IsValid())
 		{
 			DisplayFont = LoadObject<UFont>(nullptr, TEXT("/Game/APS/APS_ALPHA/UI/Fonts/Orbitron_Bold_Font.Orbitron_Bold_Font"));
 			BodyFont = LoadObject<UFont>(nullptr, TEXT("/Game/APS/APS_ALPHA/UI/Fonts/Orbitron_Medium_Font.Orbitron_Medium_Font"));
+			// Rooted like FAPSUIStyle's fonts: text blocks hold them as plain pointers GC never sees.
+			for (UFont* Loaded : {DisplayFont.Get(), BodyFont.Get()})
+			{
+				if (Loaded)
+				{
+					Loaded->AddToRoot();
+				}
+			}
 		}
 		if (Typeface == TEXT("Bold"))
 		{
@@ -553,40 +585,86 @@ namespace APSGenerationUI
 	FSlateFontInfo ReadableFont(const FName Typeface, int32 Size)
 	{
 		// Reserve the display face for branding and compact technical headings.
-		// Long descriptions, generated names and metadata need a neutral UI face.
-		return FCoreStyle::GetDefaultFontStyle(Typeface, Size);
+		// Long descriptions, generated names and metadata need a neutral UI face (Exo 2 since 06.10).
+		return APSUITheme::BodyFont(Typeface, Size);
 	}
 
-	FText CompactLabel(const FText& Text, const FSlateFontInfo& FontInfo)
+	/** Rio 03.10 ("everywhere the text strictly centred by height and width"): a label in a box sits by its capitals
+	 * (APSChrome::CapsCenterShift), a lone symbol ("<", ">", "+", "-") by its own middle line (SymbolCenterShift). */
+	TOptional<FSlateRenderTransform> CapsShift(const FName Typeface, const int32 Size)
 	{
-		const auto Measure = FSlateApplication::Get().GetRenderer()->GetFontMeasureService();
-		return FText::FromString(APSPreviewAnnotationLayout::ElideText(Text.ToString(),
-			APSPreviewAnnotationLayout::LabelSize().X - 12.0,
-			[&](const FString& Value) { return static_cast<double>(Measure->Measure(Value, FontInfo).X); }));
+		return APSChrome::CapsCenterShift(Font(Typeface, Size));
 	}
+
+	TOptional<FSlateRenderTransform> SymbolShift(const FName Typeface, const int32 Size)
+	{
+		return APSChrome::SymbolCenterShift(Font(Typeface, Size));
+	}
+
 
 	FButtonStyle MakeButtonStyle(const FLinearColor& Outline, const FLinearColor& Fill,
 		const FLinearColor& ActiveOutline, const FLinearColor& PressedFill)
 	{
 		return FButtonStyle()
 			.SetNormal(FSlateRoundedBoxBrush(Fill, 6.0f, Outline, 1.0f))
-			.SetHovered(FSlateRoundedBoxBrush(FLinearColor(Fill.R + 0.025f, Fill.G + 0.05f, Fill.B + 0.07f, 0.98f), 6.0f, ActiveOutline, 1.5f))
+			.SetHovered(FSlateRoundedBoxBrush(APSUITheme::Current() == EAPSUITheme::Classic
+				? FLinearColor(Fill.R + 0.025f, Fill.G + 0.05f, Fill.B + 0.07f, 0.98f)
+				: FMath::Lerp(Fill, ActiveOutline, 0.08f).CopyWithNewOpacity(0.98f), 6.0f, ActiveOutline, 1.5f))
 			.SetPressed(FSlateRoundedBoxBrush(PressedFill, 6.0f, ActiveOutline, 1.5f));
 	}
 
-	const FButtonStyle SecondaryButton = MakeButtonStyle(
-		CyanDim, FLinearColor(0.003f, 0.022f, 0.038f, 0.94f), Cyan,
-		FLinearColor(0.02f, 0.14f, 0.20f, 1.0f));
-	const FButtonStyle PrimaryButton = MakeButtonStyle(
-		Amber, FLinearColor(0.30f, 0.12f, 0.004f, 0.96f),
-		FLinearColor(1.0f, 0.76f, 0.18f, 1.0f), FLinearColor(0.52f, 0.22f, 0.006f, 1.0f));
-	const FButtonStyle HierarchyButton = FButtonStyle()
-		.SetNormal(FSlateRoundedBoxBrush(HierarchyRowFill, 5.0f, CyanDim, 1.0f))
-		.SetHovered(FSlateRoundedBoxBrush(HierarchyHoverFill, 5.0f, Cyan, 1.25f))
-		.SetPressed(FSlateRoundedBoxBrush(HierarchyPressedFill, 5.0f, Cyan, 1.5f))
-		.SetDisabled(FSlateRoundedBoxBrush(
-			FLinearColor(HierarchyRowFill.R, HierarchyRowFill.G, HierarchyRowFill.B, 0.55f),
-			5.0f, FLinearColor(CyanDim.R, CyanDim.G, CyanDim.B, 0.55f), 1.0f));
+	FButtonStyle MakeHierarchyButton()
+	{
+		return FButtonStyle()
+			.SetNormal(FSlateRoundedBoxBrush(HierarchyRowFill, 5.0f, CyanDim, 1.0f))
+			.SetHovered(FSlateRoundedBoxBrush(HierarchyHoverFill, 5.0f, Cyan, 1.25f))
+			.SetPressed(FSlateRoundedBoxBrush(HierarchyPressedFill, 5.0f, Cyan, 1.5f))
+			.SetDisabled(FSlateRoundedBoxBrush(
+				FLinearColor(HierarchyRowFill.R, HierarchyRowFill.G, HierarchyRowFill.B, 0.55f),
+				5.0f, FLinearColor(CyanDim.R, CyanDim.G, CyanDim.B, 0.55f), 1.0f));
+	}
+
+	// Rio 06.10 (audit: static-init order): built at module load these called APSUITheme::Current() in another unit before
+	// its statics were guaranteed to exist. ApplyTheme() in SWorldGenerationPanel::Construct fills all three on its first
+	// call (AppliedThemeRevision 0, APSUITheme::Revision() starts at 1), before any widget reads them.
+	static FButtonStyle SecondaryButton;
+	static FButtonStyle PrimaryButton;
+	static FButtonStyle HierarchyButton;
+	static uint32 AppliedThemeRevision = 0;
+
+	/** Rio 06.10: copies the active interface theme into the palette, brushes and button styles above. */
+	void ApplyTheme()
+	{
+		if (AppliedThemeRevision == APSUITheme::Revision())
+		{
+			return;
+		}
+		AppliedThemeRevision = APSUITheme::Revision();
+		using APSUITheme::Retint;
+		using APSUITheme::RetintAction;
+		const FAPSUIThemePalette& P = APSUITheme::Palette();
+		const bool bClassic = APSUITheme::Current() == EAPSUITheme::Classic;
+		Panel = bClassic ? SRGB(8, 32, 42, 238) : P.Panel.CopyWithNewOpacity(238.0f / 255.0f);
+		Cyan = P.Highlight;
+		CyanDim = bClassic ? SRGB(27, 83, 96, 176) : APSUITheme::Fade(P.Frame, 176.0f / 178.0f);
+		Amber = P.Action;
+		White = P.Text;
+		SecondaryText = bClassic ? SRGB(145, 171, 178) : FMath::Lerp(P.TextQuiet, P.TextSoft, 0.4f);
+		ControlBrush = FSlateRoundedBoxBrush(Retint(FLinearColor(0.003f, 0.016f, 0.028f, 0.94f)), 6.0f, CyanDim, 1.0f);
+		ChipBrush = FSlateRoundedBoxBrush(Retint(FLinearColor(0.003f, 0.016f, 0.028f, 0.94f)), 3.0f, CyanDim, 1.0f);
+		BadgeBrush = FSlateRoundedBoxBrush(bClassic ? FLinearColor(0.005f, 0.045f, 0.070f, 0.98f) : P.HighlightFill, 16.0f, Cyan, 1.0f);
+		HierarchyRowFill = Retint(FLinearColor(0.003f, 0.022f, 0.038f, 0.94f));
+		HierarchyHoverFill = Retint(FLinearColor(0.010f, 0.075f, 0.105f, 0.98f));
+		HierarchyPressedFill = Retint(FLinearColor(0.015f, 0.115f, 0.155f, 1.0f));
+		SelectedFill = FLinearColor(Amber.R, Amber.G, Amber.B, 0.22f);
+		AncestorFill = FLinearColor(Cyan.R, Cyan.G, Cyan.B, 0.08f);
+		SecondaryButton = MakeButtonStyle(CyanDim, Retint(FLinearColor(0.003f, 0.022f, 0.038f, 0.94f)), Cyan,
+			Retint(FLinearColor(0.02f, 0.14f, 0.20f, 1.0f)));
+		PrimaryButton = MakeButtonStyle(Amber, bClassic ? FLinearColor(0.30f, 0.12f, 0.004f, 0.96f) : P.ActionFill,
+			bClassic ? FLinearColor(1.0f, 0.76f, 0.18f, 1.0f) : P.ActionBright,
+			bClassic ? FLinearColor(0.52f, 0.22f, 0.006f, 1.0f) : FMath::Lerp(P.ActionFill, P.Action, 0.35f).CopyWithNewOpacity(1.0f));
+		HierarchyButton = MakeHierarchyButton();
+	}
 
 	TSharedRef<SWidget> ChamferPanel(TSharedRef<SWidget> Content)
 	{
@@ -623,6 +701,9 @@ namespace APSGenerationUI
 			const int64 Value = Enum->GetValueByIndex(Index);
 			if (Enum == StaticEnum<EPlanetType>()
 				&& !APSPlanetTypes::IsSelectable(static_cast<EPlanetType>(Value))) continue;
+			// Rio 02.10: the remnants are stellar types; a star's class list does not offer theirs.
+			if (Enum == StaticEnum<ESpectralClass>() && (Value == static_cast<int64>(ESpectralClass::BH)
+				|| Value == static_cast<int64>(ESpectralClass::NS) || Value == static_cast<int64>(ESpectralClass::PS))) continue;
 			Values.Add(Value);
 		}
 		return Values;
@@ -734,7 +815,7 @@ namespace APSGenerationUI
 								return FReply::Handled();
 							})
 							[SNew(STextBlock).Text(FText::FromString(TEXT("<")))
-							.Justification(ETextJustify::Center).Font(Font("Bold", 12)).ColorAndOpacity(Cyan)]
+							.Justification(ETextJustify::Center).Font(Font("Bold", 12)).ColorAndOpacity(Cyan).RenderTransform(SymbolShift("Bold", 12))]
 						]
 					]
 					+ SHorizontalBox::Slot().FillWidth(1.0f).HAlign(HAlign_Center).VAlign(VAlign_Center)
@@ -742,7 +823,7 @@ namespace APSGenerationUI
 						SNew(STextBlock).Text_Lambda(ValueText).ToolTipText_Lambda(ValueText)
 						.OverflowPolicy(ETextOverflowPolicy::Ellipsis)
 						.Justification(ETextJustify::Center)
-						.Font(Font("Bold", 11)).ColorAndOpacity(White)
+						.Font(Font("Bold", 11)).ColorAndOpacity(White).RenderTransform(CapsShift("Bold", 11))
 					]
 					+ SHorizontalBox::Slot().AutoWidth()
 					[
@@ -757,7 +838,7 @@ namespace APSGenerationUI
 								return FReply::Handled();
 							})
 							[SNew(STextBlock).Text(FText::FromString(TEXT(">")))
-							.Justification(ETextJustify::Center).Font(Font("Bold", 12)).ColorAndOpacity(Cyan)]
+							.Justification(ETextJustify::Center).Font(Font("Bold", 12)).ColorAndOpacity(Cyan).RenderTransform(SymbolShift("Bold", 12))]
 						]
 					]
 				]
@@ -784,19 +865,23 @@ namespace APSGenerationUI
 					SNew(SBorder).BorderImage(&BadgeBrush).Padding(0.0f)
 					.HAlign(HAlign_Center).VAlign(VAlign_Center)
 					[SNew(STextBlock).Text(Glyph).Justification(ETextJustify::Center)
-					.Font(Font("Bold", 8)).ColorAndOpacity(Cyan)]
+					.Font(Font("Bold", 8)).ColorAndOpacity(Cyan).RenderTransform(CapsShift("Bold", 8))]
 				]
 			]
 			+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center).Padding(10.0f, 0.0f)
-			[SNew(STextBlock).Text(Text).Font(Font("Bold", 16)).ColorAndOpacity(Cyan)]
+			[SNew(STextBlock).Text(Text).Font(Font("Bold", 16)).ColorAndOpacity(Cyan).RenderTransform(CapsShift("Bold", 16))]
 		]
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)
 		[SNew(SBox).HeightOverride(1.0f)[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(CyanDim)]];
 	}
 
 	template <typename TEnum, typename TGetter>
-	TSharedRef<SWidget> EnumRow(const FText& Label, TWeakObjectPtr<UWorldGenerationViewModel> ViewModel, TGetter Getter)
+	TSharedRef<SWidget> EnumRow(const FText& Label, TWeakObjectPtr<UWorldGenerationViewModel> ViewModel, TGetter Getter,
+		TFunction<TArray<int64>(const UGeneratedWorld*)> ValuesGetter = {},
+		TFunction<void(UWorldGenerationViewModel*, int32)> Setter = {})
 	{
+		// Rio 03.10: ValuesGetter narrows the cycle to a model-dependent list (galaxy CLASS per TYPE); Setter writes a
+		// field that SetEnumValue cannot address (the galaxy's POPULATION/COMPOSITION share the cluster's enum types).
 		const UEnum* Enum = StaticEnum<TEnum>();
 		const auto ValueText = [ViewModel, Getter, Enum]()
 		{
@@ -826,24 +911,26 @@ namespace APSGenerationUI
 						SNew(SButton).ContentPadding(0.0f)
 						.HAlign(HAlign_Center).VAlign(VAlign_Center)
 						.ButtonStyle(&SecondaryButton)
-						.OnClicked_Lambda([ViewModel, Getter, Enum]()
+						.OnClicked_Lambda([ViewModel, Getter, Enum, ValuesGetter, Setter]()
 						{
 							if (UWorldGenerationViewModel* VM = ViewModel.Get(); VM && VM->GeneratedWorld && Enum)
 							{
-								const TArray<int64> Values = GetSelectableEnumValues(Enum);
+								const TArray<int64> Values = ValuesGetter
+									? ValuesGetter(VM->GeneratedWorld) : GetSelectableEnumValues(Enum);
 								if (!Values.IsEmpty())
 								{
 									const int64 Current = static_cast<int64>(Getter(VM->GeneratedWorld));
 									const int32 CurrentIndex = Values.IndexOfByKey(Current);
 									const int32 NewIndex = CurrentIndex == INDEX_NONE
 										? Values.Num() - 1 : (CurrentIndex - 1 + Values.Num()) % Values.Num();
-									VM->SetEnumValue(Enum, static_cast<int32>(Values[NewIndex]));
+									if (Setter) Setter(VM, static_cast<int32>(Values[NewIndex]));
+									else VM->SetEnumValue(Enum, static_cast<int32>(Values[NewIndex]));
 								}
 							}
 							return FReply::Handled();
 						})
 						[SNew(STextBlock).Text(FText::FromString(TEXT("<")))
-						.Justification(ETextJustify::Center).Font(Font("Bold", 12)).ColorAndOpacity(Cyan)]
+						.Justification(ETextJustify::Center).Font(Font("Bold", 12)).ColorAndOpacity(Cyan).RenderTransform(SymbolShift("Bold", 12))]
 					]
 				]
 				+ SHorizontalBox::Slot().FillWidth(1.0f).HAlign(HAlign_Center).VAlign(VAlign_Center)
@@ -852,7 +939,7 @@ namespace APSGenerationUI
 					.Text_Lambda(ValueText).ToolTipText_Lambda(ValueText)
 					.OverflowPolicy(ETextOverflowPolicy::Ellipsis)
 					.Justification(ETextJustify::Center)
-					.Font(Font("Bold", 11)).ColorAndOpacity(White)
+					.Font(Font("Bold", 11)).ColorAndOpacity(White).RenderTransform(CapsShift("Bold", 11))
 				]
 				+ SHorizontalBox::Slot().AutoWidth()
 				[
@@ -862,24 +949,26 @@ namespace APSGenerationUI
 						SNew(SButton).ContentPadding(0.0f)
 						.HAlign(HAlign_Center).VAlign(VAlign_Center)
 						.ButtonStyle(&SecondaryButton)
-						.OnClicked_Lambda([ViewModel, Getter, Enum]()
+						.OnClicked_Lambda([ViewModel, Getter, Enum, ValuesGetter, Setter]()
 						{
 							if (UWorldGenerationViewModel* VM = ViewModel.Get(); VM && VM->GeneratedWorld && Enum)
 							{
-								const TArray<int64> Values = GetSelectableEnumValues(Enum);
+								const TArray<int64> Values = ValuesGetter
+									? ValuesGetter(VM->GeneratedWorld) : GetSelectableEnumValues(Enum);
 								if (!Values.IsEmpty())
 								{
 									const int64 Current = static_cast<int64>(Getter(VM->GeneratedWorld));
 									const int32 CurrentIndex = Values.IndexOfByKey(Current);
 									const int32 NewIndex = CurrentIndex == INDEX_NONE
 										? 0 : (CurrentIndex + 1) % Values.Num();
-									VM->SetEnumValue(Enum, static_cast<int32>(Values[NewIndex]));
+									if (Setter) Setter(VM, static_cast<int32>(Values[NewIndex]));
+									else VM->SetEnumValue(Enum, static_cast<int32>(Values[NewIndex]));
 								}
 							}
 							return FReply::Handled();
 						})
 						[SNew(STextBlock).Text(FText::FromString(TEXT(">")))
-						.Justification(ETextJustify::Center).Font(Font("Bold", 12)).ColorAndOpacity(Cyan)]
+						.Justification(ETextJustify::Center).Font(Font("Bold", 12)).ColorAndOpacity(Cyan).RenderTransform(SymbolShift("Bold", 12))]
 					]
 				]
 				]
@@ -889,8 +978,17 @@ namespace APSGenerationUI
 	template <typename TValue, typename TGetter, typename TSetter>
 	TSharedRef<SWidget> NumberRow(const FText& Label, TValue Min, TValue Max, TValue Delta,
 		TWeakObjectPtr<UWorldGenerationViewModel> ViewModel, TGetter Getter, TSetter Setter,
-		TSharedPtr<SAPSGenerationRangeSlider>* OutSlider = nullptr)
+		TSharedPtr<SAPSGenerationRangeSlider>* OutSlider = nullptr,
+		TFunction<TValue(const UGeneratedWorld*)> MaximumGetter = {})
 	{
+		const bool bDynamicRange = static_cast<bool>(MaximumGetter);
+		const auto ResolveMaximum = [ViewModel, Max, MaximumGetter]()
+		{
+			const UWorldGenerationViewModel* VM = ViewModel.Get();
+			return MaximumGetter && VM && VM->GeneratedWorld ? MaximumGetter(VM->GeneratedWorld) : Max;
+		};
+		// SSlider has a fixed range. Normalize only rows with a type-dependent maximum
+		// so selecting a gas/solid body updates its slider and numeric input together.
 		TSharedPtr<SAPSGenerationRangeSlider> Slider;
 		TSharedRef<SWidget> Row = SNew(SVerticalBox)
 			+ SVerticalBox::Slot().AutoHeight()
@@ -908,30 +1006,35 @@ namespace APSGenerationUI
 					.VAlign(VAlign_Fill)
 					[
 					SAssignNew(Slider, SAPSGenerationRangeSlider)
-					.MinValue(static_cast<float>(Min))
-					.MaxValue(static_cast<float>(Max))
-					.StepSize(static_cast<float>(Delta))
+					.MinValue(bDynamicRange ? 0.0f : static_cast<float>(Min))
+					.MaxValue(bDynamicRange ? 1.0f : static_cast<float>(Max))
+					.StepSize_Lambda([bDynamicRange, ResolveMaximum, Min, Delta]()
+					{
+						return static_cast<float>(bDynamicRange ? Delta / (ResolveMaximum() - Min) : Delta);
+					})
 					.SliderBarColor(FSlateColor(CyanDim))
 					.SliderHandleColor(FSlateColor(Cyan))
-					.Value_Lambda([ViewModel, Getter]()
+					.Value_Lambda([ViewModel, Getter, bDynamicRange, ResolveMaximum, Min]()
 					{
 						if (const UWorldGenerationViewModel* VM = ViewModel.Get(); VM && VM->GeneratedWorld)
 						{
-							return static_cast<float>(Getter(VM->GeneratedWorld));
+							const TValue Value = Getter(VM->GeneratedWorld);
+							return static_cast<float>(bDynamicRange ? (Value - Min) / (ResolveMaximum() - Min) : Value);
 						}
 						return 0.0f;
 					})
-					.OnValueChanged_Lambda([ViewModel, Setter](const float Value)
+					.OnValueChanged_Lambda([ViewModel, Setter, bDynamicRange, ResolveMaximum, Min](const float Value)
 					{
 						if (UWorldGenerationViewModel* VM = ViewModel.Get())
 						{
+							const double ModelValue = bDynamicRange ? Min + Value * (ResolveMaximum() - Min) : Value;
 							if constexpr (TIsIntegral<TValue>::Value)
 							{
-								Setter(VM, static_cast<TValue>(FMath::RoundToInt(Value)));
+								Setter(VM, static_cast<TValue>(FMath::RoundToInt(ModelValue)));
 							}
 							else
 							{
-								Setter(VM, static_cast<TValue>(Value));
+								Setter(VM, static_cast<TValue>(ModelValue));
 							}
 						}
 					})
@@ -942,8 +1045,18 @@ namespace APSGenerationUI
 					SNew(SBox).WidthOverride(104.0f)
 					[
 						SNew(SSpinBox<TValue>)
-						.MinValue(Min).MaxValue(Max)
+						.MinValue(Min).MaxValue_Lambda([ResolveMaximum]() { return TOptional<TValue>(ResolveMaximum()); })
 						.Delta(Delta).EnableSlider(false).MinDesiredWidth(96.0f)
+						// Rio 03.10: the value centred in its box.
+						.Justification(ETextJustify::Center)
+						// Rio 02.10: readable inputs (860.18, 28547 instead of 860.179115, 28547.213784).
+						.MaxFractionalDigits_Lambda([ViewModel, Getter]()
+						{
+							const UWorldGenerationViewModel* VM = ViewModel.Get();
+							const double Magnitude = VM && VM->GeneratedWorld
+								? FMath::Abs(static_cast<double>(Getter(VM->GeneratedWorld))) : 0.0;
+							return TOptional<int32>(Magnitude >= 1000.0 ? 0 : Magnitude >= 10.0 ? 1 : 2);
+						})
 						.Value_Lambda([ViewModel, Getter]()
 						{
 							if (const UWorldGenerationViewModel* VM = ViewModel.Get(); VM && VM->GeneratedWorld)
@@ -969,6 +1082,78 @@ namespace APSGenerationUI
 			*OutSlider = Slider;
 		}
 		return Row;
+	}
+
+	/**
+	 * Rio 03.10 (STARS 1,800..1,000,000): the slider moves over the logarithm of the value so the low end stays
+	 * usable, and lands on three significant digits. The spin box keeps exact entry, applied on commit only
+	 * (each change rebuilds the galaxy layer).
+	 */
+	template <typename TGetter, typename TSetter>
+	TSharedRef<SWidget> LogNumberRow(const FText& Label, const int32 Min, const int32 Max,
+		TWeakObjectPtr<UWorldGenerationViewModel> ViewModel, TGetter Getter, TSetter Setter)
+	{
+		const double LogMin = FMath::Loge(static_cast<double>(FMath::Max(Min, 1)));
+		const double LogSpan = FMath::Max(FMath::Loge(static_cast<double>(FMath::Max(Max, Min + 1))) - LogMin, 1.0e-6);
+		return SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight()
+			[
+				SNew(STextBlock).Text(Label).Font(ReadableFont("Bold", 11)).ColorAndOpacity(SecondaryText)
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 3.0f, 0.0f, 9.0f)
+			[
+				SNew(SBorder).BorderImage(&ControlBrush).Padding(2.0f)
+				[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center).Padding(7.0f, 0.0f)
+				[
+					SNew(SBox).HeightOverride(FAPSUIStyle::Metrics().SliderHitHeight)
+					.VAlign(VAlign_Fill)
+					[
+					SNew(SAPSGenerationRangeSlider)
+					.MinValue(0.0f).MaxValue(1.0f).StepSize(0.001f)
+					.SliderBarColor(FSlateColor(CyanDim))
+					.SliderHandleColor(FSlateColor(Cyan))
+					.Value_Lambda([ViewModel, Getter, Min, LogMin, LogSpan]()
+					{
+						const UWorldGenerationViewModel* VM = ViewModel.Get();
+						const double Value = VM && VM->GeneratedWorld
+							? static_cast<double>(Getter(VM->GeneratedWorld)) : static_cast<double>(Min);
+						return static_cast<float>(FMath::Clamp(
+							(FMath::Loge(FMath::Max(Value, 1.0)) - LogMin) / LogSpan, 0.0, 1.0));
+					})
+					.OnValueChanged_Lambda([ViewModel, Setter, LogMin, LogSpan](const float Position)
+					{
+						if (UWorldGenerationViewModel* VM = ViewModel.Get())
+						{
+							const double Raw = FMath::Exp(LogMin
+								+ FMath::Clamp(static_cast<double>(Position), 0.0, 1.0) * LogSpan);
+							const double Step = FMath::Pow(10.0,
+								FMath::Max(FMath::FloorToDouble(FMath::LogX(10.0, FMath::Max(Raw, 1.0))) - 2.0, 0.0));
+							Setter(VM, static_cast<int32>(FMath::RoundToDouble(Raw / Step) * Step));
+						}
+					})
+					]
+				]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(7.0f, 0.0f, 0.0f, 0.0f)
+				[
+					SNew(SBox).WidthOverride(104.0f)
+					[
+						SNew(SSpinBox<int32>)
+						.MinValue(Min).MaxValue(Max).Delta(100).EnableSlider(false).MinDesiredWidth(96.0f)
+						.Value_Lambda([ViewModel, Getter, Min]()
+						{
+							const UWorldGenerationViewModel* VM = ViewModel.Get();
+							return VM && VM->GeneratedWorld ? static_cast<int32>(Getter(VM->GeneratedWorld)) : Min;
+						})
+						.OnValueCommitted_Lambda([ViewModel, Setter](const int32 Value, ETextCommit::Type)
+						{
+							if (UWorldGenerationViewModel* VM = ViewModel.Get()) Setter(VM, Value);
+						})
+					]
+				]
+				]
+			];
 	}
 
 
@@ -1019,7 +1204,7 @@ namespace APSGenerationUI
                             return LOCTEXT("AtmosphereZeroStrength", "STRENGTH 0 — NO SCATTERING. HUE/SATURATION APPLY WHEN STRENGTH IS RAISED.");
                         return FText::Format(LOCTEXT("AtmosphereColorSwatch",
                             "NORMALIZED COLOR · STRENGTH {0}\nSKY COLOR ALSO DEPENDS ON LIGHT AND VIEW."),
-                            FText::AsNumber(Color.Strength));
+                            APSUINumber::Number(Color.Strength));
                     })
                 ]
             ]
@@ -1101,6 +1286,14 @@ namespace APSGenerationUI
 				if (UWorldGenerationViewModel* VM = ViewModel.Get()) VM->BeginPreviewOrbit();
 				return FReply::Handled().CaptureMouse(SharedThis(this));
 			}
+			if (Event.GetEffectingButton() == EKeys::LeftMouseButton)
+			{
+				// Rio 02.10: a click selects a cluster system (its record), a double-click focuses it.
+				if (UWorldGenerationViewModel* VM = ViewModel.Get(); VM && VM->SelectPreviewUnderCursor())
+				{
+					return FReply::Handled();
+				}
+			}
 			return FReply::Unhandled();
 		}
 
@@ -1177,7 +1370,8 @@ namespace APSGenerationUI
 			const UWorldGenerationViewModel* VM = ViewModel.Get();
 			UWorld* World = VM ? VM->GetWorld() : nullptr;
 			APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
-			AAstroGenerator* Generator = PC ? Cast<AAstroGenerator>(PC->GetViewTarget()) : nullptr;
+			// The menu's preview generator, not whatever actor the camera happens to view through.
+			AAstroGenerator* Generator = PC ? VM->GetPreviewGenerator() : nullptr;
 			const ULocalPlayer* Player = PC ? PC->GetLocalPlayer() : nullptr;
 			if (!Generator || !Generator->UsesContinuousPreviewFrame() || !Player || !Player->ViewportClient) return;
 			const TSharedPtr<SViewport> Viewport = Player->ViewportClient->GetGameViewportWidget();
@@ -1215,6 +1409,18 @@ namespace APSGenerationUI
 			{
 				return LayerId;
 			}
+			if (VM->ArePreviewMarksHidden())
+			{
+				// Rio 03.10 ("after REGENERATE the orbits vanish, nothing highlights"): hidden marks were a process-wide
+				// switch that outlived PIE sessions without a trace on screen. Now per menu session, and always said here.
+				const FVector2D HintSize = AllottedGeometry.GetLocalSize();
+				FSlateDrawElement::MakeText(OutDrawElements, LayerId + 1,
+					AllottedGeometry.ToPaintGeometry(FVector2D(FMath::Max(HintSize.X - 8.0, 1.0), 16.0),
+						FSlateLayoutTransform(FVector2D(4.0, FMath::Max(0.0, HintSize.Y - 18.0)))),
+					LOCTEXT("PreviewMarksHiddenHint", "MARKS OFF: orbits, rings and labels are hidden (MARKS ON shows them)"),
+					ReadableFont("Regular", 8), ESlateDrawEffect::None, FLinearColor(Amber.R, Amber.G, Amber.B, 0.9f));
+				return LayerId + 1;
+			}
 
 			UWorld* World = VM->GetWorld();
 			APlayerController* PC = World ? World->GetFirstPlayerController() : nullptr;
@@ -1231,7 +1437,9 @@ namespace APSGenerationUI
 			{
 				return LayerId;
 			}
-			const FGeometry ViewportGeometry = ViewportWidget->GetCachedGeometry();
+			// Paint space, like AllottedGeometry: GetCachedGeometry() is the desktop-space tick geometry, and mixing the
+			// two shifted every marker by the window's position (Rio 02.10: all rings ~8 px up-left in the editor).
+			const FGeometry ViewportGeometry = ViewportWidget->GetPaintSpaceGeometry();
 			const FVector2D ViewportLocalSize = ViewportGeometry.GetLocalSize();
 			const FVector2D PanelSize = AllottedGeometry.GetLocalSize();
 			const ULocalPlayer* LocalPlayer = PC->GetLocalPlayer();
@@ -1268,7 +1476,7 @@ namespace APSGenerationUI
 				}
 				return Location;
 			};
-			const AAstroGenerator* PreviewGenerator = Cast<AAstroGenerator>(PC->GetViewTarget());
+			const AAstroGenerator* PreviewGenerator = VM->GetPreviewGenerator();
 			const AAstroGenerator* ContinuousGenerator = PreviewGenerator;
 			if (ContinuousGenerator && !ContinuousGenerator->UsesContinuousPreviewFrame()) ContinuousGenerator = nullptr;
 
@@ -1293,6 +1501,21 @@ namespace APSGenerationUI
 				TArray<FVector2D> Segment;
 				const TArray<FVector2D>& Circle = UnitCircleSamples<72>();
 				Segment.Reserve(Circle.Num());
+				// Rio 04.10 evening ("the cluster outline is gone"): a thin translucent line vanished over a bright cluster
+				// (giants, the GPU glow); a dark under-stroke keeps it readable on any background.
+				const auto EmitSegment = [&]()
+				{
+					if (!APSSlateLineGuard::IsDrawable(Segment))
+					{
+						return;
+					}
+					FSlateDrawElement::MakeLines(OutDrawElements, LayerId,
+						AllottedGeometry.ToPaintGeometry(), Segment, ESlateDrawEffect::None,
+						APSUITheme::Retint(FLinearColor(0.0f, 0.02f, 0.04f, 0.55f)), true, 2.6f);
+					FSlateDrawElement::MakeLines(OutDrawElements, LayerId,
+						AllottedGeometry.ToPaintGeometry(), Segment, ESlateDrawEffect::None,
+						ScopeColor, true, 1.1f);
+				};
 				for (int32 Sample = 0; Sample < Circle.Num(); ++Sample)
 				{
 					const FVector2D& UnitPoint = Circle[Sample];
@@ -1309,18 +1532,14 @@ namespace APSGenerationUI
 					{
 						if (Segment.Num() > 1)
 						{
-							FSlateDrawElement::MakeLines(OutDrawElements, LayerId,
-								AllottedGeometry.ToPaintGeometry(), Segment, ESlateDrawEffect::None,
-								ScopeColor, true, 0.85f);
+							EmitSegment();
 						}
 						Segment.Reset();
 					}
 				}
 				if (Segment.Num() > 1)
 				{
-					FSlateDrawElement::MakeLines(OutDrawElements, LayerId,
-						AllottedGeometry.ToPaintGeometry(), Segment, ESlateDrawEffect::None,
-						ScopeColor, true, 0.85f);
+					EmitSegment();
 				}
 			};
 
@@ -1330,23 +1549,115 @@ namespace APSGenerationUI
 			}
 			else if (Focus == EAstroPreviewFocus::StarCluster)
 			{
-				DrawScopeRing(Focus, 1.0, FLinearColor(Cyan.R, Cyan.G, Cyan.B, 0.28f));
+				DrawScopeRing(Focus, 1.0, FLinearColor(Cyan.R, Cyan.G, Cyan.B, 0.55f));
+			}
+			// Rio 05.10 ("a ruler would be fun", with the REAL SCALE experiment): a scale bar in the bottom right, a round
+			// length in km, AU or light years at the focus's distance. The continuous preview keeps every direction exact,
+			// so that physical length spans the same angle as the bar on screen.
+			double FocusDistanceCm = 0.0;
+			const double InverseHalfWidthTangent = Projection.ProjectionMatrix.M[0][0];
+			if (ContinuousGenerator && ContinuousGenerator->GetPreviewFocusPhysicalDistance(Focus, FocusDistanceCm)
+				&& InverseHalfWidthTangent > UE_SMALL_NUMBER && ViewportLocalSize.X > 1.0)
+			{
+				// Rio 06.10 ("the AU plate is white and sits unevenly over FULL SCALE"): the ruler shares one centre with the
+				// FULL SCALE chip under the preview (right-aligned there, 10 px in) and has its look: the chip's dark plate,
+				// font and paddings.
+				const FSlateFontInfo ChipFont = Font("Bold", 8);
+				const FText ChipText = LOCTEXT("PreviewCornerBR", "FULL SCALE  +");
+				const double ChipWidth = FSlateApplication::Get().GetRenderer()->GetFontMeasureService()->Measure(ChipText, ChipFont).X + 16.0;
+				double RulerCentreX = PanelSize.X - 10.0 - ChipWidth * 0.5;
+				// Rio 06.10 (audit: a bar up to 150 px wide centred over the chip could run past the panel's right edge): the
+				// bar fits the room either side of that centre, 12 px from the edge.
+				const double RoomPx = 2.0 * (PanelSize.X - 12.0 - RulerCentreX);
+				constexpr double KmCm = 1.0e5;
+				constexpr double AuCm = 1.495978707e13;
+				constexpr double LyCm = 9.4607304725808e17;
+				const double CmPerPixel = FocusDistanceCm / (InverseHalfWidthTangent * ViewportLocalSize.X * 0.5);
+				const double WantedCm = 150.0 * CmPerPixel;
+				const double UnitCm = WantedCm >= 0.05 * LyCm ? LyCm : WantedCm >= 0.02 * AuCm ? AuCm : KmCm;
+				const double Wanted = WantedCm / UnitCm;
+				const double Decade = FMath::Pow(10.0, FMath::FloorToDouble(FMath::LogX(10.0, Wanted)));
+				double Multiple = Wanted >= 5.0 * Decade ? 5.0 : Wanted >= 2.0 * Decade ? 2.0 : 1.0;
+				double Step = Multiple * Decade;
+				double BarPixels = Step * UnitCm / CmPerPixel;
+				if (BarPixels > RoomPx)
+				{
+					// One step down the 1-2-5 sequence: 5 -> 2, 2 -> 1, 1 -> 0.5 of the decade.
+					Multiple = Multiple > 2.5 ? 2.0 : Multiple > 1.5 ? 1.0 : 0.5;
+					Step = Multiple * Decade;
+					BarPixels = Step * UnitCm / CmPerPixel;
+				}
+				if (FMath::IsFinite(BarPixels) && BarPixels > 8.0 && BarPixels < PanelSize.X * 0.5)
+				{
+					// Last resort (a very wide chip or a narrow panel): the centre moves left so the bar's end stays inside.
+					RulerCentreX = FMath::Min(RulerCentreX, PanelSize.X - 12.0 - BarPixels * 0.5);
+					const FVector2D End(RulerCentreX + BarPixels * 0.5, PanelSize.Y - 16.0);
+					const FVector2D Start(End.X - BarPixels, End.Y);
+					const TArray<FVector2D> Bar{Start + FVector2D(0.0, -6.0), Start, End, End + FVector2D(0.0, -6.0)};
+					FSlateDrawElement::MakeLines(OutDrawElements, LayerId, AllottedGeometry.ToPaintGeometry(), Bar,
+						ESlateDrawEffect::None, APSUITheme::Retint(FLinearColor(0.0f, 0.02f, 0.04f, 0.6f)), true, 3.2f);
+					FSlateDrawElement::MakeLines(OutDrawElements, LayerId + 1, AllottedGeometry.ToPaintGeometry(), Bar,
+						ESlateDrawEffect::None, FLinearColor(Cyan.R, Cyan.G, Cyan.B, 0.85f), true, 1.4f);
+					FNumberFormattingOptions Digits;
+					Digits.MaximumFractionalDigits = Step < 1.0 ? 3 : 0;
+					const FText UnitName = UnitCm == LyCm ? LOCTEXT("RulerLy", "LY")
+						: UnitCm == AuCm ? LOCTEXT("RulerAu", "AU") : LOCTEXT("RulerKm", "KM");
+					const FText RulerText = FText::Format(LOCTEXT("RulerLabel", "{0} {1}"),
+						Step < 1.0 ? FText::AsNumber(Step, &Digits) : APSUINumber::Number(static_cast<int64>(FMath::RoundToDouble(Step))),
+						UnitName);
+					const FSlateFontInfo RulerFont = ChipFont;
+					const FVector2D TextSize = FSlateApplication::Get().GetRenderer()->GetFontMeasureService()->Measure(RulerText, RulerFont);
+					const FVector2D TextAt(Start.X + (BarPixels - TextSize.X) * 0.5, Start.Y - 9.0 - TextSize.Y);
+					// A dark plate under the label keeps it readable over a bright cluster (Rio 05.10); Rio 06.10 ("white
+					// on white"): the chip plate with its frame, as the preview's corner texts.
+					// A drawn box takes its colour from the tint given here, not from the brush (an SBorder multiplies them):
+					// White painted the chip's plate white.
+					FSlateDrawElement::MakeBox(OutDrawElements, LayerId + 1,
+						AllottedGeometry.ToPaintGeometry(TextSize + FVector2D(16.0, 6.0), FSlateLayoutTransform(TextAt - FVector2D(8.0, 3.0))),
+						&ChipBrush, ESlateDrawEffect::None, ChipBrush.TintColor.GetSpecifiedColor());
+					FSlateDrawElement::MakeText(OutDrawElements, LayerId + 2,
+						AllottedGeometry.ToPaintGeometry(TextSize + FVector2D(2.0, 2.0), FSlateLayoutTransform(TextAt)),
+						RulerText, RulerFont, ESlateDrawEffect::None, FLinearColor(Cyan.R, Cyan.G, Cyan.B, 0.9f));
+				}
 			}
 			AActor* SelectedBody = VM->GetSelectedPreviewBody();
+			// A rebuilt hierarchy (REGENERATE, a new seed) must never be annotated from the previous one's actors:
+			// refresh on another home system or on any cached body that has since been destroyed.
+			const AStarSystem* HomeSystem = PreviewGenerator ? PreviewGenerator->GetPreviewHomeSystem() : nullptr;
+			bool bCachedBodyDestroyed = false;
+			for (const FAPSPreviewBodyEntry& CachedEntry : CachedEntries)
+			{
+				if (!CachedEntry.Actor.IsExplicitlyNull() && !CachedEntry.Actor.IsValid())
+				{
+					bCachedBodyDestroyed = true;
+					break;
+				}
+			}
 			if (CachedPreviewRevision != VM->PreviewRevision
 				|| CachedPreviewFocus != Focus
-				|| CachedSelectedBody.Get() != SelectedBody)
+				|| CachedSelectedBody.Get() != SelectedBody
+				|| CachedHomeSystem.Get() != HomeSystem
+				|| bCachedBodyDestroyed)
 			{
 				CachedEntries.Reset();
 				VM->GetPreviewBodyEntries(CachedEntries);
-				for (FAPSPreviewBodyEntry& Entry : CachedEntries)
+				// Rio 02.10: line 1 the type (spectrum and class of a star, type and radius of a planet or moon), line 2 the
+				// full name and its designation (A1, A5.04). The box fits the text with even paddings.
+				CachedDesignations.Reset();
+				CachedLabelSizes.Reset();
+				CachedLabelLayouts.Reset();
+				for (const FAPSPreviewBodyEntry& Entry : CachedEntries)
 				{
-					Entry.Label = CompactLabel(Entry.Label, ReadableFont("Bold", 10));
-					Entry.Details = CompactLabel(Entry.Details, ReadableFont("Regular", 8));
+					// Rio 02.10: the designation follows the name on line 2; line 1 is the type alone.
+					const FString Designation = APSBodyDesignation::Of(Entry.Actor.Get());
+					const FLabelLayout& Layout = CachedLabelLayouts.Add_GetRef(LayoutLabel(Entry.Details, Entry.Label, Designation));
+					CachedDesignations.Add(FText::FromString(Designation));
+					CachedLabelSizes.Add(Layout.Size);
 				}
 				CachedPreviewRevision = VM->PreviewRevision;
 				CachedPreviewFocus = Focus;
 				CachedSelectedBody = SelectedBody;
+				CachedHomeSystem = HomeSystem;
 			}
 			const TArray<FAPSPreviewBodyEntry>& Entries = CachedEntries;
 			if (Entries.IsEmpty())
@@ -1431,19 +1742,39 @@ namespace APSGenerationUI
 					PhysicalOrbitCenter = Planet->ParentStar->GetActorLocation();
 				const double PhysicalOrbitRadius = FVector::Distance(PhysicalOrbitCenter, Body->GetActorLocation());
 				OrbitSegment.Reset();
+				// Rio 06.10 ("strengthen the orbits like in the game"): a dark stroke under the line keeps it apart from the
+				// stars, then a soft glow and a bright core; brighter towards the body, as the HUD's rings in flight.
+				const FVector BodyDirection = Body->GetActorLocation() - PhysicalOrbitCenter;
+				const double BodyAngle = FMath::Atan2(FVector::DotProduct(BodyDirection, AxisY), FVector::DotProduct(BodyDirection, AxisX));
+				const bool bMoonOrbit = Entry.Depth > 1;
+				const FLinearColor OrbitColour = bMoonOrbit ? FLinearColor(0.36f, 0.65f, 1.0f, 1.0f) : FLinearColor(Cyan.R, Cyan.G, Cyan.B, 1.0f);
+				double SegmentAngleSum = 0.0;
+				int32 SegmentAngleCount = 0;
+				double SampleAngle = 0.0;
 				const auto FlushOrbit = [&]()
 				{
-					if (OrbitSegment.Num() > 1)
-						FSlateDrawElement::MakeLines(OutDrawElements, LayerId + 1,
-							AllottedGeometry.ToPaintGeometry(), OrbitSegment, ESlateDrawEffect::None,
-							Entry.Depth > 1 ? FLinearColor(0.36f, 0.65f, 1.0f, 0.22f)
-								: FLinearColor(Cyan.R, Cyan.G, Cyan.B, 0.30f), true, Entry.Depth > 1 ? 0.65f : 1.0f);
+					if (OrbitSegment.Num() > 1 && APSSlateLineGuard::IsDrawable(OrbitSegment))
+					{
+						const double Middle = SegmentAngleCount > 0 ? SegmentAngleSum / SegmentAngleCount - BodyAngle : UE_DOUBLE_PI;
+						const float Near = FMath::Pow(0.5f + 0.5f * static_cast<float>(FMath::Cos(Middle)), 1.6f);
+						const float Alpha = (bMoonOrbit ? 0.42f : 0.55f) + (bMoonOrbit ? 0.30f : 0.40f) * Near;
+						const FPaintGeometry Paint = AllottedGeometry.ToPaintGeometry();
+						FSlateDrawElement::MakeLines(OutDrawElements, LayerId + 1, Paint, OrbitSegment, ESlateDrawEffect::None,
+							APSUITheme::Retint(FLinearColor(0.0f, 0.008f, 0.016f, bMoonOrbit ? 0.45f : 0.6f)), true, bMoonOrbit ? 3.4f : 4.6f);
+						FSlateDrawElement::MakeLines(OutDrawElements, LayerId + 2, Paint, OrbitSegment, ESlateDrawEffect::None,
+							FLinearColor(OrbitColour.R, OrbitColour.G, OrbitColour.B, Alpha * 0.2f), true, bMoonOrbit ? 3.0f : 4.4f);
+						FSlateDrawElement::MakeLines(OutDrawElements, LayerId + 2, Paint, OrbitSegment, ESlateDrawEffect::None,
+							FLinearColor(OrbitColour.R, OrbitColour.G, OrbitColour.B, Alpha), true, bMoonOrbit ? 1.0f : 1.6f);
+					}
 					OrbitSegment.Reset();
+					SegmentAngleSum = 0.0;
+					SegmentAngleCount = 0;
 				};
 				FVector PreviousPoint = FVector::ZeroVector;
 				bool bPreviousValid = false;
 				for (const FVector2D& UnitPoint : OrbitCircle)
 				{
+					SampleAngle = FMath::Atan2(UnitPoint.Y, UnitPoint.X);
 					const FVector PlaneDirection = AxisX * UnitPoint.X + AxisY * UnitPoint.Y;
 					FVector PresentedOrbitPoint = Center + PlaneDirection * Radius;
 					const bool bValid = !ContinuousGenerator || ContinuousGenerator->ProjectContinuousPreviewWorldPosition(
@@ -1473,7 +1804,21 @@ namespace APSGenerationUI
 								if (!OrbitSegment.IsEmpty() && !OrbitSegment.Last().Equals(Start, 0.01)) FlushOrbit();
 								if (OrbitSegment.IsEmpty()) OrbitSegment.Add(Start);
 								OrbitSegment.Add(End);
+								// Short runs, so the brightness can follow the angle to the body (the sum keeps the
+								// angles continuous across the turn's seam).
+								const double Unwrapped = SegmentAngleCount > 0
+									? SampleAngle + UE_DOUBLE_TWO_PI * FMath::RoundToDouble(
+										(SegmentAngleSum / SegmentAngleCount - SampleAngle) / UE_DOUBLE_TWO_PI)
+									: SampleAngle;
+								SegmentAngleSum += Unwrapped;
+								++SegmentAngleCount;
 								if (Interval.Y < 1.0) FlushOrbit();
+								else if (OrbitSegment.Num() >= 7)
+								{
+									const FVector2D Joint = OrbitSegment.Last();
+									FlushOrbit();
+									OrbitSegment.Add(Joint);
+								}
 							}
 						}
 						else FlushOrbit();
@@ -1486,6 +1831,11 @@ namespace APSGenerationUI
 			}
 
 			TArray<FAPSPreviewAnnotationCandidate> AnnotationCandidates;
+			// Rio 02.10: a body that no longer fits in the view whole docks its plate under the caption (the selected
+			// body first, else the largest on screen).
+			int32 DockedIndex = INDEX_NONE;
+			double DockedPixels = 0.0;
+			bool bDockedSelected = false;
 			for (int32 EntryIndex = 0; EntryIndex < Entries.Num(); ++EntryIndex)
 			{
 				const FAPSPreviewBodyEntry& Entry = Entries[EntryIndex];
@@ -1507,6 +1857,30 @@ namespace APSGenerationUI
 				const bool bAnchorInside = bProjected
 					&& Anchor.X >= 0.0f && Anchor.X <= PanelSize.X
 					&& Anchor.Y >= 0.0f && Anchor.Y <= PanelSize.Y;
+				double DockRadius = 0.0;
+				FVector2D DockLimb;
+				if (Body && bProjected && PreviewGenerator
+					&& PreviewGenerator->GetPreviewPresentationRadius(Body, DockRadius) && DockRadius > 0.0
+					&& ProjectToPanel(BodyCenter + CameraRight * DockRadius, DockLimb))
+				{
+					const double Pixels = FVector2D::Distance(DockLimb, Anchor);
+					const bool bFits = Anchor.X - Pixels >= 0.0 && Anchor.X + Pixels <= PanelSize.X
+						&& Anchor.Y - Pixels >= 0.0 && Anchor.Y + Pixels <= PanelSize.Y;
+					const double ToPanel = FVector2D::Distance(Anchor, FVector2D(
+						FMath::Clamp(Anchor.X, 0.0, PanelSize.X), FMath::Clamp(Anchor.Y, 0.0, PanelSize.Y)));
+					if (!bFits && ToPanel < Pixels && Pixels >= 0.08 * FMath::Min(PanelSize.X, PanelSize.Y))
+					{
+						const bool bSelectedBody = SelectedBody == Body;
+						if (DockedIndex == INDEX_NONE || (bSelectedBody && !bDockedSelected)
+							|| (bSelectedBody == bDockedSelected && Pixels > DockedPixels))
+						{
+							DockedIndex = EntryIndex;
+							DockedPixels = Pixels;
+							bDockedSelected = bSelectedBody;
+						}
+						continue;
+					}
+				}
 				if (!bAnchorInside)
 				{
 					// Object inspection stays intentionally local. SYSTEM, however, promises
@@ -1553,18 +1927,38 @@ namespace APSGenerationUI
 					continue;
 				}
 
-				AnnotationCandidates.Add({EntryIndex, Anchor, Body && SelectedBody == Body, Body && Body->IsA<AStar>()});
+				AnnotationCandidates.Add({EntryIndex, Anchor, Entry.bHighlighted || (Body && SelectedBody == Body), Body && Body->IsA<AStar>(),
+					CachedLabelSizes.IsValidIndex(EntryIndex) ? CachedLabelSizes[EntryIndex]
+						: APSPreviewAnnotationLayout::LabelSize()});
 			}
-			const auto Placements = APSPreviewAnnotationLayout::Arrange(MoveTemp(AnnotationCandidates), PanelSize);
-			const FVector2D LabelSize = APSPreviewAnnotationLayout::LabelSize();
+			auto Placements = APSPreviewAnnotationLayout::Arrange(MoveTemp(AnnotationCandidates), PanelSize);
+			if (Entries.IsValidIndex(DockedIndex))
+			{
+				// Under the caption, on its left edge; no ring and no leader.
+				FAPSPreviewAnnotationPlacement& Docked = Placements.AddDefaulted_GetRef();
+				Docked.Candidate.EntryIndex = DockedIndex;
+				Docked.Candidate.bSelected = bDockedSelected;
+				Docked.Candidate.Size = CachedLabelSizes.IsValidIndex(DockedIndex) ? CachedLabelSizes[DockedIndex]
+					: APSPreviewAnnotationLayout::LabelSize();
+				Docked.LabelPosition = FVector2D(10.0, 2.0);
+				Docked.bHasLabel = true;
+			}
 			int32 FullLabelCount = 0;
 			for (const FAPSPreviewAnnotationPlacement& Placement : Placements)
 			{
 				const FAPSPreviewBodyEntry& Entry = Entries[Placement.Candidate.EntryIndex];
+				const FVector2D LabelSize = Placement.Candidate.Size;
+				const FText Designation = CachedDesignations.IsValidIndex(Placement.Candidate.EntryIndex)
+					? CachedDesignations[Placement.Candidate.EntryIndex] : FText::GetEmpty();
 				const AActor* Body = Entry.Actor.Get();
 				const FVector2D Anchor = Placement.Candidate.Anchor;
-				const FVector2D LabelPosition = Placement.LabelPosition;
+				// Rio 02.10 ("A, A1 ride on the plate while the camera turns"): the plate and its texts share one origin on
+				// the pixel grid; at a fractional origin each text snapped on its own and drifted against the box.
+				const FVector2D LabelAbsolute = AllottedGeometry.LocalToAbsolute(Placement.LabelPosition);
+				const FVector2D LabelPosition = AllottedGeometry.AbsoluteToLocal(
+					FVector2D(FMath::RoundToDouble(LabelAbsolute.X), FMath::RoundToDouble(LabelAbsolute.Y)));
 				const bool bSelected = Placement.Candidate.bSelected;
+				const bool bDocked = Placement.Candidate.EntryIndex == DockedIndex;
 				FLinearColor MarkerColor = Entry.Depth == 0 ? Amber
 					: Entry.Depth == 1 ? Cyan : FLinearColor(0.44f, 0.72f, 1.0f, 1.0f);
 				if (const APlanet* Planet = Cast<APlanet>(Body))
@@ -1601,32 +1995,81 @@ namespace APSGenerationUI
 						break;
 					}
 				}
+				// Rio 06.10: in the dark themes the picked body is marked like any other label (bar on the left) in the
+				// bright action colour; the full outline in the action red read as a black edge. Classic keeps its amber
+				// outline.
+				const bool bClassicTheme = APSUITheme::Current() == EAPSUITheme::Classic;
+				const FLinearColor PickedColour = bClassicTheme ? Amber : APSUITheme::Palette().ActionPeak;
 				if (bSelected)
 				{
-					MarkerColor = Amber;
+					MarkerColor = PickedColour;
 				}
 				// Markers are independent of the text budget. Suppressing an annotation
 				// box must never hide a body or move its physical selection anchor.
-				FSlateDrawElement::MakeLines(OutDrawElements, LayerId + 3, AllottedGeometry.ToPaintGeometry(),
-					TArray<FVector2D>{Anchor - FVector2D(4.0f, 0.0f), Anchor + FVector2D(4.0f, 0.0f)},
-					ESlateDrawEffect::None, MarkerColor, true, 1.0f);
-				FSlateDrawElement::MakeLines(OutDrawElements, LayerId + 3, AllottedGeometry.ToPaintGeometry(),
-					TArray<FVector2D>{Anchor - FVector2D(0.0f, 4.0f), Anchor + FVector2D(0.0f, 4.0f)},
-					ESlateDrawEffect::None, MarkerColor, true, 1.0f);
+				// Rio 02.10: a ring that outlines the body on its projected limb, not a cross; it gives way once the
+				// body itself fills a good part of the view.
+				float RingRadius = 7.0f;
+				bool bRing = !bDocked;
+				double PresentedRadius = 0.0;
+				const bool bInsidePanel = Anchor.X > 2.5f && Anchor.Y > 2.5f
+					&& Anchor.X < PanelSize.X - 2.5f && Anchor.Y < PanelSize.Y - 2.5f;
+				// A system's ring outlines its star (Rio 02.10: a super giant did not fit its system's ring, however far out).
+				const AActor* RingBody = Body;
+				if (const AStarSystem* System = Cast<AStarSystem>(Body); System && IsValid(System->MainStar))
+				{
+					RingBody = System->MainStar;
+				}
+				if (!bDocked && RingBody && bInsidePanel && PreviewGenerator
+					&& PreviewGenerator->GetPreviewPresentationRadius(RingBody, PresentedRadius) && PresentedRadius > 0.0)
+				{
+					FVector2D Limb;
+					FVector2D BodyCenter;
+					if (ProjectToPanel(PresentationLocation(RingBody) + CameraRight * PresentedRadius, Limb)
+						&& ProjectToPanel(PresentationLocation(RingBody), BodyCenter))
+					{
+						const float Projected = static_cast<float>(FVector2D::Distance(Limb, BodyCenter));
+						// Room around the limb (Rio 02.10: "borders with a margin, not tight").
+						RingRadius = FMath::Max(7.0f, Projected * 1.15f + 7.0f);
+						bRing = Projected < FMath::Min(PanelSize.X, PanelSize.Y) * 0.16f;
+					}
+				}
+				if (bRing)
+				{
+					TArray<FVector2D> Ring;
+					const int32 Segments = FMath::Clamp(FMath::CeilToInt(RingRadius * 0.9f), 20, 72);
+					Ring.Reserve(Segments + 1);
+					for (int32 Point = 0; Point <= Segments; ++Point)
+					{
+						const float Angle = UE_TWO_PI * static_cast<float>(Point) / Segments;
+						Ring.Add(Anchor + FVector2D(FMath::Cos(Angle), FMath::Sin(Angle)) * RingRadius);
+					}
+					FSlateDrawElement::MakeLines(OutDrawElements, LayerId + 3, AllottedGeometry.ToPaintGeometry(), Ring,
+						ESlateDrawEffect::None, FLinearColor(MarkerColor.R, MarkerColor.G, MarkerColor.B, bSelected ? 1.0f : 0.85f),
+						true, bSelected ? 2.0f : 1.3f);
+				}
 				if (!Placement.bHasLabel) continue;
 				++FullLabelCount;
 				const FVector2D PoleEnd(LabelPosition.X + LabelSize.X * 0.5f, LabelPosition.Y + LabelSize.Y);
-				FSlateDrawElement::MakeLines(OutDrawElements, LayerId + 2, AllottedGeometry.ToPaintGeometry(),
-					TArray<FVector2D>{Anchor, PoleEnd}, ESlateDrawEffect::None,
-					FLinearColor(MarkerColor.R, MarkerColor.G, MarkerColor.B, 0.72f), true, 1.0f);
+				// The leader meets the ring, not the body's centre.
+				const FVector2D LeaderStart = bRing ? Anchor + (PoleEnd - Anchor).GetSafeNormal() * RingRadius : Anchor;
+				if (!bDocked)
+				{
+					const TArray<FVector2D> LeaderPoints{LeaderStart, PoleEnd};
+					if (APSSlateLineGuard::IsDrawable(LeaderPoints))
+					{
+						FSlateDrawElement::MakeLines(OutDrawElements, LayerId + 2, AllottedGeometry.ToPaintGeometry(),
+							LeaderPoints, ESlateDrawEffect::None,
+							FLinearColor(MarkerColor.R, MarkerColor.G, MarkerColor.B, 0.72f), true, 1.0f);
+					}
+				}
 				FSlateDrawElement::MakeBox(OutDrawElements, LayerId + 3,
 					AllottedGeometry.ToPaintGeometry(LabelSize, FSlateLayoutTransform(LabelPosition)),
 					FAppStyle::GetBrush("WhiteBrush"), ESlateDrawEffect::None,
-					FLinearColor(0.002f, 0.014f, 0.026f, 0.96f));
+					APSUITheme::Retint(FLinearColor(0.002f, 0.014f, 0.026f, 0.96f)));
 				FSlateDrawElement::MakeBox(OutDrawElements, LayerId + 4,
 					AllottedGeometry.ToPaintGeometry(FVector2D(3.0f, LabelSize.Y), FSlateLayoutTransform(LabelPosition)),
 					FAppStyle::GetBrush("WhiteBrush"), ESlateDrawEffect::None, MarkerColor);
-				if (bSelected)
+				if (bSelected && bClassicTheme)
 				{
 					const TArray<FVector2D> SelectedOutline = {
 						LabelPosition,
@@ -1639,16 +2082,31 @@ namespace APSGenerationUI
 						AllottedGeometry.ToPaintGeometry(), SelectedOutline,
 						ESlateDrawEffect::None, Amber, true, 2.0f);
 				}
+				// Rio 02.10: line 1 is the type (spectrum and class, or type and radius); line 2 the name, then the
+				// designation (A, A1, A5.04) in the marker colour, both on one baseline though the fonts differ.
+				const FLabelLayout Layout = CachedLabelLayouts.IsValidIndex(Placement.Candidate.EntryIndex)
+					? CachedLabelLayouts[Placement.Candidate.EntryIndex]
+					: LayoutLabel(Entry.Details, Entry.Label, Designation.ToString());
+				const float TextLeft = LabelBar + LabelPadX;
+				if (!Entry.Details.IsEmpty())
+				{
+					FSlateDrawElement::MakeText(OutDrawElements, LayerId + 5,
+						AllottedGeometry.ToPaintGeometry(FVector2D(LabelSize.X - TextLeft, 18.0f),
+							FSlateLayoutTransform(LabelPosition + FVector2D(TextLeft, Layout.TypeTop))),
+						Entry.Details, ReadableFont("Bold", 9), ESlateDrawEffect::None, SecondaryText);
+				}
 				FSlateDrawElement::MakeText(OutDrawElements, LayerId + 5,
-					AllottedGeometry.ToPaintGeometry(FVector2D(LabelSize.X - 12.0f, 16.0f),
-						FSlateLayoutTransform(LabelPosition + FVector2D(7.0f, 4.0f))),
-					Entry.Label, ReadableFont("Bold", 10),
-					ESlateDrawEffect::None, bSelected ? Amber : White);
-				FSlateDrawElement::MakeText(OutDrawElements, LayerId + 5,
-					AllottedGeometry.ToPaintGeometry(FVector2D(LabelSize.X - 12.0f, 12.0f),
-						FSlateLayoutTransform(LabelPosition + FVector2D(7.0f, 21.0f))),
-					Entry.Details, ReadableFont("Regular", 8),
-					ESlateDrawEffect::None, SecondaryText);
+					AllottedGeometry.ToPaintGeometry(FVector2D(Layout.NameWidth + 2.0f, 20.0f),
+						FSlateLayoutTransform(LabelPosition + FVector2D(TextLeft, Layout.NameTop))),
+					Entry.Label, ReadableFont("Bold", 11), ESlateDrawEffect::None, bSelected ? PickedColour : White);
+				if (!Designation.IsEmpty())
+				{
+					FSlateDrawElement::MakeText(OutDrawElements, LayerId + 5,
+						AllottedGeometry.ToPaintGeometry(FVector2D(LabelSize.X, 20.0f),
+							FSlateLayoutTransform(LabelPosition + FVector2D(TextLeft + Layout.NameWidth + LabelDesignationGap,
+								Layout.DesignationTop))),
+						Designation, Font("Bold", 10), ESlateDrawEffect::None, bSelected ? PickedColour : MarkerColor);
+				}
 			}
 			if (FullLabelCount < Placements.Num())
 			{
@@ -1656,7 +2114,7 @@ namespace APSGenerationUI
 					AllottedGeometry.ToPaintGeometry(FVector2D(PanelSize.X - 8.0, 16.0),
 						FSlateLayoutTransform(FVector2D(4.0, FMath::Max(0.0, PanelSize.Y - 18.0)))),
 					FText::Format(LOCTEXT("PreviewDensityHint", "{0} markers / {1} labels — full body list on the right"),
-						FText::AsNumber(Placements.Num()), FText::AsNumber(FullLabelCount)),
+						APSUINumber::Number(Placements.Num()), APSUINumber::Number(FullLabelCount)),
 					ReadableFont("Regular", 8), ESlateDrawEffect::None, SecondaryText);
 			}
 
@@ -1666,7 +2124,58 @@ namespace APSGenerationUI
 	private:
 		TWeakObjectPtr<UWorldGenerationViewModel> ViewModel;
 		mutable TArray<FAPSPreviewBodyEntry> CachedEntries;
+		mutable TArray<FText> CachedDesignations;
+		mutable TArray<FVector2D> CachedLabelSizes;
+
+		/** Rio 02.10 ("even paddings for all tags"): one visual margin above the capitals of the first line and below
+		 * the baseline of the last; the type over the name; the designation after the name, on its baseline. */
+		static constexpr float LabelBar = 3.0f;
+		static constexpr float LabelPadX = 8.0f;
+		static constexpr float LabelPadY = 6.0f;
+		static constexpr float LabelLineGap = 5.0f;
+		static constexpr float LabelDesignationGap = 6.0f;
+		struct FLabelLayout
+		{
+			FVector2D Size{160.0, 36.0};
+			float TypeTop{0.0f};
+			float NameTop{0.0f};
+			float NameWidth{0.0f};
+			float DesignationTop{0.0f};
+		};
+		static FLabelLayout LayoutLabel(const FText& Type, const FText& Name, const FString& Designation)
+		{
+			const TSharedRef<FSlateFontMeasure> Measure = FSlateApplication::Get().GetRenderer()->GetFontMeasureService();
+			const FSlateFontInfo TypeFont = ReadableFont("Bold", 9);
+			const FSlateFontInfo NameFont = ReadableFont("Bold", 11);
+			const FSlateFontInfo DesignationFont = Font("Bold", 10);
+			// The labels are capitals: what reads as the text's height is the cap height (about 0.71 em), not the line box.
+			const auto CapHeight = [](const FSlateFontInfo& Info) { return Info.Size * (96.0f / 72.0f) * 0.71f; };
+			const auto TopToBaseline = [&Measure](const FSlateFontInfo& Info)
+			{
+				return static_cast<float>(Measure->GetMaxCharacterHeight(Info) + Measure->GetBaseline(Info));
+			};
+			FLabelLayout Layout;
+			Layout.NameWidth = Measure->Measure(Name, NameFont).X;
+			const float DesignationWidth = Designation.IsEmpty() ? 0.0f
+				: LabelDesignationGap + Measure->Measure(Designation, DesignationFont).X;
+			const float TypeWidth = Type.IsEmpty() ? 0.0f : Measure->Measure(Type, TypeFont).X;
+			float Baseline = LabelPadY;
+			if (!Type.IsEmpty())
+			{
+				Baseline += CapHeight(TypeFont);
+				Layout.TypeTop = Baseline - TopToBaseline(TypeFont);
+				Baseline += LabelLineGap;
+			}
+			Baseline += CapHeight(NameFont);
+			Layout.NameTop = Baseline - TopToBaseline(NameFont);
+			Layout.DesignationTop = Baseline - TopToBaseline(DesignationFont);
+			Layout.Size = FVector2D(LabelBar + LabelPadX + FMath::Max(TypeWidth, Layout.NameWidth + DesignationWidth) + LabelPadX,
+				Baseline + LabelPadY);
+			return Layout;
+		}
+		mutable TArray<FLabelLayout> CachedLabelLayouts;
 		mutable TWeakObjectPtr<AActor> CachedSelectedBody;
+		mutable TWeakObjectPtr<const AStarSystem> CachedHomeSystem;
 		mutable int32 CachedPreviewRevision{MIN_int32};
 		mutable EAstroPreviewFocus CachedPreviewFocus{EAstroPreviewFocus::Overview};
 	};
@@ -1677,6 +2186,7 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 	ViewModel = InArgs._ViewModel;
 	OnBack = InArgs._OnBack;
 	OnContinue = InArgs._OnContinue;
+	APSGenerationUI::ApplyTheme();
 
 	using namespace APSGenerationUI;
 	const TWeakObjectPtr<UWorldGenerationViewModel> VM = ViewModel;
@@ -1697,7 +2207,7 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 				.ButtonColorAndOpacity_Lambda([VM, Getter]()
 				{
 					return VM.IsValid() && VM->GeneratedWorld && Getter(VM->GeneratedWorld)
-						? FLinearColor(0.0f, 0.52f, 0.68f, 1.0f) : FLinearColor(0.18f, 0.23f, 0.27f, 1.0f);
+						? APSUITheme::RetintHighlight(FLinearColor(0.0f, 0.52f, 0.68f, 1.0f)) : APSUITheme::Retint(FLinearColor(0.18f, 0.23f, 0.27f, 1.0f));
 				})
 				.OnClicked_Lambda([VM, Getter, Setter]()
 				{
@@ -1711,10 +2221,53 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 				[
 					SNew(STextBlock)
 					.Text_Lambda([VM, Getter](){ return FText::FromString(VM.IsValid() && VM->GeneratedWorld && Getter(VM->GeneratedWorld) ? TEXT("ON") : TEXT("OFF")); })
-					.Justification(ETextJustify::Center).Font(Font("Bold", 10)).ColorAndOpacity(Cyan)
+					.Justification(ETextJustify::Center).Font(Font("Bold", 10)).ColorAndOpacity(Cyan).RenderTransform(CapsShift("Bold", 10))
 				]
 			]
 		];
+	};
+
+	// Rio 05.10 (real scale experiment): BoolRow's look, routed through the view model (the camera refits every scope,
+	// whose size changes by orders of magnitude). It needs FULL-SCALE WORLD; the game starts from it too (Rio 05.10).
+	const auto RealScaleRow = [VM]()
+	{
+		const auto IsOn = [VM]() { return VM.IsValid() && VM->GeneratedWorld && VM->GeneratedWorld->bRealScale; };
+		return SNew(SVerticalBox)
+			.IsEnabled_Lambda([VM]() { return VM.IsValid() && VM->GeneratedWorld && VM->GeneratedWorld->bGenerateFullScaledWorld; })
+			+ SVerticalBox::Slot().AutoHeight()
+			[
+				SNew(SBorder).BorderImage(&ControlBrush).Padding(FMargin(10.0f, 4.0f))
+				[
+				SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
+					[SNew(STextBlock).Text(LOCTEXT("RealScale", "REAL DISTANCES")).Font(ReadableFont("Bold", 10)).ColorAndOpacity(SecondaryText)]
+					+ SHorizontalBox::Slot().AutoWidth()
+					[
+						SNew(SButton).ButtonStyle(&SecondaryButton).ContentPadding(FMargin(14.0f, 4.0f))
+						.HAlign(HAlign_Center).VAlign(VAlign_Center)
+						.ButtonColorAndOpacity_Lambda([IsOn]()
+						{
+							return IsOn() ? APSUITheme::RetintHighlight(FLinearColor(0.0f, 0.52f, 0.68f, 1.0f)) : APSUITheme::Retint(FLinearColor(0.18f, 0.23f, 0.27f, 1.0f));
+						})
+						.OnClicked_Lambda([VM, IsOn]()
+						{
+							if (UWorldGenerationViewModel* MutableVM = VM.Get()) MutableVM->SetRealScale(!IsOn());
+							return FReply::Handled();
+						})
+						[
+							SNew(STextBlock)
+							.Text_Lambda([IsOn](){ return FText::FromString(IsOn() ? TEXT("ON") : TEXT("OFF")); })
+							.Justification(ETextJustify::Center).Font(Font("Bold", 10)).ColorAndOpacity(Cyan).RenderTransform(CapsShift("Bold", 10))
+						]
+					]
+				]
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 4.0f, 0.0f, 0.0f)
+			[
+				SNew(STextBlock).Visibility_Lambda([IsOn]() { return IsOn() ? EVisibility::Visible : EVisibility::Collapsed; })
+				.Text(LOCTEXT("RealScaleHint", "THE SAME WORLD AT REAL DISTANCES: NEIGHBOUR STARS SOME LIGHT YEARS APART, ORBITS IN REAL AU. THE GAME STARTS AT REAL DISTANCES TOO."))
+				.AutoWrapText(true).Font(ReadableFont("Regular", 9)).ColorAndOpacity(SecondaryText)
+			];
 	};
 
 	const TSharedRef<SWidget> OverviewControls = SNew(SScrollBox) + SScrollBox::Slot()
@@ -1723,6 +2276,7 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 12.0f)[SectionTitle(LOCTEXT("Astro", "ASTRO GENERATION"))]
 		+ SVerticalBox::Slot().AutoHeight()[EnumRow<EAstroGenerationLevel>(LOCTEXT("Level", "GENERATION LEVEL"), VM, [](const UGeneratedWorld* W){ return W->AstroGenerationLevel; })]
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 5.0f)[BoolRow(LOCTEXT("FullScale", "FULL-SCALE WORLD"), [](const UGeneratedWorld* W){return W->bGenerateFullScaledWorld;}, [](UGeneratedWorld* W, bool V){W->bGenerateFullScaledWorld=V;})]
+		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 5.0f)[RealScaleRow()]
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 5.0f)[BoolRow(LOCTEXT("HomeSystemEnabled", "GENERATE HOME SYSTEM"), [](const UGeneratedWorld* W){return W->bGenerateHomeSystem;}, [](UGeneratedWorld* W, bool V){W->bGenerateHomeSystem=V;})]
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 5.0f)[BoolRow(LOCTEXT("StartWithHomePlanet", "START WITH HOME PLANET"), [](const UGeneratedWorld* W){return W->bStartWithHomePlanet;}, [](UGeneratedWorld* W, bool V){W->bStartWithHomePlanet=V;})]
 	];
@@ -1732,10 +2286,28 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 		SNew(SVerticalBox)
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 12.0f)[SectionTitle(LOCTEXT("Galaxy", "GALAXY"))]
 		+ SVerticalBox::Slot().AutoHeight()[EnumRow<EGalaxyType>(LOCTEXT("GalaxyType", "TYPE / PRESET"), VM, [](const UGeneratedWorld* W){ return W->GalaxyType; })]
-		+ SVerticalBox::Slot().AutoHeight()[EnumRow<EGalaxyClass>(LOCTEXT("GalaxyClass", "CLASS"), VM, [](const UGeneratedWorld* W){ return W->GalaxyClass; })]
-		+ SVerticalBox::Slot().AutoHeight()[NumberRow<int32>(LOCTEXT("GalaxySize", "SIZE"), 1, 100000, 1, VM, [](const UGeneratedWorld* W){ return W->GalaxySize; }, [](UWorldGenerationViewModel* V, int32 X){ V->SetGalaxySize(X); })]
-		+ SVerticalBox::Slot().AutoHeight()[NumberRow<int32>(LOCTEXT("StarCount", "MODELED STAR COUNT"), 1, 1000000000, 100000, VM, [](const UGeneratedWorld* W){ return W->GalaxyStarCount; }, [](UWorldGenerationViewModel* V, int32 X){ V->SetGalaxyStarCount(X); })]
+		// Rio 03.10: CLASS offers only the subclasses of the current TYPE (a type change coerces the class).
+		+ SVerticalBox::Slot().AutoHeight()[EnumRow<EGalaxyClass>(LOCTEXT("GalaxyClass", "CLASS"), VM, [](const UGeneratedWorld* W){ return W->GalaxyClass; },
+			[](const UGeneratedWorld* W)
+			{
+				TArray<int64> Values;
+				for (const EGalaxyClass Class : APSGalaxyMorphology::GetSubclasses(W->GalaxyType)) Values.Add(static_cast<int64>(Class));
+				return Values;
+			})]
+		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 8.0f)
+		[SNew(STextBlock).Text_Lambda([VM]()
+		{
+			return VM.IsValid() && VM->GeneratedWorld ? FText::FromString(FString(
+				APSGalaxyMorphology::GetSubclassSummary(VM->GeneratedWorld->GalaxyClass)).ToUpper()) : FText::GetEmpty();
+		}).AutoWrapText(true).Font(ReadableFont("Regular", 9)).ColorAndOpacity(SecondaryText)]
+		+ SVerticalBox::Slot().AutoHeight()[NumberRow<int32>(LOCTEXT("GalaxySize", "SIZE"), APSGalaxyMorphology::MinGalaxySize, 100000, 1, VM, [](const UGeneratedWorld* W){ return W->GalaxySize; }, [](UWorldGenerationViewModel* V, int32 X){ V->SetGalaxySize(X); })]
+		// Rio 03.10: STARS (placed, log slider) replaces MODELED STAR COUNT; the catalogue stays hidden. The ceiling is the
+		// current renderer's (APSGalaxyMorphology::MaxPlacedStars) until the GPU star layer lands.
+		+ SVerticalBox::Slot().AutoHeight()[LogNumberRow(LOCTEXT("PlacedStars", "STARS"), APSGalaxyMorphology::PreviewReferenceBudget, APSGalaxyMorphology::MaxPlacedStars, VM, [](const UGeneratedWorld* W){ return W->GalaxyPlacedStarCount > 0 ? W->GalaxyPlacedStarCount : APSGalaxyMorphology::PreviewReferenceBudget; }, [](UWorldGenerationViewModel* V, int32 X){ V->SetGalaxyPlacedStarCount(X); })]
 		+ SVerticalBox::Slot().AutoHeight()[NumberRow<double>(LOCTEXT("Density", "STAR DENSITY"), 0.01, 1000.0, 0.1, VM, [](const UGeneratedWorld* W){ return W->GalaxyStarDensity; }, [](UWorldGenerationViewModel* V, double X){ V->SetGalaxyStarDensity(X); })]
+		// Rio 03.10: the galaxy's star sizes and spectral classes, the same presets as the cluster's rows.
+		+ SVerticalBox::Slot().AutoHeight()[EnumRow<EStarClusterPopulation>(LOCTEXT("GalaxyPopulation", "POPULATION"), VM, [](const UGeneratedWorld* W){ return W->GalaxyStarPopulation; }, {}, [](UWorldGenerationViewModel* V, int32 X){ V->SetGalaxyStarPopulation(X); })]
+		+ SVerticalBox::Slot().AutoHeight()[EnumRow<EStarClusterComposition>(LOCTEXT("GalaxyComposition", "COMPOSITION"), VM, [](const UGeneratedWorld* W){ return W->GalaxyStarComposition; }, {}, [](UWorldGenerationViewModel* V, int32 X){ V->SetGalaxyStarComposition(X); })]
 	];
 
 	const TSharedRef<SWidget> ClusterControls = SNew(SScrollBox) + SScrollBox::Slot()
@@ -1775,7 +2347,7 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 			+ SVerticalBox::Slot().AutoHeight()
 			[SNew(STextBlock).Text(LOCTEXT("InclinationHint", "0 DEG = FLAT ECLIPTIC. HIGHER VALUES ALLOW TILTED PLANES; DISTANCES STAY UNCHANGED."))
 			.AutoWrapText(true).Font(ReadableFont("Regular", 9)).ColorAndOpacity(SecondaryText)]
-			+ SVerticalBox::Slot().AutoHeight()[NumberRow<int32>(LOCTEXT("TotalPlanets", "TOTAL PLANETS IN SYSTEM"), 0, 120, 1, VM, [VM](const UGeneratedWorld* W){ return VM.IsValid() ? VM->GetSelectedSystemPlanetCount() : W->PlanetsAmount; }, [](UWorldGenerationViewModel* V, int32 X){ V->SetSelectedSystemPlanetCount(X); })]
+			+ SVerticalBox::Slot().AutoHeight()[NumberRow<int32>(LOCTEXT("TotalPlanets", "TOTAL PLANETS IN SYSTEM"), 0, 20, 1, VM, [VM](const UGeneratedWorld* W){ return VM.IsValid() ? VM->GetSelectedSystemPlanetCount() : W->PlanetsAmount; }, [](UWorldGenerationViewModel* V, int32 X){ V->SetSelectedSystemPlanetCount(X); })]
 		]
 		+ SVerticalBox::Slot().AutoHeight()
 		[
@@ -1804,7 +2376,12 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 		SNew(SVerticalBox)
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 12.0f)[SectionTitle(LOCTEXT("SelectedStar", "SELECTED STAR"))]
 		+ SVerticalBox::Slot().AutoHeight()[EnumRow<EStellarType>(LOCTEXT("StellarType", "STELLAR TYPE"), VM, [VM](const UGeneratedWorld* W){ return VM.IsValid() ? VM->GetSelectedStellarType() : W->StellarType; })]
-		+ SVerticalBox::Slot().AutoHeight()[EnumRow<ESpectralClass>(LOCTEXT("Spectral", "SPECTRAL CLASS"), VM, [VM](const UGeneratedWorld* W){ return VM.IsValid() ? VM->GetSelectedSpectralClass() : W->SpectralClass; })]
+		+ SVerticalBox::Slot().AutoHeight()
+		[
+			// A remnant's class follows its type: the row shows it and stays locked.
+			SNew(SBox).IsEnabled_Lambda([VM]() { return !VM.IsValid() || !VM->IsSelectedStarRemnant(); })
+			[EnumRow<ESpectralClass>(LOCTEXT("Spectral", "SPECTRAL CLASS"), VM, [VM](const UGeneratedWorld* W){ return VM.IsValid() ? VM->GetSelectedSpectralClass() : W->SpectralClass; })]
+		]
 		+ SVerticalBox::Slot().AutoHeight()[NumberRow<double>(LOCTEXT("SelectedStarRadius", "SIZE / SOLAR RADII (0 = AUTO)"), 0.0, 1000.0, 0.1, VM, [VM](const UGeneratedWorld* W){ return VM.IsValid() ? VM->GetSelectedStarRadiusOverrideSolar() : W->HomeStarRadiusOverrideSolar; }, [](UWorldGenerationViewModel* V, double X){ V->SetSelectedStarRadiusOverrideSolar(X); })]
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 14.0f, 0.0f, 0.0f)
 		[
@@ -1833,9 +2410,13 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 				[](UWorldGenerationViewModel* V, int32 Direction)
 				{
 					if (!V || !V->GeneratedWorld) return;
-					constexpr int32 FamilyCount = GasGiantSurfaceFamilyIndex + 1;
+					// Rio 02.10: a moon cannot be a gas giant, so a moon's families stop before the giants.
+					const int32 FamilyCount = V->IsSelectedPreviewBodyMoon()
+						? GasGiantSurfaceFamilyIndex : GasGiantSurfaceFamilyIndex + 1;
 					const int32 Current = GetSurfaceFamilyIndex(V->GeneratedWorld->PlanetType);
-					const int32 Next = (Current + (Direction < 0 ? -1 : 1) + FamilyCount) % FamilyCount;
+					const int32 Next = Current >= FamilyCount
+						? (Direction < 0 ? FamilyCount - 1 : 0)
+						: (Current + (Direction < 0 ? -1 : 1) + FamilyCount) % FamilyCount;
 					const TArray<EPlanetType> Presets = GetSurfacePresetsForFamily(Next);
 					if (!Presets.IsEmpty())
 					{
@@ -1854,8 +2435,13 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 				[](UWorldGenerationViewModel* V, int32 Direction)
 				{
 					if (!V || !V->GeneratedWorld) return;
-					const TArray<EPlanetType> Presets = GetSurfacePresetsForFamily(
-						GetSurfaceFamilyIndex(V->GeneratedWorld->PlanetType));
+					int32 Family = GetSurfaceFamilyIndex(V->GeneratedWorld->PlanetType);
+					if (Family == GasGiantSurfaceFamilyIndex && V->IsSelectedPreviewBodyMoon())
+					{
+						// A moon left on a giant preset (older saves) steps into the rocky family.
+						Family = static_cast<int32>(EAPSPlanetSurfaceArchetype::Rocky);
+					}
+					const TArray<EPlanetType> Presets = GetSurfacePresetsForFamily(Family);
 					if (Presets.IsEmpty()) return;
 					const int32 Current = Presets.IndexOfByKey(V->GeneratedWorld->PlanetType);
 					// Loaded legacy Exoplanet stays untouched until the user steps the preset.
@@ -1883,7 +2469,7 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 				[](UWorldGenerationViewModel* V, double X){ V->SetSelectedPlanetOrbitInclination(X); })]
 			+ SVerticalBox::Slot().AutoHeight()
 			[SNew(SButton).ButtonStyle(&SecondaryButton).Text(LOCTEXT("PlanetOrbitAuto", "RESTORE AUTO ORBIT"))
-				.HAlign(HAlign_Center).VAlign(VAlign_Center)
+				.HAlign(HAlign_Center).VAlign(VAlign_Center).ContentPadding(FMargin(14.0f, 6.0f))
 				.IsEnabled_Lambda([VM](){ return VM.IsValid() && VM->HasSelectedPlanetOrbitEdit(); })
 				.OnClicked_Lambda([VM](){ if (VM.IsValid()) VM->ResetSelectedPlanetOrbit(); return FReply::Handled(); })]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 4.0f, 0.0f, 8.0f)
@@ -1918,6 +2504,11 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 				[](UWorldGenerationViewModel* V, int32 X){ V->SetMoonsAmount(X); })]
 		]
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 12.0f, 0.0f, 10.0f)[SectionTitle(LOCTEXT("PlanetSurface", "PLANET SURFACE"))]
+		// Gas giants use the same saved seed for their material, without WorldScape.
+		+ SVerticalBox::Slot().AutoHeight()[NumberRow<int32>(LOCTEXT("SurfaceMaterialSeed", "SURFACE / MATERIAL SEED"), 0, 999983, 1, VM, [](const UGeneratedWorld* W){ return FMath::Clamp(W->PlanetSurfaceSeed, 0, 999983); }, [](UWorldGenerationViewModel* V, int32 X){ V->SetPlanetSurfaceSeed(X); }, &SurfaceControlSliders.FindOrAdd(EAPSGenerationSurfaceControl::Seed))]
+		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 8.0f)
+		[SNew(STextBlock).AutoWrapText(true).Font(ReadableFont("Regular", 9)).ColorAndOpacity(SecondaryText)
+			.Text(LOCTEXT("SurfaceMaterialSeedHint", "0 = AUTO. GAS GIANTS: CHANGES BELTS AND VORTICES; KEEPS THE PLANET TYPE AND PALETTE."))]
 		+ SVerticalBox::Slot().AutoHeight()
 		[
 			SNew(SVerticalBox)
@@ -1926,7 +2517,6 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 				return VM.IsValid() && VM->GeneratedWorld
 					&& UAPSPlanetSurfaceProfileResolver::SupportsWorldScape(VM->GeneratedWorld->PlanetType);
 			})
-		+ SVerticalBox::Slot().AutoHeight()[NumberRow<int32>(LOCTEXT("SurfaceSeed", "SURFACE SEED"), 0, 999983, 1, VM, [](const UGeneratedWorld* W){ return FMath::Clamp(W->PlanetSurfaceSeed, 0, 999983); }, [](UWorldGenerationViewModel* V, int32 X){ V->SetPlanetSurfaceSeed(X); }, &SurfaceControlSliders.FindOrAdd(EAPSGenerationSurfaceControl::Seed))]
 		+ SVerticalBox::Slot().AutoHeight()[NumberRow<double>(LOCTEXT("SurfaceFeatureScale", "FEATURE SCALE"), 0.25, 4.0, 0.05, VM, [](const UGeneratedWorld* W){ return W->SurfaceFeatureScale; }, [](UWorldGenerationViewModel* V, double X){ V->SetSurfaceFeatureScale(X); }, &SurfaceControlSliders.FindOrAdd(EAPSGenerationSurfaceControl::FeatureScale))]
 		+ SVerticalBox::Slot().AutoHeight()[NumberRow<double>(LOCTEXT("SurfaceReliefScale", "RELIEF"), 0.25, 2.5, 0.05, VM, [](const UGeneratedWorld* W){ return W->SurfaceReliefScale; }, [](UWorldGenerationViewModel* V, double X){ V->SetSurfaceReliefScale(X); }, &SurfaceControlSliders.FindOrAdd(EAPSGenerationSurfaceControl::ReliefScale))]
 		+ SVerticalBox::Slot().AutoHeight()[NumberRow<double>(LOCTEXT("SurfaceLandScale", "LAND COVERAGE"), 0.25, 2.0, 0.05, VM, [](const UGeneratedWorld* W){ return W->SurfaceLandCoverageScale; }, [](UWorldGenerationViewModel* V, double X){ V->SetSurfaceLandCoverageScale(X); }, &SurfaceControlSliders.FindOrAdd(EAPSGenerationSurfaceControl::LandCoverage))]
@@ -1936,16 +2526,47 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 5.0f, 0.0f, 0.0f)
 		[
 			SNew(STextBlock)
-			.Text(LOCTEXT("SurfaceSolidHint", "SOLID PLANETS ONLY — GAS GIANTS KEEP THEIR ASTRONOMICAL MATERIAL."))
+			.Text(LOCTEXT("SurfaceTerrainOnlyHint", "TERRAIN CONTROLS APPLY TO SOLID PLANETS ONLY."))
 			.AutoWrapText(true).Font(ReadableFont("Regular", 9)).ColorAndOpacity(SecondaryText)
 		]
 		]
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 12.0f, 0.0f, 10.0f)[SectionTitle(LOCTEXT("Atmosphere", "PLANET ATMOSPHERE"))]
-		+ SVerticalBox::Slot().AutoHeight()[NumberRow<double>(LOCTEXT("AtmosphereHeight", "HEIGHT / KM"), 0.0, 2000.0, 5.0, VM, [](const UGeneratedWorld* W){ return W->AtmosphereHeight; }, [](UWorldGenerationViewModel* V, double X){ if(V->GeneratedWorld){V->GeneratedWorld->AtmosphereHeight=X; V->RefreshPlanetAppearancePreview(false);} })]
+		+ SVerticalBox::Slot().AutoHeight()[NumberRow<double>(LOCTEXT("AtmosphereHeight", "HEIGHT / KM"), 0.0, 2000.0, 5.0, VM, [](const UGeneratedWorld* W){ return W->AtmosphereHeight; }, [](UWorldGenerationViewModel* V, double X){ if(V->GeneratedWorld){V->GeneratedWorld->AtmosphereHeight=APSAtmosphereControlBounds::Height(X, V->GeneratedWorld->PlanetType); V->RefreshPlanetAppearancePreview(false);} }, nullptr,
+			[](const UGeneratedWorld* W){ return APSAtmosphereControlBounds::HeightMaximum(W->PlanetType); })]
 		+ SVerticalBox::Slot().AutoHeight()[NumberRow<double>(LOCTEXT("AtmosphereOpacity", "OPACITY"), 0.0, 40.0, 0.25, VM, [](const UGeneratedWorld* W){ return W->AtmosphereOpacity; }, [](UWorldGenerationViewModel* V, double X){ if(V->GeneratedWorld){V->GeneratedWorld->AtmosphereOpacity=X; V->RefreshPlanetAppearancePreview(false);} })]
 		+ SVerticalBox::Slot().AutoHeight()[NumberRow<double>(LOCTEXT("AtmosphereMulti", "MULTI SCATTERING"), 0.0, 10.0, 0.05, VM, [](const UGeneratedWorld* W){ return W->AtmosphereMultiScattering; }, [](UWorldGenerationViewModel* V, double X){ if(V->GeneratedWorld){V->GeneratedWorld->AtmosphereMultiScattering=X; V->RefreshPlanetAppearancePreview(false);} })]
-		+ SVerticalBox::Slot().AutoHeight()[NumberRow<double>(LOCTEXT("AtmosphereRayleigh", "RAYLEIGH SCALE HEIGHT / KM"), 0.0, 64.0, 0.25, VM, [](const UGeneratedWorld* W){ return W->AtmosphereRayleighScattering; }, [](UWorldGenerationViewModel* V, double X){ if(V->GeneratedWorld){V->GeneratedWorld->AtmosphereRayleighScattering=X; V->RefreshPlanetAppearancePreview(false);} })]
+		+ SVerticalBox::Slot().AutoHeight()[NumberRow<double>(LOCTEXT("AtmosphereRayleigh", "RAYLEIGH SCALE HEIGHT / KM"), 0.0, 64.0, 0.25, VM, [](const UGeneratedWorld* W){ return W->AtmosphereRayleighScattering; }, [](UWorldGenerationViewModel* V, double X){ if(V->GeneratedWorld){V->GeneratedWorld->AtmosphereRayleighScattering=APSAtmosphereControlBounds::Rayleigh(X, V->GeneratedWorld->PlanetType); V->RefreshPlanetAppearancePreview(false);} }, nullptr,
+			[](const UGeneratedWorld* W){ return APSAtmosphereControlBounds::RayleighMaximum(W->PlanetType); })]
 		+ SVerticalBox::Slot().AutoHeight()[AtmosphereColorRows(VM)]
+		+ SVerticalBox::Slot().AutoHeight().Padding(0,12,0,10)[SectionTitle(LOCTEXT("CloudSection","PLANET CLOUDS"))]
+		+ SVerticalBox::Slot().AutoHeight()
+		[SNew(STextBlock).AutoWrapText(true).Font(ReadableFont("Regular",9)).ColorAndOpacity(SecondaryText)
+			.Text_Lambda([VM](){return VM.IsValid()?VM->GetCloudSummary():FText::GetEmpty();})]
+		+ SVerticalBox::Slot().AutoHeight()
+		[
+			SNew(SVerticalBox).IsEnabled_Lambda([VM](){return VM.IsValid()&&VM->CanEditClouds();})
+			+ SVerticalBox::Slot().AutoHeight()[NumberRow<double>(LOCTEXT("CloudCover","COVERAGE / CLIMATE MULTIPLIER"),0.,2.,.05,VM,
+				[](const UGeneratedWorld* W){return W->CloudSettings.CoverageScale;},[](UWorldGenerationViewModel* V,double X){V->SetCloudParameter(EAPSCloudControl::Coverage,X);})]
+			+ SVerticalBox::Slot().AutoHeight()[NumberRow<double>(LOCTEXT("CloudDensity","OPTICAL DENSITY"),0.,2.,.05,VM,
+				[](const UGeneratedWorld* W){return W->CloudSettings.DensityScale;},[](UWorldGenerationViewModel* V,double X){V->SetCloudParameter(EAPSCloudControl::Density,X);})]
+			+ SVerticalBox::Slot().AutoHeight()[NumberRow<double>(LOCTEXT("CloudScale","WEATHER FEATURE SIZE"),.25,3.,.05,VM,
+				[](const UGeneratedWorld* W){return W->CloudSettings.FeatureScale;},[](UWorldGenerationViewModel* V,double X){V->SetCloudParameter(EAPSCloudControl::Scale,X);})]
+			+ SVerticalBox::Slot().AutoHeight()[NumberRow<double>(LOCTEXT("CloudAltitude","LAYER ALTITUDE MULTIPLIER"),.25,2.,.05,VM,
+				[](const UGeneratedWorld* W){return W->CloudSettings.AltitudeScale;},[](UWorldGenerationViewModel* V,double X){V->SetCloudParameter(EAPSCloudControl::Altitude,X);})]
+			+ SVerticalBox::Slot().AutoHeight()[NumberRow<double>(LOCTEXT("CloudWind","MODEL WIND MULTIPLIER / 0 = STATIC"),0.,3.,.05,VM,
+				[](const UGeneratedWorld* W){return W->CloudSettings.WindScale;},[](UWorldGenerationViewModel* V,double X){V->SetCloudParameter(EAPSCloudControl::Wind,X);})]
+			+ SVerticalBox::Slot().AutoHeight()[NumberRow<double>(LOCTEXT("CloudStorms","CLIMATE VORTEX STRENGTH"),0.,2.,.05,VM,
+				[](const UGeneratedWorld* W){return W->CloudSettings.StormScale;},[](UWorldGenerationViewModel* V,double X){V->SetCloudParameter(EAPSCloudControl::Storms,X);})]
+			+ SVerticalBox::Slot().AutoHeight()[NumberRow<int32>(LOCTEXT("CloudSeed","WEATHER SEED OFFSET"),0,999983,1,VM,
+				[](const UGeneratedWorld* W){return W->CloudSettings.SeedOffset;},[](UWorldGenerationViewModel* V,int32 X){V->SetCloudParameter(EAPSCloudControl::Seed,X);})]
+			+ SVerticalBox::Slot().AutoHeight()
+			[SNew(SButton).ButtonStyle(&SecondaryButton).Text(LOCTEXT("CloudAuto","RESTORE CLOUD DEFAULTS"))
+				.HAlign(HAlign_Center).VAlign(VAlign_Center).ContentPadding(FMargin(14.0f, 6.0f))
+				.OnClicked_Lambda([VM](){if(VM.IsValid())VM->ResetCloudParameters();return FReply::Handled();})]
+			+ SVerticalBox::Slot().AutoHeight()
+			[SNew(STextBlock).AutoWrapText(true).Font(ReadableFont("Regular",9)).ColorAndOpacity(SecondaryText)
+				.Text(LOCTEXT("CloudHint","DEFAULT COVERAGE = 0.5 X CLIMATE; OTHER MULTIPLIERS = 1. 0 COVERAGE = CLEAR. COMPOSITION FOLLOWS PLANET TYPE; VACUUM AND UNSUITABLE CLIMATE STAY CLEAR. NO TERRAIN REBUILD."))]
+		]
 	];
 
 	const TSharedRef<SWidget> ControlsSwitcher = SNew(SWidgetSwitcher)
@@ -1992,12 +2613,12 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 			]
 			+ SHorizontalBox::Slot().AutoWidth()
 			[
-				SNew(SButton).ButtonStyle(&SecondaryButton).ContentPadding(FMargin(9.0f, 4.0f))
+				SNew(SButton).ButtonStyle(&SecondaryButton).ContentPadding(FMargin(14.0f, 4.0f))
 				.HAlign(HAlign_Center).VAlign(VAlign_Center)
 				.OnClicked(this, &SWorldGenerationPanel::FocusPreviewUp)
 				.IsEnabled_Lambda([VM]() { return VM.IsValid() && VM->CanFocusPreviewParent(); })
 				[SNew(STextBlock).Text(LOCTEXT("Up", "^  UP")).Justification(ETextJustify::Center)
-				.Font(Font("Bold", 8)).ColorAndOpacity(White)]
+				.Font(Font("Bold", 8)).ColorAndOpacity(White).RenderTransform(CapsShift("Bold", 8))]
 			]
 		]
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 11.0f, 0.0f, 0.0f)
@@ -2005,22 +2626,23 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 			SNew(SBox)
 			.Visibility_Lambda([VM]()
 			{
-				return VM.IsValid() && VM->CanRenameSelectedPreviewBody()
+				return VM.IsValid() && VM->CanRenameCurrentScope()
 					? EVisibility::Visible : EVisibility::Collapsed;
 			})
 			[
 				SNew(SVerticalBox)
 				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 5.0f)
-				[SectionTitle(LOCTEXT("BodyDisplayName", "BODY NAME"))]
+				[
+					// Galaxy and cluster are named here too (Rio 02.10); the title follows the scope.
+					SNew(STextBlock).Font(Font("Bold", 10)).ColorAndOpacity(Cyan)
+					.Text_Lambda([VM]() { return VM.IsValid() ? VM->GetCurrentScopeNameTitle() : FText::GetEmpty(); })
+				]
 				+ SVerticalBox::Slot().AutoHeight()
 				[
+					// Text comes from RefreshNameBox while unfocused, so typing in capitals never drops a binding.
 					SAssignNew(BodyNameTextBox, SEditableTextBox)
-					.Font(ReadableFont("Regular", 11))
-					.Text_Lambda([VM]()
-					{
-						return VM.IsValid() ? VM->GetSelectedPreviewBodyName() : FText::GetEmpty();
-					})
-					.HintText(LOCTEXT("BodyDisplayNameHint", "Enter a name"))
+					.Font(ReadableFont("Bold", 12))
+					.HintText(LOCTEXT("BodyDisplayNameHint", "ENTER A NAME"))
 					.ToolTipText(LOCTEXT("BodyDisplayNameHelp", "1–128 characters. Enter or leave the field to save. Renaming does not regenerate the body."))
 					.OnVerifyTextChanged_Lambda([](const FText& Text, FText& Error)
 					{
@@ -2037,17 +2659,25 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 							: LOCTEXT("BodyDisplayNameInvalid", "Use 1–128 characters without line breaks or control characters.");
 						return bValid;
 					})
-					.OnTextChanged_Lambda([this, VM](const FText&)
+					.OnTextChanged_Lambda([this, VM](const FText& Text)
 					{
-						if (PendingRenameBodyKey.IsEmpty() && VM.IsValid()
-							&& BodyNameTextBox.IsValid() && BodyNameTextBox->HasKeyboardFocus())
-							PendingRenameBodyKey = VM->GetPreviewObjectStableKey(VM->GetSelectedPreviewBody());
+						if (!VM.IsValid() || !BodyNameTextBox.IsValid() || !BodyNameTextBox->HasKeyboardFocus()) return;
+						if (PendingRenameBodyKey.IsEmpty()) PendingRenameBodyKey = VM->GetCurrentScopeNameKey();
+						// Rio 02.10: names are typed in capitals.
+						const FString Typed = Text.ToString();
+						const FString Upper = Typed.ToUpper();
+						if (!Upper.Equals(Typed, ESearchCase::CaseSensitive))
+						{
+							BodyNameTextBox->SetText(FText::FromString(Upper));
+							BodyNameTextBox->GoTo(ETextLocation::EndOfDocument);
+						}
 					})
 					.OnTextCommitted_Lambda([this, VM](const FText& Text, ETextCommit::Type CommitType)
 					{
-						if (VM.IsValid() && CommitType != ETextCommit::OnCleared)
-							VM->SetSelectedPreviewBodyName(Text, PendingRenameBodyKey);
+						if (VM.IsValid() && CommitType != ETextCommit::OnCleared && !PendingRenameBodyKey.IsEmpty())
+							VM->SetCurrentScopeName(FText::FromString(Text.ToString().ToUpper()), PendingRenameBodyKey);
 						PendingRenameBodyKey.Reset();
+						NameBoxKey.Reset();
 					})
 				]
 			]
@@ -2075,9 +2705,7 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 		[
 			SNew(SBorder).BorderImage(&ControlBrush).Padding(FMargin(12.0f, 10.0f))
 			[
-				SNew(STextBlock).AutoWrapText(true)
-				.Font(ReadableFont("Regular", 10)).ColorAndOpacity(White)
-				.Text_Lambda([VM]() { return VM.IsValid() ? VM->GetPreviewScopeSummary() : FText::GetEmpty(); })
+				SAssignNew(ModelCardBox, SVerticalBox)
 			]
 		]
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f, 0.0f, 8.0f)
@@ -2115,16 +2743,19 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 				const EAstroPreviewFocus CurrentFocus = VMValue ? VMValue->GetPreviewFocus() : EAstroPreviewFocus::Overview;
 				const bool bSelected = CurrentFocus == Focus;
 				return bSelected
-					? FLinearColor(0.32f, 0.13f, 0.005f, 1.0f) : FLinearColor::White;
+					? APSUITheme::RetintAction(FLinearColor(0.32f, 0.13f, 0.005f, 1.0f)) : FLinearColor::White;
 			})
-			.ContentPadding(FMargin(12.0f, 8.0f))
+			.ContentPadding(FMargin(14.0f, 8.0f))
 			.OnClicked(this, &SWorldGenerationPanel::FocusPreview, static_cast<uint8>(Focus))
 			[
+				// Rio 03.10: the glyph and the name on one middle line, by their capitals.
 				SNew(SHorizontalBox)
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.0f, 0.0f, 7.0f, 0.0f)
-				[SNew(STextBlock).Text(Glyph).Font(APSGenerationUI::Font("Bold", 9)).ColorAndOpacity(APSGenerationUI::Cyan)]
+				[SNew(STextBlock).Text(Glyph).Font(APSGenerationUI::Font("Bold", 9)).ColorAndOpacity(APSGenerationUI::Cyan)
+				.RenderTransform(APSGenerationUI::CapsShift("Bold", 9))]
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
-				[SNew(STextBlock).Text(Label).Font(APSGenerationUI::Font("Bold", 10)).ColorAndOpacity(APSGenerationUI::White)]
+				[SNew(STextBlock).Text(Label).Font(APSGenerationUI::Font("Bold", 10)).ColorAndOpacity(APSGenerationUI::White)
+				.RenderTransform(APSGenerationUI::CapsShift("Bold", 10))]
 			];
 	};
 
@@ -2141,7 +2772,8 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 					SNew(SButton).ButtonStyle(&SecondaryButton).OnClicked(this, &SWorldGenerationPanel::GoBack).ContentPadding(FMargin(15.0f, 8.0f))
 					.HAlign(HAlign_Center).VAlign(VAlign_Center)
 					[SNew(STextBlock).Text(LOCTEXT("Back", "<  BACK")).Justification(ETextJustify::Center)
-					.Font(Font("Bold", 12)).ColorAndOpacity(White).OverflowPolicy(ETextOverflowPolicy::Ellipsis)]
+					.Font(Font("Bold", 12)).ColorAndOpacity(White).OverflowPolicy(ETextOverflowPolicy::Ellipsis)
+					.RenderTransform(CapsShift("Bold", 12))]
 				]
 				+ SHorizontalBox::Slot().FillWidth(1.0f).HAlign(HAlign_Center)
 				[
@@ -2159,8 +2791,10 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 				[
 					SNew(SButton).ButtonStyle(&SecondaryButton).OnClicked(this, &SWorldGenerationPanel::RefreshPreview).ContentPadding(FMargin(14.0f, 8.0f))
 					.HAlign(HAlign_Center).VAlign(VAlign_Center)
+					.ToolTipText(LOCTEXT("RefreshHint", "Roll a new world: stars, planets, the start world and its moons. Clears the edits."))
 					[SNew(STextBlock).Text(LOCTEXT("Refresh", "REGENERATE")).Justification(ETextJustify::Center)
-					.Font(Font("Bold", 11)).ColorAndOpacity(Cyan).OverflowPolicy(ETextOverflowPolicy::Ellipsis)]
+					.Font(Font("Bold", 11)).ColorAndOpacity(Cyan).OverflowPolicy(ETextOverflowPolicy::Ellipsis)
+					.RenderTransform(CapsShift("Bold", 11))]
 				]
 			]
 			+ SVerticalBox::Slot().FillHeight(1.0f).Padding(0.0f, 14.0f)
@@ -2182,13 +2816,55 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 							// Status text owns real layout space. The annotation layer is
 							// clipped between these rows, and still projects world positions
 							// through its absolute geometry. Camera/input bounds do not move.
-							SNew(SVerticalBox).Visibility(EVisibility::HitTestInvisible)
-							+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Left).Padding(10.0f)
-							[SNew(STextBlock).Tag(TEXT("PreviewStatusHeading")).Text(LOCTEXT("PreviewCornerTL", "+  LIVE FULL-SCALE PREVIEW")).Font(Font("Bold", 9)).ColorAndOpacity(FLinearColor(0.20f, 0.90f, 0.55f, 0.82f))]
+							// Only the MARKS toggle takes clicks here; everything else lets drags and picks through.
+							SNew(SVerticalBox).Visibility(EVisibility::SelfHitTestInvisible)
+							+ SVerticalBox::Slot().AutoHeight().Padding(10.0f, 6.0f, 6.0f, 6.0f)
+							[
+								SNew(SHorizontalBox).Visibility(EVisibility::SelfHitTestInvisible)
+								+ SHorizontalBox::Slot().FillWidth(1.0f).HAlign(HAlign_Left).VAlign(VAlign_Center)
+								[
+									// Rio 06.10 ("these labels don't read, white on white"): a dark chip plate under the corner text.
+									SNew(SBorder).Tag(TEXT("PreviewStatusHeading")).Visibility(EVisibility::HitTestInvisible)
+									.BorderImage(&ChipBrush).Padding(FMargin(8.0f, 3.0f))
+									[SNew(STextBlock).Text(LOCTEXT("PreviewCornerTL", "+  LIVE FULL-SCALE PREVIEW")).Font(Font("Bold", 9)).ColorAndOpacity(APSUITheme::Current() == EAPSUITheme::Classic ? FLinearColor(0.20f, 0.90f, 0.55f, 0.95f) : APSUITheme::Fade(APSUITheme::Palette().TextSoft, 0.95f))]
+								]
+								+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+								[
+									// Rio 02.10: hide or show all the preview's marks, for just space. Rio 03.10: a view
+									// setting, so it lives in the preview's corner, not among the focus modes below.
+									SNew(SButton)
+									.ButtonStyle(&SecondaryButton)
+									.HAlign(HAlign_Center).VAlign(VAlign_Center)
+									.ContentPadding(FMargin(14.0f, 4.0f))
+									.ToolTipText(LOCTEXT("MarksHint", "Show or hide the preview's orbits, rings and labels."))
+									.ButtonColorAndOpacity_Lambda([VM]()
+									{
+										return VM.IsValid() && VM->ArePreviewMarksHidden() ? APSUITheme::RetintAction(FLinearColor(0.32f, 0.13f, 0.005f, 1.0f)) : FLinearColor::White;
+									})
+									.OnClicked_Lambda([VM]()
+									{
+										if (UWorldGenerationViewModel* MutableVM = VM.Get())
+										{
+											MutableVM->SetPreviewMarksHidden(!MutableVM->ArePreviewMarksHidden());
+										}
+										return FReply::Handled();
+									})
+									[
+										SNew(STextBlock)
+										.Text_Lambda([VM]() { return VM.IsValid() && VM->ArePreviewMarksHidden() ? LOCTEXT("MarksHidden", "MARKS OFF") : LOCTEXT("MarksShown", "MARKS ON"); })
+										.Font(Font("Bold", 9)).ColorAndOpacity(White)
+										.Justification(ETextJustify::Center).RenderTransform(CapsShift("Bold", 9))
+									]
+								]
+							]
 							+ SVerticalBox::Slot().FillHeight(1.0f)
 							[SNew(SPreviewSystemOverlay).ViewModel(VM)]
 							+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right).Padding(10.0f)
-							[SNew(STextBlock).Tag(TEXT("PreviewStatusFooter")).Text(LOCTEXT("PreviewCornerBR", "FULL SCALE  +")).Font(Font("Bold", 8)).ColorAndOpacity(FLinearColor(Cyan.R, Cyan.G, Cyan.B, 0.55f))]
+							[
+								SNew(SBorder).Tag(TEXT("PreviewStatusFooter")).Visibility(EVisibility::HitTestInvisible)
+								.BorderImage(&ChipBrush).Padding(FMargin(8.0f, 3.0f))
+								[SNew(STextBlock).Text(LOCTEXT("PreviewCornerBR", "FULL SCALE  +")).Font(Font("Bold", 8)).ColorAndOpacity(FLinearColor(Cyan.R, Cyan.G, Cyan.B, 0.9f))]
+							]
 						]
 					]
 					+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0.0f, 10.0f)
@@ -2213,9 +2889,14 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 			+ SVerticalBox::Slot().AutoHeight()
 			[
 				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
+				+ SHorizontalBox::Slot().FillWidth(1.0f).HAlign(HAlign_Left).VAlign(VAlign_Center)
 				[
-					SNew(STextBlock).Text(this, &SWorldGenerationPanel::GetPreviewStatus).Font(Font("Bold", 11)).ColorAndOpacity(Cyan)
+					// Rio 06.10: the same plate as the preview's corner texts, so the status reads over any frame.
+					SNew(SBorder).BorderImage(&ChipBrush).Padding(FMargin(10.0f, 4.0f))
+					[
+						SNew(STextBlock).Text(this, &SWorldGenerationPanel::GetPreviewStatus).Font(Font("Bold", 11)).ColorAndOpacity(Cyan)
+						.RenderTransform(CapsShift("Bold", 11))
+					]
 				]
 				+ SHorizontalBox::Slot().AutoWidth()
 				[
@@ -2223,12 +2904,14 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 					.HAlign(HAlign_Center).VAlign(VAlign_Center)
 					.IsEnabled_Lambda([VM]() { return VM.IsValid() && VM->bPreviewReady
 						&& (VM->GetGenerationRoute() != EAPSGenerationRoute::Civilization || VM->GetHomeStartPlanetCount() > 0); })
-					.ToolTipText_Lambda([VM]() { return VM.IsValid() && VM->GetGenerationRoute() == EAPSGenerationRoute::Civilization
+					.ToolTipText_Lambda([VM]() { return VM.IsValid() && VM->IsRealScaleActive()
+						? LOCTEXT("RealScaleContinueHint", "REAL DISTANCES: the game starts at real distances, neighbour stars light years away.")
+						: VM.IsValid() && VM->GetGenerationRoute() == EAPSGenerationRoute::Civilization
 						&& VM->GetHomeStartPlanetCount() == 0 ? LOCTEXT("HomePlanetRequiredHint", "A civilization needs a planet in the home system.") : FText::GetEmpty(); })
 					.ContentPadding(FMargin(52.0f, 13.0f))
 					[SNew(STextBlock).Text(this, &SWorldGenerationPanel::GetContinueLabel)
 					.Justification(ETextJustify::Center).OverflowPolicy(ETextOverflowPolicy::Ellipsis)
-					.Font(Font("Bold", 14)).ColorAndOpacity(White)]
+					.Font(Font("Bold", 14)).ColorAndOpacity(White).RenderTransform(CapsShift("Bold", 14))]
 				]
 			]
 		]
@@ -2236,6 +2919,8 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 
 	if (UWorldGenerationViewModel* MutableVM = ViewModel.Get())
 	{
+		// Rio 03.10: a new world flow starts from a freshly rolled world, not the one default world everybody shared.
+		MutableVM->RollFreshWorldOnce();
 		MutableVM->RequestPreview();
 	}
 	RegisterActiveTimer(0.35f, FWidgetActiveTimerDelegate::CreateSP(this, &SWorldGenerationPanel::RefreshBodyHierarchy));
@@ -2359,6 +3044,8 @@ EActiveTimerReturnType SWorldGenerationPanel::RefreshBodyHierarchy(double Curren
 	{
 		return EActiveTimerReturnType::Continue;
 	}
+	RefreshModelCard();
+	RefreshNameBox();
 
 	TArray<FAPSPreviewBodyEntry> Entries;
 	VM->GetPreviewHierarchyEntries(Entries);
@@ -2505,6 +3192,21 @@ void SWorldGenerationPanel::RebuildBodyHierarchy(const TArray<FAPSPreviewBodyEnt
 				|| (PreviewFocusValue != INDEX_NONE
 					&& static_cast<int32>(VM->GetPreviewFocus()) == PreviewFocusValue));
 		};
+		// Rio 02.10: who contains whom. A row whose subtree holds the selection is tinted cyan.
+		TArray<TWeakObjectPtr<AActor>> Descendants;
+		for (int32 ChildIndex = EntryIndex + 1; ChildIndex < Entries.Num() && Entries[ChildIndex].Depth > Entry.Depth;
+			++ChildIndex)
+		{
+			if (Entries[ChildIndex].Actor.IsValid()) Descendants.Add(Entries[ChildIndex].Actor);
+		}
+		const auto ContainsSelection = [this, Descendants]()
+		{
+			const UWorldGenerationViewModel* VM = ViewModel.Get();
+			const AActor* Selected = VM ? VM->GetSelectedPreviewBody() : nullptr;
+			return Selected && Descendants.ContainsByPredicate(
+				[Selected](const TWeakObjectPtr<AActor>& Actor) { return Actor.Get() == Selected; });
+		};
+		const FString Designation = APSBodyDesignation::Of(BodyActor.Get());
 		BodyHierarchyBox->AddSlot().AutoHeight().Padding(0.0f, 2.0f)
 		[
 			SNew(SHorizontalBox)
@@ -2518,7 +3220,8 @@ void SWorldGenerationPanel::RebuildBodyHierarchy(const TArray<FAPSPreviewBodyEnt
 					.OnClicked(this, &SWorldGenerationPanel::ToggleHierarchyChildren, EntryKey)
 					.ToolTipText(bCollapsed ? LOCTEXT("ExpandChildren", "Show children") : LOCTEXT("CollapseChildren", "Hide children"))
 					[SNew(STextBlock).Text(FText::FromString(bCollapsed ? TEXT("+") : TEXT("-")))
-					.Justification(ETextJustify::Center).Font(Font("Bold", 10)).ColorAndOpacity(Cyan)]
+					.Justification(ETextJustify::Center).Font(Font("Bold", 10)).ColorAndOpacity(Cyan)
+					.RenderTransform(SymbolShift("Bold", 10))]
 				]
 			]
 			+ SHorizontalBox::Slot().FillWidth(1.0f)
@@ -2534,9 +3237,9 @@ void SWorldGenerationPanel::RebuildBodyHierarchy(const TArray<FAPSPreviewBodyEnt
 				+ SOverlay::Slot()
 				[
 					SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush"))
-					.BorderBackgroundColor_Lambda([IsSelected]()
+					.BorderBackgroundColor_Lambda([IsSelected, ContainsSelection]()
 					{
-						return IsSelected() ? SelectedFill : FLinearColor::Transparent;
+						return IsSelected() ? SelectedFill : ContainsSelection() ? AncestorFill : FLinearColor::Transparent;
 					})
 					.Visibility(EVisibility::HitTestInvisible)
 				]
@@ -2555,13 +3258,28 @@ void SWorldGenerationPanel::RebuildBodyHierarchy(const TArray<FAPSPreviewBodyEnt
 						.Glyph(Glyph)
 						.Color_Lambda([IsSelected]() { return IsSelected() ? Amber : Cyan; })
 					]
+					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.0f, 0.0f, 6.0f, 0.0f)
+					[
+						SNew(SBox).Visibility(Designation.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible)
+						.MinDesiredWidth(26.0f)
+						[
+							// Rio 03.10: even padding, the designation centred by its capitals.
+							SNew(SBorder).BorderImage(&ChipBrush).Padding(FMargin(7.0f, 3.0f)).HAlign(HAlign_Center).VAlign(VAlign_Center)
+							[
+								SNew(STextBlock).Text(FText::FromString(Designation)).Font(Font("Bold", 8))
+								.Justification(ETextJustify::Center).RenderTransform(CapsShift("Bold", 8))
+								.ColorAndOpacity_Lambda([IsSelected]() { return IsSelected() ? Amber : Cyan; })
+							]
+						]
+					]
 					+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
 					[
 						SNew(SVerticalBox)
 						+ SVerticalBox::Slot().AutoHeight()
 						[
 							SNew(STextBlock).Text(Entry.Label).Font(ReadableFont("Bold", 10))
-							.ColorAndOpacity(White).OverflowPolicy(ETextOverflowPolicy::Ellipsis)
+							.ColorAndOpacity_Lambda([IsSelected]() { return IsSelected() ? Amber : White; })
+							.OverflowPolicy(ETextOverflowPolicy::Ellipsis)
 							.ToolTipText(Entry.Label)
 						]
 						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f, 0.0f, 0.0f)
@@ -2576,17 +3294,19 @@ void SWorldGenerationPanel::RebuildBodyHierarchy(const TArray<FAPSPreviewBodyEnt
 						SNew(SBox).WidthOverride(25.0f).HeightOverride(20.0f)
 						.Visibility(ImmediateChildCount > 0 ? EVisibility::Visible : EVisibility::Collapsed)
 						[
-							SNew(SBorder).BorderImage(&ControlBrush).Padding(0.0f)
+							// The count in the middle of its box (it sat at the top).
+							SNew(SBorder).BorderImage(&ControlBrush).Padding(0.0f).HAlign(HAlign_Center).VAlign(VAlign_Center)
 							[
-								SNew(STextBlock).Text(FText::AsNumber(ImmediateChildCount))
+								SNew(STextBlock).Text(APSUINumber::Number(ImmediateChildCount))
 								.Justification(ETextJustify::Center).Font(Font("Bold", 8)).ColorAndOpacity(Cyan)
+								.RenderTransform(CapsShift("Bold", 8))
 							]
 						]
 					]
 					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 					[
 						SNew(STextBlock).Text(bCanFocus ? FText::FromString(TEXT(">")) : FText::GetEmpty())
-						.Font(Font("Bold", 9)).ColorAndOpacity_Lambda([IsSelected]()
+						.Font(Font("Bold", 9)).RenderTransform(SymbolShift("Bold", 9)).ColorAndOpacity_Lambda([IsSelected]()
 						{
 							return IsSelected() ? Amber : Cyan;
 						})
@@ -2595,16 +3315,170 @@ void SWorldGenerationPanel::RebuildBodyHierarchy(const TArray<FAPSPreviewBodyEnt
 				+ SOverlay::Slot().HAlign(HAlign_Left)
 				[
 					SNew(SBox).WidthOverride(3.0f)
-					.Visibility_Lambda([IsSelected]()
+					.Visibility_Lambda([IsSelected, ContainsSelection]()
 					{
-						return IsSelected() ? EVisibility::HitTestInvisible : EVisibility::Collapsed;
+						return IsSelected() || ContainsSelection() ? EVisibility::HitTestInvisible : EVisibility::Collapsed;
 					})
-					[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(Amber)]
+					[
+						SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+						.BorderBackgroundColor_Lambda([IsSelected]() { return IsSelected() ? Amber : Cyan; })
+					]
 				]
 			]
 			]
 		];
 	}
+}
+
+void SWorldGenerationPanel::RefreshModelCard()
+{
+	const UWorldGenerationViewModel* VM = ViewModel.Get();
+	if (!VM || !ModelCardBox.IsValid())
+	{
+		return;
+	}
+	FAPSModelCard Card;
+	VM->GetPreviewModelCard(Card);
+	// Rebuilt only when a shown text changes; values such as the live star count settle within a few refreshes.
+	FString Signature = FString::Printf(TEXT("%d|%s|%s|%s|%s"), static_cast<int32>(Card.Glyph), *Card.Kind.ToString(),
+		*Card.Designation.ToString(), *Card.Title.ToString(), *Card.Subtitle.ToString());
+	for (const FAPSModelFact& Fact : Card.Facts)
+	{
+		Signature += FString::Printf(TEXT("|%d%d%s=%s %s %s"), static_cast<int32>(Fact.Glyph), Fact.bAccent ? 1 : 0,
+			*Fact.Label.ToString(), *Fact.Value.ToString(), *Fact.Unit.ToString(), *Fact.Note.ToString());
+	}
+	if (Signature != ModelCardSignature)
+	{
+		ModelCardSignature = MoveTemp(Signature);
+		RebuildModelCard(Card);
+	}
+}
+
+void SWorldGenerationPanel::RebuildModelCard(const FAPSModelCard& Card)
+{
+	using namespace APSGenerationUI;
+	ModelCardBox->ClearChildren();
+	const FLinearColor TileFill = APSUITheme::Retint(FLinearColor(0.006f, 0.034f, 0.052f, 0.92f));
+	const bool bClassicTheme = APSUITheme::Current() == EAPSUITheme::Classic;
+	// Rio 06.10: three tiles to a row (two in Classic, as it was).
+	const int32 Columns = bClassicTheme ? 2 : 3;
+
+	// Header: icon badge, kind and designation, the name, a one-line description.
+	ModelCardBox->AddSlot().AutoHeight()
+	[
+		SNew(SHorizontalBox)
+		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Top).Padding(0.0f, 2.0f, 10.0f, 0.0f)
+		[
+			SNew(SBox).WidthOverride(36.0f).HeightOverride(36.0f)
+			[
+				SNew(SBorder).BorderImage(&BadgeBrush).Padding(0.0f).HAlign(HAlign_Center).VAlign(VAlign_Center)
+				[SNew(SAPSModelGlyph).Glyph(Card.Glyph).Color(Cyan).Size(22.0f)]
+			]
+		]
+		+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
+		[
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight()
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+				[SNew(STextBlock).Text(Card.Kind).Font(Font("Bold", 9)).ColorAndOpacity(Cyan).RenderTransform(CapsShift("Bold", 9))]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(8.0f, 0.0f, 0.0f, 0.0f)
+				[
+					SNew(SBox).Visibility(Card.Designation.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible)
+					[
+						// Rio 03.10: even padding, the designation centred by its capitals.
+						SNew(SBorder).BorderImage(&ChipBrush).Padding(FMargin(8.0f, 3.0f)).HAlign(HAlign_Center).VAlign(VAlign_Center)
+						[SNew(STextBlock).Text(Card.Designation).Font(Font("Bold", 9)).ColorAndOpacity(Amber)
+						.Justification(ETextJustify::Center).RenderTransform(CapsShift("Bold", 9))]
+					]
+				]
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 3.0f, 0.0f, 0.0f)
+			[SNew(STextBlock).Text(Card.Title).Font(Font("Bold", 15)).ColorAndOpacity(White).AutoWrapText(true)]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f, 0.0f, 0.0f)
+			[
+				SNew(STextBlock).Text(Card.Subtitle).Font(ReadableFont("Regular", 9)).ColorAndOpacity(SecondaryText)
+				.AutoWrapText(true).Visibility(Card.Subtitle.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible)
+			]
+		]
+	];
+	if (Card.Facts.IsEmpty())
+	{
+		return;
+	}
+	ModelCardBox->AddSlot().AutoHeight().Padding(0.0f, 10.0f, 0.0f, 8.0f)
+	[SNew(SBox).HeightOverride(1.0f)[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(CyanDim)]];
+
+	// Facts: two tiles per row. Label with its icon on top, the value highlighted, the unit beside it.
+	TSharedRef<SGridPanel> Grid = SNew(SGridPanel).FillColumn(0, 1.0f).FillColumn(1, 1.0f).FillColumn(2, Columns > 2 ? 1.0f : 0.0f);
+	for (int32 Index = 0; Index < Card.Facts.Num(); ++Index)
+	{
+		const FAPSModelFact& Fact = Card.Facts[Index];
+		const FLinearColor ValueColor = Fact.bAccent ? (bClassicTheme ? Amber : APSUITheme::Palette().ActionPeak) : Cyan;
+		// Enum readings ("MAIN SEQUENCE STAR") are words, numbers stay large.
+		const bool bWords = Fact.Value.ToString().Len() > (Columns > 2 ? 7 : 9);
+		const int32 Column = Index % Columns;
+		const float Gap = Columns > 2 ? 3.0f : 4.0f;
+		Grid->AddSlot(Column, Index / Columns)
+			.Padding(FMargin(Column == 0 ? 0.0f : Gap, 0.0f, Column == Columns - 1 ? 0.0f : Gap, Columns > 2 ? 5.0f : 6.0f))
+		[
+			SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(TileFill)
+			.Padding(Columns > 2 ? FMargin(7.0f, 5.0f) : FMargin(8.0f, 6.0f))
+			[
+				SNew(SVerticalBox)
+				+ SVerticalBox::Slot().AutoHeight()
+				[
+					SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.0f, 0.0f, 5.0f, 0.0f)
+					[SNew(SAPSModelGlyph).Glyph(Fact.Glyph).Color(FLinearColor(ValueColor.R, ValueColor.G, ValueColor.B, 0.75f)).Size(14.0f)]
+					+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
+					[SNew(STextBlock).Text(Fact.Label).Font(Font("Bold", 8)).ColorAndOpacity(SecondaryText).RenderTransform(CapsShift("Bold", 8))]
+				]
+				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 4.0f, 0.0f, 0.0f)
+				[
+					bWords
+					? StaticCastSharedRef<SWidget>(SNew(STextBlock).Text(Fact.Unit.IsEmpty() ? Fact.Value
+						: FText::Format(LOCTEXT("ModelWordsUnit", "{0}  {1}"), Fact.Value, Fact.Unit))
+						.Font(Font("Bold", 10)).ColorAndOpacity(ValueColor).AutoWrapText(true))
+					: StaticCastSharedRef<SWidget>(SNew(SHorizontalBox)
+						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Bottom)
+						[
+							SNew(STextBlock).Text(Fact.Value).Font(Font("Bold", Columns > 2 ? 13 : 15)).ColorAndOpacity(ValueColor)
+						]
+						+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Bottom).Padding(5.0f, 0.0f, 0.0f, 2.0f)
+						[
+							SNew(STextBlock).Text(Fact.Unit).Font(Font("Bold", 8)).ColorAndOpacity(SecondaryText)
+							.AutoWrapText(true).Visibility(Fact.Unit.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible)
+						])
+				]
+				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f, 0.0f, 0.0f)
+				[
+					SNew(STextBlock).Text(Fact.Note).Font(ReadableFont("Regular", 8)).ColorAndOpacity(SecondaryText)
+					.AutoWrapText(true).Visibility(Fact.Note.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible)
+				]
+			]
+		];
+	}
+	ModelCardBox->AddSlot().AutoHeight()[Grid];
+}
+
+void SWorldGenerationPanel::RefreshNameBox()
+{
+	const UWorldGenerationViewModel* VM = ViewModel.Get();
+	if (!VM || !BodyNameTextBox.IsValid() || BodyNameTextBox->HasKeyboardFocus())
+	{
+		return;
+	}
+	const FString Key = VM->GetCurrentScopeNameKey();
+	const FString Value = VM->GetCurrentScopeName().ToString();
+	if (Key == NameBoxKey && Value == NameBoxValue)
+	{
+		return;
+	}
+	NameBoxKey = Key;
+	NameBoxValue = Value;
+	BodyNameTextBox->SetText(FText::FromString(Value));
 }
 
 #undef LOCTEXT_NAMESPACE

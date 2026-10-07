@@ -69,6 +69,7 @@ void UMoonGenerator::ApplyModel(AMoon* Moon, TSharedPtr<FMoonModel> MoonGenerati
         ? FMath::Max(1, FMath::RoundToInt(MoonGenerationModel->RadiusKM)) : 0;
     Moon->AffectionRadiusKM = MoonGenerationModel->RadiusKM;
     Moon->AtmosphereHeight = MoonGenerationModel->MoonAtmosphereHeight;
+	Moon->CloudSettings = MoonGenerationModel->CloudSettings.Sanitized();
 	Moon->WorldScapeSeed = MoonGenerationModel->SurfaceSeed;
 	Moon->SurfaceFeatureScale = MoonGenerationModel->SurfaceFeatureScale;
 	Moon->SurfaceReliefScale = MoonGenerationModel->SurfaceReliefScale;

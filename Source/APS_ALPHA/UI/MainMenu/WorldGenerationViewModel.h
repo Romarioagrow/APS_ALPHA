@@ -8,7 +8,9 @@
 class AAstroGenerator;
 class APlanetaryBody;
 class UGeneratedWorld;
-class USpawnParameters;
+class USpawnParameters; struct FAPSModelCard;
+
+enum class EAPSCloudControl : uint8 { Coverage, Density, Scale, Altitude, Wind, Storms, Seed };
 
 UENUM(BlueprintType)
 enum class EAPSGenerationRoute : uint8
@@ -48,6 +50,16 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "World Generation")
 	void SetGalaxyStarCount(double Value);
+
+	/** Rio 03.10: STARS slider, galaxy stars actually placed (1,800..1,000,000; 0 keeps the historic budgets). */
+	void SetGalaxyPlacedStarCount(double Value);
+	/** Rio 03.10: the galaxy's POPULATION / COMPOSITION rows (EStarClusterPopulation / EStarClusterComposition values). */
+	void SetGalaxyStarPopulation(int32 Value);
+	void SetGalaxyStarComposition(int32 Value);
+	/** Rio 05.10: REAL SCALE (EXPERIMENTAL) row of OVERVIEW; rebuilds and refocuses the preview. */
+	void SetRealScale(bool bEnabled);
+	/** REAL SCALE is on and applies (FULL-SCALE WORLD on): stage 1 shows it in the menu only, no game starts from it. */
+	bool IsRealScaleActive() const;
 
 	UFUNCTION(BlueprintCallable, Category = "World Generation")
 	void SetGalaxyStarDensity(double Value);
@@ -98,6 +110,11 @@ public:
 	void SetSurfaceMountainScale(double Value);
 	void SetSurfaceCraterScale(double Value);
 	void SetSurfaceRoughnessScale(double Value);
+	void SetCloudParameter(EAPSCloudControl Control, double Value);
+	void ResetCloudParameters();
+	bool CanEditClouds() const;
+	FText GetCloudSummary() const;
+	void RefreshCloudsPreview();
 
 	UFUNCTION(BlueprintCallable, Category = "World Generation")
 	void SetPlanetsAmount(double Value);
@@ -122,6 +139,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "World Generation|Preview")
 	void RegeneratePreviewVariant();
 
+	/** Rio 03.10: a person opening the generation screen on an untouched model gets a freshly rolled world, the same
+	 * roll as REGENERATE. Once per menu session; never for automation, the bench, diagnostics, load or continue. */
+	void RollFreshWorldOnce();
+
+	/** Rio 03.10: the preview's marks (labels, rings, orbits) hidden for "just space"; per menu session, logged. */
+	bool ArePreviewMarksHidden() const { return bPreviewMarksHidden; }
+	void SetPreviewMarksHidden(bool bHidden);
+
+	/** The menu's own preview generator, independent of the actor the camera currently views through. */
+	AAstroGenerator* GetPreviewGenerator() const { return PreviewGenerator.Get(); }
+
 	UFUNCTION(BlueprintCallable, Category = "World Generation|Preview")
 	void SetPreviewFocus(EAstroPreviewFocus NewFocus);
 
@@ -132,6 +160,8 @@ public:
 	void BeginPreviewOrbit();
 	void EndPreviewOrbit();
 	void ZoomPreview(float WheelDelta);
+	/** A click in the preview: selects the cluster system under the cursor (record only, nothing built). */
+	bool SelectPreviewUnderCursor();
 	bool FocusPreviewUnderCursor();
 	/** Same scene hit test as mouse focus, with viewport-pixel coordinates. */
 	bool FocusPreviewAtScreenPosition(const FVector2D& ScreenPosition);
@@ -154,6 +184,16 @@ public:
 	bool SetSelectedPreviewBodyName(const FText& Name, const FString& ExpectedStableKey);
 	FText GetPreviewScopeSummary() const;
 	FText GetPreviewHierarchyTitle() const;
+	/** LIVE MODEL card (Rio 02.10): icon, kind, name, designation and labelled facts with units.
+	 * In WorldGenerationViewModelCard.cpp, with the scope naming below. */
+	void GetPreviewModelCard(FAPSModelCard& OutCard) const;
+	/** The name box renames the selected body, or the galaxy or home cluster at those scopes. */
+	bool CanRenameCurrentScope() const;
+	FString GetCurrentScopeNameKey() const;
+	FText GetCurrentScopeName() const;
+	FText GetCurrentScopeNameTitle() const;
+	/** Expected key prevents a delayed text commit from renaming a new selection or scope. */
+	bool SetCurrentScopeName(const FText& Name, const FString& ExpectedKey);
 	bool GetPreviewFocusSphere(FVector& OutCenter, double& OutRadius) const;
 	bool GetPreviewFocusSphere(EAstroPreviewFocus Focus, FVector& OutCenter, double& OutRadius) const;
 	bool IsPreviewingClusterSystemProxy() const;
@@ -191,6 +231,13 @@ public:
 
 	EAstroPreviewFocus GetPreviewFocus() const { return PreviewFocus; }
 
+	/** The selected star is a remnant (black hole, neutron star, pulsar, protostar): its class follows its type. */
+	bool IsSelectedStarRemnant() const;
+
+	/** True while the slot holds the default this view model filled in, before any pick: the menu then offers its own
+	 * start default there (Rio 02.10). */
+	bool IsSpawnSlotDefaulted(EAPSStartAssetSlot Slot) const { return DefaultedSpawnSlots.Contains(Slot); }
+
 private:
 	void ExecutePreview();
 	void ExecutePlanetAppearancePreviewRefresh();
@@ -204,9 +251,14 @@ private:
 	void SetPreviewStatus(const FText& Status, bool bReady);
 
 	TWeakObjectPtr<UObject> WorldContext;
+	/** Slots filled with a default rather than picked (see IsSpawnSlotDefaulted). */
+	TSet<EAPSStartAssetSlot> DefaultedSpawnSlots;
 	TWeakObjectPtr<AAstroGenerator> PreviewGenerator;
 	FTimerHandle PreviewTimerHandle;
 	FTimerHandle PlanetAppearanceTimerHandle;
+	FTimerHandle CloudAppearanceTimerHandle;
+	mutable FString CloudSummaryKey;
+	mutable FText CloudSummary;
 	FTimerHandle PreviewTravelTimerHandle;
 	FName PendingTravelLevelName{NAME_None};
 	int32 PreviewTravelDrainAttempts{0};
@@ -218,4 +270,8 @@ private:
 	bool bPendingSurfaceAppearanceRefresh{false};
 	/** Explicit REGENERATE intentionally discards the old hierarchy's per-body editor snapshots. */
 	bool bSkipBodyOverrideSnapshotOnce{false};
+	/** Rolls a new world into the model (APSWorldRoll): the whole home system, or only the world on the PLANET route. */
+	void RollWorld(const TCHAR* Reason);
+	bool bPreviewMarksHidden{false};
+	bool bFreshWorldRollConsidered{false};
 };

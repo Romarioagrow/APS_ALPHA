@@ -7,6 +7,7 @@
 #include "APS_ALPHA/Core/Rendering/APSStarRenderStabilitySubsystem.h"
 #include "APS_ALPHA/Core/Structs/GalaxyModel.h"
 #include "APS_ALPHA/Core/Structs/StarGenerationModel.h"
+#include "APS_ALPHA/Generation/APSGalaxyMorphology.h"
 #include "Engine/StaticMesh.h"
 
 void UGalaxyGenerator::GenerateRandomGalaxyModel(TSharedPtr<FGalaxyModel> GalaxyModel)
@@ -115,7 +116,7 @@ namespace APSGalaxyVisuals
 
 void UGalaxyGenerator::GenerateGalaxyOctreeStars(UStarGenerator* StarGenerator, AGalaxy* NewGalaxy,
 	TSharedPtr<FGalaxyModel> GalaxyModel, const int32 RenderedStarBudget, const int32 GenerationSeed,
-	const bool bUsePreviewPresentation)
+	const bool bUsePreviewPresentation, const int32 DensityReferenceBudget)
 {
 	if (!IsValid(StarGenerator) || !IsValid(NewGalaxy) || !IsValid(NewGalaxy->StarMeshInstances)
 		|| !GalaxyModel.IsValid())
@@ -163,27 +164,22 @@ void UGalaxyGenerator::GenerateGalaxyOctreeStars(UStarGenerator* StarGenerator, 
 		APSCanonicalStellarProjection::MakeNestedCatalogPermutation(
 			GenerationSeed, ModeledStarCount);
 	FBox RenderedSampleBounds(EForceInit::ForceInit);
+	// Rio 03.10: identity unless the caller opts in with a reference budget (placed-star count).
+	const APSGalaxyMorphology::FDensityCompensation Density =
+		APSGalaxyMorphology::GetDensityCompensation(RenderedStarCount, DensityReferenceBudget);
 
-	for (int32 RenderIndex = 0; RenderIndex < RenderedStarCount; ++RenderIndex)
+	const auto AddCatalogStar = [&](const FGalaxyCatalogStarRecord& StarRecord)
 	{
-		// Every render budget consumes a prefix of the same full-cycle catalog order.
-		// A larger gameplay LOD therefore retains every menu StableId/index mapping.
-		const int64 CatalogIndex = CatalogOrder.Resolve(RenderIndex);
-
-		FGalaxyCatalogStarRecord StarRecord;
-		if (!NewGalaxy->StarCatalog.ResolveStar(CatalogIndex, StarRecord))
-		{
-			continue;
-		}
-
+		const int64 CatalogIndex = StarRecord.CatalogIndex;
+		// Rio 03.10: x the galaxy POPULATION size factor (1 for the historic mix).
 		const double PhysicalRadius = APSCanonicalStellarProjection::GetCanonicalStellarRadiusSolar(
-			StarRecord.SpectralClass);
+			StarRecord.SpectralClass) * StarRecord.RadiusScale;
 		FTransform StarTransform;
 		StarTransform.SetLocation(NewGalaxy->CanonicalProjectionFrame.ProjectCanonicalUnits(
 			StarRecord.GalaxyLocalLocation));
 		const double AppliedVisualRadiusCm = APSCanonicalStellarProjection::GetAppliedVisualRadiusCm(
 			EAPSCanonicalStellarProxyLayer::Galaxy,
-			NewGalaxy->CanonicalProjectionFrame, PhysicalRadius);
+			NewGalaxy->CanonicalProjectionFrame, PhysicalRadius) * Density.RadiusScale;
 		const double AppliedInstanceScale = AppliedVisualRadiusCm / ProxyMeshRadius;
 		StarTransform.SetScale3D(FVector(AppliedInstanceScale));
 		RenderedSampleBounds += StarTransform.GetLocation();
@@ -203,12 +199,12 @@ void UGalaxyGenerator::GenerateGalaxyOctreeStars(UStarGenerator* StarGenerator, 
 			StarRecord.SpectralClass, StarRecord.SpectralSubclass);
 		const double PhysicalEmission = StarGenerator->CalculateEmission(
 			static_cast<float>(APSCanonicalStellarProjection::GetCanonicalStellarLuminositySolar(
-				StarRecord.SpectralClass) * 25.0));
+				StarRecord.SpectralClass) * APSGalaxyMorphology::GetRadiusScaleLuminosity(StarRecord.RadiusScale) * 25.0));
 		const double AppliedVisualRadiusSolar =
 			APSCanonicalStellarProjection::UnprojectPhysicalRadiusSolar(
 				NewGalaxy->CanonicalProjectionFrame, AppliedVisualRadiusCm);
 		const double VisualEmission = UStarGenerator::GetFarStarVisualEmission(
-			PhysicalRadius, PhysicalEmission, AppliedVisualRadiusSolar);
+			PhysicalRadius, PhysicalEmission, AppliedVisualRadiusSolar) * Density.EmissionScale;
 		NewGalaxy->StarMeshInstances->SetCustomDataValue(InstanceIndex, 0, ColorValue.R, false);
 		NewGalaxy->StarMeshInstances->SetCustomDataValue(InstanceIndex, 1, ColorValue.G, false);
 		NewGalaxy->StarMeshInstances->SetCustomDataValue(InstanceIndex, 2, ColorValue.B, false);
@@ -217,6 +213,43 @@ void UGalaxyGenerator::GenerateGalaxyOctreeStars(UStarGenerator* StarGenerator, 
 			static_cast<float>((StarRecord.GenerationSeed & 0xffff) / 65535.0), false);
 		NewGalaxy->StarMeshInstances->SetCustomDataValue(InstanceIndex, 5,
 			StarRecord.bPotentialStarSystem ? 1.0f : 0.0f, false);
+	};
+
+	if (RenderedStarCount <= APSGalaxyMorphology::GameplayReferenceBudget)
+	{
+		for (int32 RenderIndex = 0; RenderIndex < RenderedStarCount; ++RenderIndex)
+		{
+			// Every render budget consumes a prefix of the same full-cycle catalog order.
+			// A larger gameplay LOD therefore retains every menu StableId/index mapping.
+			const int64 CatalogIndex = CatalogOrder.Resolve(RenderIndex);
+
+			FGalaxyCatalogStarRecord StarRecord;
+			if (!NewGalaxy->StarCatalog.ResolveStar(CatalogIndex, StarRecord))
+			{
+				continue;
+			}
+			AddCatalogStar(StarRecord);
+		}
+	}
+	else
+	{
+		// Rio 03.10 (up to 1M placed stars): larger budgets resolve in parallel chunks (pure
+		// catalogue reads) and upload in the same catalogue order; a chunk bounds the
+		// transient memory to a few megabytes.
+		constexpr int32 ChunkSize = 65536;
+		TArray<FGalaxyCatalogStarRecord> Chunk;
+		for (int32 ChunkStart = 0; ChunkStart < RenderedStarCount; ChunkStart += ChunkSize)
+		{
+			const int32 ChunkCount = FMath::Min(ChunkSize, RenderedStarCount - ChunkStart);
+			APSGalaxyCatalogBatch::ResolveStars(NewGalaxy->StarCatalog, CatalogOrder, ChunkStart, ChunkCount, Chunk);
+			for (const FGalaxyCatalogStarRecord& StarRecord : Chunk)
+			{
+				if (StarRecord.CatalogIndex != INDEX_NONE)
+				{
+					AddCatalogStar(StarRecord);
+				}
+			}
+		}
 	}
 
 	NewGalaxy->StarCatalog.RenderedSampleCount = NewGalaxy->StarMeshInstances->GetInstanceCount();
@@ -231,14 +264,15 @@ void UGalaxyGenerator::GenerateGalaxyOctreeStars(UStarGenerator* StarGenerator, 
 	UE_LOG(LogTemp, Log,
 		TEXT("[APS.GalaxyPreview] type=%d modeled=%lld rendered=%d seed=%d catalogRadius=%.3e "
 			"sampleCenter=%s sampleExtent=%s minProxyRadiusCm=%.3e "
-			"projectionScale=%.9e maxProxyCm=%.3e preview=%d"),
+			"projectionScale=%.9e maxProxyCm=%.3e preview=%d class=%d densityEmission=%.4f densityRadius=%.4f"),
 		static_cast<int32>(GalaxyModel->GalaxyType), ModeledStarCount,
 		NewGalaxy->StarCatalog.RenderedSampleCount, GenerationSeed, GalaxyRadius,
 		*SampleCenter.ToCompactString(), *SampleExtent.ToCompactString(),
 		MinimumVisualProxyRadiusCm,
 		NewGalaxy->CanonicalProjectionFrame.PositionScale,
 		NewGalaxy->CanonicalProjectionFrame.MaxProxyCoordinateCm,
-		bUsePreviewPresentation ? 1 : 0);
+		bUsePreviewPresentation ? 1 : 0, static_cast<int32>(GalaxyModel->GalaxyClass),
+		Density.EmissionScale, Density.RadiusScale);
 }
 
 void UGalaxyGenerator::GenerateLegacyGalaxyOctreeStars(UStarGenerator* StarGenerator, AGalaxy* NewGalaxy,

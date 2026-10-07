@@ -10,7 +10,8 @@
 // This is intentionally not a material/mesh replacement or a performance test.
 namespace APSCoastGeometryProbe
 {
-inline bool Capture(FAutomationTestBase& Test, AWorldScapeRoot& Root,
+template <typename TReporter>
+inline bool Capture(TReporter& Test, AWorldScapeRoot& Root,
     APlayerController& PC, const FString& OutputPath, int32 View)
 {
     if (!Root.WorldScapeLodInGeneration.IsEmpty()) return false;

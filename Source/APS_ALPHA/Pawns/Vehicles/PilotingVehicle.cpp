@@ -2,12 +2,33 @@
 
 
 #include "PilotingVehicle.h"
+#include "APS_ALPHA/Core/World/APSWorldOriginSubsystem.h"
+#include "APS_ALPHA/Pawns/Characters/CustomGravityCharacter.h"
 
 #include "Components/PrimitiveComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Controller.h"
+#include "GameFramework/PlayerController.h"
+#include "GameFramework/SpringArmComponent.h"
+#include "Camera/PlayerCameraManager.h"
+
+namespace
+{
+	/**
+	 * Rio 05.10 evening: taking or leaving the seat swaps the view between the vehicle's camera and the pilot's (a ship's
+	 * camera boom is hundreds of metres long), a camera cut for the renderer, which keeps TSR's history across large
+	 * camera moves while the view rides a ship (aps.Ship.TsrHistoryInFlight).
+	 */
+	void MarkViewSwitch(AController* Controller)
+	{
+		if (const APlayerController* Player = Cast<APlayerController>(Controller); Player && Player->PlayerCameraManager)
+		{
+			Player->PlayerCameraManager->SetGameCameraCutThisFrame();
+		}
+	}
+}
 
 void APilotingVehicle::TakeControl(APawn* Pawn)
 {
@@ -94,6 +115,22 @@ bool APilotingVehicle::BeginVehicleControl(APawn* RequestingPawn)
 		PilotSkeletalTickStates.Add(SkeletalComponent->IsComponentTickEnabled());
 		SkeletalComponent->SetComponentTickEnabled(false);
 	}
+	// Rio 05.10 evening (flight FPS): the seated pilot's camera boom still probes for collision every frame, from
+	// inside the hull (0.5 ms a frame against the 13.5k shapes of the M5's). The view is the vehicle's; the boom keeps
+	// ticking (its lag stays current for the way out) without the probe.
+	PilotSpringArms.Reset();
+	PilotSpringArmProbes.Reset();
+	TArray<USpringArmComponent*> SpringArms;
+	RequestingPawn->GetComponents(SpringArms);
+	for (USpringArmComponent* SpringArm : SpringArms)
+	{
+		if (IsValid(SpringArm))
+		{
+			PilotSpringArms.Add(SpringArm);
+			PilotSpringArmProbes.Add(SpringArm->bDoCollisionTest);
+			SpringArm->bDoCollisionTest = false;
+		}
+	}
 	if (bHidePilotDuringControl)
 	{
 		RequestingPawn->SetActorHiddenInGame(true);
@@ -114,6 +151,7 @@ bool APilotingVehicle::BeginVehicleControl(APawn* RequestingPawn)
 		return false;
 	}
 
+	MarkViewSwitch(RequestingController);
 	OnPilotControlStarted(RequestingPawn);
 	UE_LOG(LogTemp, Log, TEXT("%s is now piloted by %s."), *GetName(), *RequestingPawn->GetName());
 	return true;
@@ -124,6 +162,12 @@ bool APilotingVehicle::EndVehicleControl()
 	if (!IsValid(Pilot))
 	{
 		return false;
+	}
+	// Rio 06.10 (still ship): a ship owing its travel pays it while the pilot is still in its seat; out of it (a hull without
+	// a walkable deck sets them down outside) the pilot would be left the owed travel behind.
+	if (UAPSWorldOriginSubsystem* Origin = GetWorld() ? GetWorld()->GetSubsystem<UAPSWorldOriginSubsystem>() : nullptr)
+	{
+		Origin->SettleDeferredTravel(TEXT("the pilot leaves the seat"));
 	}
 
 	APawn* PreviousPilot = Pilot;
@@ -164,19 +208,34 @@ bool APilotingVehicle::EndVehicleControl()
 	}
 	PilotSkeletalComponents.Reset();
 	PilotSkeletalTickStates.Reset();
+	for (int32 ArmIndex = 0; ArmIndex < PilotSpringArms.Num(); ++ArmIndex)
+	{
+		if (USpringArmComponent* SpringArm = PilotSpringArms[ArmIndex].Get())
+		{
+			SpringArm->bDoCollisionTest = PilotSpringArmProbes.IsValidIndex(ArmIndex) && PilotSpringArmProbes[ArmIndex];
+		}
+	}
+	PilotSpringArms.Reset();
+	PilotSpringArmProbes.Reset();
 
 	if (ACharacter* Character = Cast<ACharacter>(PreviousPilot))
 	{
 		if (UCharacterMovementComponent* Movement = Character->GetCharacterMovement())
 		{
 			Movement->SetMovementMode(static_cast<EMovementMode>(PilotMovementMode));
-			Movement->Velocity = GetVelocity();
+			// Stepping out keeps a little of the ship's motion, not its flight speed (audit B3: thrown at hundreds of km/s).
+			Movement->Velocity = GetVelocity().GetClampedToMaxSize(1500.0);
 		}
 	}
 
 	if (ControllerToRestore)
 	{
 		ControllerToRestore->Possess(PreviousPilot);
+		MarkViewSwitch(ControllerToRestore);
+	}
+	if (ACustomGravityCharacter* Character = Cast<ACustomGravityCharacter>(PreviousPilot))
+	{
+		Character->SettleAfterVehicleExit(ExitRotation.Vector(), this);
 	}
 
 	OnPilotControlEnded(PreviousPilot);

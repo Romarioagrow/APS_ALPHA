@@ -152,7 +152,9 @@ inline void Apply(UWorld* World)
 		{
 			FGalaxyCatalogStarRecord Record;
 			return Galaxy->GetRenderedCatalogRecord(Index, Record)
-				? GetLuminosityGain(APSCanonicalStellarProjection::GetCanonicalStellarLuminositySolar(Record.SpectralClass))
+				? GetLuminosityGain(APSCanonicalStellarProjection::GetCanonicalStellarLuminositySolar(Record.SpectralClass)
+					// Rio 03.10: galaxy POPULATION size factor (1 for the historic mix), as APSGalaxyMorphology::GetRadiusScaleLuminosity.
+					* FMath::Clamp(static_cast<double>(Record.RadiusScale) * Record.RadiusScale, 1.0e-4, 1.0e4))
 				: 1.0f; // Legacy fields without records retain their accepted visibility.
 		});
 	}

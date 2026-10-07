@@ -109,6 +109,18 @@ FNoiseData UAPSWorldScapePlanetNoise::GetNoise(
 	return Evaluate(NoiseClass, Position, PlanetPosition, NoiseScale, NoiseIntensity, PlanetScale, Latitude, NoisePosition);
 }
 
+double UAPSWorldScapePlanetNoise::SampleCollisionHeight(CustomNoise& NoiseClass,
+	const DVector& Position, const DVector& PlanetPosition, double NoiseScale,
+	double NoiseIntensity, double PlanetScale, double Latitude) const
+{
+	DVector NoisePosition;
+	const double Height = EvaluateProfile<true>(SurfaceProfile, NoiseClass, Position,
+		PlanetPosition, NoiseScale, NoiseIntensity, PlanetScale, Latitude,
+		NoisePosition, bCoastalReliefCandidate).Height;
+	return APSWorldScapeSurfaceEnvelope::Height(Height,
+		static_cast<double>(SurfaceProfile.OceanLevel) * NoiseIntensity, bUnifiedLavaSurface);
+}
+
 FNoiseData UAPSWorldScapePlanetNoise::GetOceanNoise(
 	CustomNoise NoiseClass, const DVector& Position, const DVector& PlanetPosition,
 	double NoiseScale, double NoiseIntensity, double PlanetScale, bool FlatWorld,
@@ -697,8 +709,11 @@ FNoiseData UAPSWorldScapePlanetNoise::EvaluateProfile(
 		}
 		const float ThermalSuitability = 1.0f - FMath::Abs(Data.Temperature - 0.58f) / 0.58f;
 		const float MoistureSuitability = FMath::SmoothStep(0.18f, 0.72f, Data.Humidity);
+		const float FoliageDensity = FMath::Max(SurfaceProfile.Biomass,
+			FMath::IsFinite(SurfaceProfile.VisualFoliageDensity)
+				? FMath::Clamp(SurfaceProfile.VisualFoliageDensity, 0.0f, 1.0f) : 0.0f);
 		Data.FoliageMask = FMath::Clamp(
-			SurfaceProfile.Biomass * ThermalSuitability * MoistureSuitability
+			FoliageDensity * ThermalSuitability * MoistureSuitability
 				* static_cast<float>(FMath::Lerp(0.18, 1.0, VegetationPatch)) * (1.0f - Data.WaterMask),
 			0.0f, 1.0f);
 	}

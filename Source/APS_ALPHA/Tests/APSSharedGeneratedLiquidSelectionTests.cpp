@@ -2,10 +2,12 @@
 
 #include "Misc/AutomationTest.h"
 #include "APS_ALPHA/Core/Planetary/APSSharedGeneratedLiquidMaterial.h"
+#include "APS_ALPHA/Core/Planetary/APSOrbitalWaterAppearance.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Components/SceneComponent.h"
 #include "UObject/Package.h"
 #include "UObject/StrongObjectPtr.h"
+#include "Misc/ScopeExit.h"
 #include <limits>
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAPSSharedGeneratedLiquidSelectionTest,
@@ -122,6 +124,37 @@ bool FAPSSharedGeneratedLiquidSelectionTest::RunTest(const FString& Parameters)
         TestEqual(Prefix + TEXT("closed globe shoreline alpha used"), OrbitMask, 1.0f);
         TestNull(Prefix + TEXT("manual factory refuses migration"), Create(GetTransientPackage(), Frame.Get(), 1.0, false, true, Profile, Source));
         TestNull(Prefix + TEXT("custom factory refuses migration"), Create(GetTransientPackage(), Frame.Get(), 1.0, false, false, Profile, Custom.Get()));
+        if (Types[I] == EAPSPlanetLiquidType::Water)
+        {
+            // Read the selected saved family MIC, never hardcode its optics.
+            for (const FName Name : {FName(TEXT("Specular")), FName(TEXT("Roughness"))})
+            {
+                float Saved = -1, GroundValue = -1, OrbitValue = -1;
+                const FHashedMaterialParameterInfo Info(Name);
+                TestTrue(TEXT("Saved Water optical scalar exists"), Ground->Parent->GetScalarParameterValue(Info, Saved));
+                Ground->GetScalarParameterValue(Info, GroundValue);
+                Orbit->GetScalarParameterValue(Info, OrbitValue);
+                TestEqual(Name.ToString() + TEXT(" ground inherits saved value"), GroundValue, Saved);
+                TestEqual(Name.ToString() + TEXT(" orbit inherits saved value"), OrbitValue, Saved);
+                Ground->SetScalarParameterValue(Name, Saved < 0.5f ? 1.0f : 0.0f);
+            }
+            TestTrue(TEXT("Water recovers from previous optical override"),
+                APSOrbitalWaterAppearance::RestoreAuthoredResponse(Ground.Get()));
+            TStrongObjectPtr<UMaterialInstanceDynamic> Closed(UMaterialInstanceDynamic::Create(Ground->Parent.Get(), GetTransientPackage()));
+            if (!TestNotNull(TEXT("Closed globe same-parent MID"), Closed.Get())) return false;
+            Closed->CopyParameterOverrides(Ground.Get());
+            TestTrue(TEXT("Closed globe retains exact saved parent"), Closed->Parent == Ground->Parent);
+            for (const FName Name : {FName(TEXT("Specular")), FName(TEXT("Roughness"))})
+            {
+                float Saved = -1, GroundValue = -1, ClosedValue = -1;
+                const FHashedMaterialParameterInfo Info(Name);
+                Ground->Parent->GetScalarParameterValue(Info, Saved);
+                Ground->GetScalarParameterValue(Info, GroundValue);
+                Closed->GetScalarParameterValue(Info, ClosedValue);
+                TestEqual(Name.ToString() + TEXT(" restored ground equals saved parent"), GroundValue, Saved);
+                TestEqual(Name.ToString() + TEXT(" copied globe equals saved parent"), ClosedValue, Saved);
+            }
+        }
         if (Types[I] == EAPSPlanetLiquidType::Lava)
         {
             float Saved = -1, GroundValue = -1, OrbitValue = -1;
@@ -135,6 +168,58 @@ bool FAPSSharedGeneratedLiquidSelectionTest::RunTest(const FString& Parameters)
         }
     }
     AddInfo(TEXT("Selection/frame/parameter regression on transient instances; no production asset changes, actor spawn or rendered acceptance."));
+    return true;
+}
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAPSCoastalWaterReleaseTest,
+    "APS.Gameplay.World.PlanetSurface.CoastalWater.ReleaseContract",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FAPSCoastalWaterReleaseTest::RunTest(const FString& Parameters)
+{
+    using namespace APSSharedGeneratedLiquidMaterial;
+    auto* Switch=IConsoleManager::Get().FindConsoleVariable(TEXT("aps.Surface.CoastalWater"));
+    if (!TestNotNull(TEXT("Rollout switch exists"),Switch)) return false;
+    const int32 Previous=Switch->GetInt();
+    ON_SCOPE_EXIT { Switch->Set(Previous,ECVF_SetByCode); };
+    FAPSResolvedPlanetSurfaceProfile P; P.LiquidType=EAPSPlanetLiquidType::Water; P.LandCoverage=.5f;
+    Switch->Set(1,ECVF_SetByCode);
+    for (auto Type:{EPlanetType::Water,EPlanetType::Terrestrial,EPlanetType::Oasis,EPlanetType::Frozen,EPlanetType::Forest,EPlanetType::Metallic})
+    {
+        P.PlanetType=Type;
+        // These six concrete solids all have a valid Water profile in this
+        // fixture. Only the diagnostic process may expand the accepted three.
+        TestEqual(TEXT("Accepted rollout or explicit profile-capability trial"),APSCoastalWaterMaterial::EnabledFor(P),
+            Type==EPlanetType::Water || Type==EPlanetType::Terrestrial || Type==EPlanetType::Oasis
+                || APSPlanetSurfaceMaterialPolicy::UnifiedRoutesEnabled());
+    }
+    P.PlanetType=EPlanetType::Terrestrial;
+    for (auto Type:{EAPSPlanetLiquidType::None,EAPSPlanetLiquidType::Lava,EAPSPlanetLiquidType::Ammonia})
+    { P.LiquidType=Type; TestFalse(TEXT("No other chemistry promoted"),APSCoastalWaterMaterial::EnabledFor(P)); }
+    P.LiquidType=EAPSPlanetLiquidType::Water;
+    TStrongObjectPtr<UMaterialInstance> Source(LoadObject<UMaterialInstance>(nullptr,SourcePath(P.LiquidType)));
+    TStrongObjectPtr<USceneComponent> Frame(NewObject<USceneComponent>(GetTransientPackage()));
+    TStrongObjectPtr<UMaterialInstanceDynamic> Ground(Create(GetTransientPackage(),Frame.Get(),1.0,false,false,P,Source.Get()));
+    TStrongObjectPtr<UMaterialInstanceDynamic> Orbit(Create(GetTransientPackage(),Frame.Get(),.001,true,false,P,Source.Get()));
+    if (!TestNotNull(TEXT("Release ground created"),Ground.Get()) || !TestNotNull(TEXT("Release orbit created"),Orbit.Get())) return false;
+    TestTrue(TEXT("Both paths use one saved version"),Ground->Parent==Orbit->Parent && APSCoastalWaterMaterial::IsInstance(Ground.Get()));
+    TestTrue(TEXT("Own Water authority"),HasSavedParameterAuthority(Ground.Get(),EAPSPlanetLiquidType::Water));
+    TestFalse(TEXT("Cannot pass as ammonia"),IsFamilyInstance(Ground.Get(),EAPSPlanetLiquidType::Ammonia));
+    TestNull(TEXT("Manual untouched"),Create(GetTransientPackage(),Frame.Get(),1.0,false,true,P,Source.Get()));
+    const TPair<FName,float> Scalars[]={{TEXT("WaveScaleCm"),120},{TEXT("PhysicalWaveDetailScaleCm"),41},
+        {TEXT("APS_WaterDepthStrength"),1},{TEXT("APS_WaterHalfDepthM"),20},{TEXT("WaveColorStrength"),0},
+        {TEXT("PhysicalWaveRoughnessStrength"),0},{TEXT("WaveNormalStrength"),.025f}};
+    for (const auto& S:Scalars)
+    {
+        float A=-1,B=-1;
+        TestTrue(TEXT("Ground scalar exists"),Ground->GetScalarParameterValue(FHashedMaterialParameterInfo(S.Key),A));
+        TestTrue(TEXT("Orbit scalar exists"),Orbit->GetScalarParameterValue(FHashedMaterialParameterInfo(S.Key),B));
+        TestEqual(S.Key.ToString()+TEXT(" tested style"),A,S.Value); TestEqual(TEXT("Mode parity"),A,B);
+    }
+    Switch->Set(0,ECVF_SetByCode);
+    TestTrue(TEXT("Live release identity survives rollback switch"),IsFamilyInstance(Ground.Get(),P.LiquidType));
+    TestEqual(TEXT("New profiles roll back"),FString(TemplatePath(P)),FString(APSSharedWaterMaterial::TemplatePath()));
+    TStrongObjectPtr<UMaterialInstanceDynamic> Legacy(Create(GetTransientPackage(),Frame.Get(),1.0,false,false,P,Source.Get()));
+    TestTrue(TEXT("Rollback creates legacy shared Water"),Legacy.IsValid() && Legacy->Parent->GetPathName()==APSSharedWaterMaterial::TemplatePath());
+    AddInfo(TEXT("Saved release/factory/frame contracts only; rendered coverage is separate."));
     return true;
 }
 #endif

@@ -1,0 +1,179 @@
+// Rio 03.10 (galaxy phase 3): composites GPU stars and the galaxy glow into the HDR scene colour after
+// TSR and before bloom/tonemapping. Writes a new texture (the TSR output is its history: never in place).
+// A compute pass, not a pixel shader (03.10 08:17): a graphics PSO can fail on VS/PS signature linkage or
+// render-target state, and UE treats a failed PSO at draw time as fatal; this pass has no such state.
+
+#include "/Plugin/APSStarRenderer/Private/APSStarCommon.ush"
+
+#ifndef APS_ATOMIC64
+#define APS_ATOMIC64 0
+#endif
+
+float4 StarPalette[256];
+int4 InputRect;
+int4 OutputRect;
+float4 PsfParams;
+float4 CompositeParams;
+// Rio 04.10: x = pre-exposed scene luminance over which the stars fade (one e-fold; 0 = no sky mask); y = how much the core
+// of the brightest stars widens (0 = never), so a saturated core reads as a small disc rather than a 3x3 block.
+float4 MaskParams;
+uint bHasStars;
+uint bHasGlow;
+uint DebugMode;
+int PsfRadius;
+Texture2D SceneColorTexture;
+Texture2D SceneDepthTexture;
+#if APS_ATOMIC64
+Texture2D<UlongType> StarBuffer64;
+#else
+Texture2D<uint> StarBuffer32;
+#endif
+Texture2D GlowTexture;
+SamplerState GlowSampler;
+RWTexture2D<float4> OutSceneColor;
+
+void ApsLoadStar(int2 Pixel, out float Brightness, out float2 Sub, out uint ColorIndex)
+{
+#if APS_ATOMIC64
+	ApsDecodeKey64(UnpackUlongType(StarBuffer64[uint2(Pixel)]), Brightness, Sub, ColorIndex);
+#else
+	ApsDecodeKey32(StarBuffer32[uint2(Pixel)], Brightness, Sub, ColorIndex);
+#endif
+}
+
+[numthreads(8, 8, 1)]
+void CompositeCS(uint3 DispatchThreadId : SV_DispatchThreadID)
+{
+	const int2 OutputPixel = int2(DispatchThreadId.xy);
+	if (OutputPixel.x >= OutputRect.z || OutputPixel.y >= OutputRect.w)
+	{
+		return;
+	}
+	const float2 OutputUV = (float2(OutputPixel) + 0.5) / float2(OutputRect.zw);
+	const int2 Local = clamp(int2(OutputUV * float2(InputRect.zw)), int2(0, 0), InputRect.zw - 1);
+	const float4 Scene = SceneColorTexture.Load(int3(InputRect.xy + Local, 0));
+
+	// Gather the brightest star of every pixel within PsfRadius and spread it with the sub-pixel PSF.
+	// Rio 04.10 ("the character's outline and the horizon ripple against the stars, the atmosphere shows them in patches"):
+	// a star's light reaches only pixels whose scene is not nearer than the scene behind the star (the nearest depth of
+	// the 3x3 render pixels here, steady under the frame's jitter), and in a gameplay world it fades over a bright scene,
+	// which outshines the stars behind it (an atmosphere, a haze).
+	float3 Stars = float3(0.0, 0.0, 0.0);
+	float StarScale = 1.0;
+	if (MaskParams.x > 0.0)
+	{
+		const float SceneLuminance = dot(max(Scene.rgb, float3(0.0, 0.0, 0.0)), float3(0.2126, 0.7152, 0.0722));
+		StarScale = exp(-SceneLuminance / MaskParams.x);
+	}
+	if (bHasStars != 0u && StarScale > 1.0e-4)
+	{
+		const uint4 DepthRect = View.ViewRectMinAndSize;
+		// Rio 04.10 evening ("an ugly black rim, a ripple, around every planet"): rejecting a star's light wherever any of
+		// the 3x3 render pixels here was nearer cut a dark band around every limb on a dense field. Its light now takes the
+		// share of those nine pixels that are not nearer than the star: it fades over about a render pixel on either side
+		// of an edge, steady under the frame's jitter, and never reaches the inside of a nearer object.
+		float NearDepth[9];
+		{
+			const float2 DepthPixelF = float2(DepthRect.xy) + OutputUV * float2(DepthRect.zw);
+			const int2 Lowest = int2(DepthRect.xy);
+			const int2 Highest = int2(DepthRect.xy + DepthRect.zw) - int2(1, 1);
+			const int2 Centre = int2(floor(DepthPixelF));
+			UNROLL
+			for (int Index = 0; Index < 9; ++Index)
+			{
+				const int2 Pixel = clamp(Centre + int2(Index % 3 - 1, Index / 3 - 1), Lowest, Highest);
+				NearDepth[Index] = SceneDepthTexture.Load(int3(Pixel, 0)).r;
+			}
+		}
+		const float2 PixelCentre = float2(Local) + 0.5;
+		// Rio 04.10 ("the big stars are square"): the halo fades to nothing at the gather radius, so its edge is round
+		// and a moving star never drops a pixel of it at once (it ended at the square window's edge).
+		const float Reach = float(PsfRadius) + 0.5;
+		const float ReachSq = Reach * Reach;
+		LOOP
+		for (int Dy = -PsfRadius; Dy <= PsfRadius; ++Dy)
+		{
+			LOOP
+			for (int Dx = -PsfRadius; Dx <= PsfRadius; ++Dx)
+			{
+				const int2 Q = Local + int2(Dx, Dy);
+				if (Q.x < 0 || Q.y < 0 || Q.x >= InputRect.z || Q.y >= InputRect.w)
+				{
+					continue;
+				}
+				float Brightness;
+				float2 Sub;
+				uint ColorIndex;
+				ApsLoadStar(Q, Brightness, Sub, ColorIndex);
+				if (!(Brightness > 0.0))
+				{
+					continue;
+				}
+				const float2 Offset = PixelCentre - (float2(Q) + Sub);
+				const float OffsetSq = dot(Offset, Offset);
+				if (OffsetSq >= ReachSq)
+				{
+					continue;
+				}
+				const float Behind = ApsSceneDeviceZ(SceneDepthTexture, DepthRect, (float2(Q) + Sub) / float2(InputRect.zw));
+				float Open = 0.0;
+				UNROLL
+				for (int Near = 0; Near < 9; ++Near)
+				{
+					Open += NearDepth[Near] > Behind * 1.05 + 1.0e-20 ? 0.0 : 1.0;
+				}
+				if (Open <= 0.0)
+				{
+					continue;
+				}
+				// Brighter stars widen their halo (PsfParams.y -> .z) and give it more weight (up to .w).
+				const float Strength = saturate(log2(max(Brightness * CompositeParams.x, 1.0)) * 0.125);
+				const float HaloSigma = lerp(PsfParams.y, PsfParams.z, Strength);
+				const float HaloWeight = PsfParams.w * Strength;
+				const float Window = 1.0 - OffsetSq / ReachSq;
+				const float CoreSigma = PsfParams.x * (1.0 + MaskParams.y * Strength * Strength);
+				const float Core = ApsPixelGaussian(Offset.x, CoreSigma) * ApsPixelGaussian(Offset.y, CoreSigma);
+				const float Halo = ApsPixelGaussian(Offset.x, HaloSigma) * ApsPixelGaussian(Offset.y, HaloSigma) * Window * Window;
+				Stars += StarPalette[ColorIndex].rgb * (Brightness * lerp(Core, Halo, HaloWeight) * (Open / 9.0));
+			}
+		}
+		Stars = min(Stars * StarScale, float3(65000.0, 65000.0, 65000.0));
+	}
+
+	// Glow: emission plus the dust transmittance of the whole ray. Stars and the existing scene sit inside the
+	// galaxy, so they take the mean transmittance of a uniform position along the ray, (1 - T) / tau.
+	float3 Glow = float3(0.0, 0.0, 0.0);
+	float Transmittance = 1.0;
+	if (bHasGlow != 0u)
+	{
+		const float4 GlowSample = GlowTexture.SampleLevel(GlowSampler, OutputUV, 0);
+		Glow = min(max(GlowSample.rgb, float3(0.0, 0.0, 0.0)), float3(65000.0, 65000.0, 65000.0));
+		Transmittance = saturate(GlowSample.a);
+		// Rio 03.10 ("the halos may stay, but not that strong": a dense core whited out the whole screen, a planet view
+		// was plain white): the glow's luminance saturates softly at CompositeParams.w (pre-exposed), linear well below.
+		if (CompositeParams.w > 0.0)
+		{
+			const float GlowLuminance = dot(Glow, float3(0.2126, 0.7152, 0.0722));
+			Glow *= 1.0 / (1.0 + GlowLuminance / CompositeParams.w);
+		}
+	}
+	const float Tau = -log(max(Transmittance, 1.0e-4));
+	const float MeanTransmittance = Tau > 1.0e-4 ? (1.0 - Transmittance) / Tau : 1.0;
+	const float SceneAttenuation = lerp(1.0, MeanTransmittance, CompositeParams.y);
+	const float StarAttenuation = lerp(1.0, MeanTransmittance, CompositeParams.z);
+
+	float3 Result = Scene.rgb * SceneAttenuation + max(Stars, float3(0.0, 0.0, 0.0)) * StarAttenuation + Glow;
+	if (DebugMode == 1u)
+	{
+		Result = Stars;
+	}
+	else if (DebugMode == 2u)
+	{
+		Result = Glow;
+	}
+	else if (DebugMode == 3u)
+	{
+		Result = float3(MeanTransmittance, MeanTransmittance, MeanTransmittance);
+	}
+	OutSceneColor[uint2(OutputRect.xy + OutputPixel)] = float4(Result, Scene.a);
+}

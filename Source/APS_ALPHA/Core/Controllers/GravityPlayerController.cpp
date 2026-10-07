@@ -1,4 +1,5 @@
 #include "GravityPlayerController.h"
+#include "APS_ALPHA/Generation/APSBodyNames.h"
 #include <ctime> 
 #include <random>
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationSave.h"
@@ -18,8 +19,11 @@
 #include "APS_ALPHA/Core/Structs/PlanetarySystemGenerationModel.h"
 #include "Serialization/ObjectAndNameAsStringProxyArchive.h"
 #include "APS_ALPHA/UI/StrategicMap/SAPSStrategicMapPanel.h"
+#include "APS_ALPHA/UI/MainMenu/APSWorldBrowserMetadata.h"
 #include "Engine/GameViewportClient.h"
 #include "GameFramework/Pawn.h"
+#include "APS_ALPHA/Gameplay/Fleet/APSFleetCommand.h"
+#include "HAL/IConsoleManager.h"
 #include "InputCoreTypes.h"
 #include "Misc/App.h"
 #include "Misc/ConfigCacheIni.h"
@@ -28,45 +32,13 @@
 
 namespace
 {
-	template <typename T>
-	FString APSMetadataEnumLabel(T Value)
+	/** The world browser's .apsmeta sidecar. Rio 03.10: it used to copy the menu model's editor buffer (a G star and one
+	 * frozen planet in almost every save); it now records the live home system. Format and reader live together in
+	 * APSWorldBrowserMetadata; the old keys stay, so older builds still read it. */
+	void WriteWorldMetadataSidecar(const UGameSave* Save, const FGeneratedWorldData& WorldData, const UWorld* World,
+		const UGeneratedWorld* GeneratedWorldModel)
 	{
-		const UEnum* Enum = StaticEnum<T>();
-		return Enum ? Enum->GetDisplayNameTextByValue(static_cast<int64>(Value)).ToString() : TEXT("UNKNOWN");
-	}
-
-	void WriteWorldMetadataSidecar(const UGameSave* Save, const FGeneratedWorldData& WorldData)
-	{
-		if (!Save || Save->SaveSlotName.IsEmpty())
-		{
-			return;
-		}
-
-		FConfigFile Metadata;
-		Metadata.SetInt64(TEXT("APSWorld"), TEXT("Version"), 1);
-		Metadata.SetString(TEXT("APSWorld"), TEXT("DisplayName"),
-			*(Save->WorldName.IsEmpty() ? Save->SaveSlotName : Save->WorldName));
-		Metadata.SetString(TEXT("APSWorld"), TEXT("SystemType"),
-			*APSMetadataEnumLabel(WorldData.PlanetarySystemType));
-		Metadata.SetString(TEXT("APSWorld"), TEXT("StarType"),
-			*APSMetadataEnumLabel(WorldData.SpectralClass));
-		const FString PlanetType = APSMetadataEnumLabel(WorldData.PlanetType);
-		Metadata.SetString(TEXT("APSWorld"), TEXT("PlanetType"), *PlanetType);
-		Metadata.SetString(TEXT("APSWorld"), TEXT("Habitability"),
-			*APSMetadataEnumLabel(WorldData.PlanetHabitability));
-		Metadata.SetString(TEXT("APSWorld"), TEXT("Environment"),
-			*FString::Printf(TEXT("%s / %.0f KM"), *PlanetType, WorldData.PlanetRadius));
-		Metadata.SetInt64(TEXT("APSWorld"), TEXT("TotalPlanets"), WorldData.PlanetsAmount);
-		Metadata.SetInt64(TEXT("APSWorld"), TEXT("InhabitedPlanets"),
-			Save->InhabitedPlanetsDataArray.Num());
-
-		const FString MetadataPath = FPaths::ProjectSavedDir() / TEXT("SaveGames") /
-			(Save->SaveSlotName + TEXT(".apsmeta"));
-		if (!Metadata.Write(MetadataPath, false))
-		{
-			UE_LOG(LogTemp, Warning, TEXT("[APS.Save] Could not write metadata sidecar: %s"),
-				*MetadataPath);
-		}
+		APSWorldBrowserMetadata::WriteForSave(Save, WorldData, World, GeneratedWorldModel);
 	}
 }
 
@@ -92,6 +64,18 @@ namespace APSSaveFrame
 	}
 }
 
+namespace APSGravityControllerSaveCVars
+{
+	/** Rio 06.10 (audit: saves, the generator overlay). The saved AAstroGenerator archive was serialized over the replayed
+	 * generator; its object paths belong to the session it was saved in, so HomeSpaceship and the sub-generators came back
+	 * null, and a generator saved under another name was spawned a second time. */
+	TAutoConsoleVariable<int32> CVarSkipGeneratorOverlay(
+		TEXT("aps.Save.SkipGeneratorOverlay"), 1,
+		TEXT("1: loading never serializes the saved AAstroGenerator archive over the live, replayed generator (its object ")
+		TEXT("paths are session-specific and nulled HomeSpaceship/sub-generators); its transform is still applied. ")
+		TEXT("0: the old full overlay."));
+}
+
 void AGravityPlayerController::PlayerTick(const float DeltaTime)
 {
 	Super::PlayerTick(DeltaTime);
@@ -101,23 +85,35 @@ void AGravityPlayerController::PlayerTick(const float DeltaTime)
 void AGravityPlayerController::CapturePlayerStateForSave()
 {
 	const APawn* PlayerPawn = GetPawn();
+	const APilotingVehicle* PilotedVehicle = nullptr;
 	// Seated in a ship the player is still its pilot: the save keeps the pilot, who sits down in the ship again after
 	// loading (APSCivilizationSave). Saving the ship as the player's pawn spawned a second, empty ship on load and
 	// removed the pilot, who then could not get out (audit B2).
 	if (const APilotingVehicle* Vehicle = Cast<APilotingVehicle>(PlayerPawn); Vehicle && IsValid(Vehicle->Pilot))
 	{
+		PilotedVehicle = Vehicle;
 		PlayerPawn = Vehicle->Pilot;
 	}
 	if (!IsValid(PlayerPawn))
 	{
 		return;
 	}
+	// Rio 06.10 (audit: saves, aps.Save.RestorePilotedShip): the lifecycle autosave runs after UnPossess, when the
+	// civilization save no longer sees the ship; it gets the last piloted ship's key from here. The key is rebuilt only
+	// when the ship changes (or a destroyed one leaves a stale key), never per tick.
+	if (PilotedVehicle != CachedPilotedVehicle.Get() || (!PilotedVehicle && !CachedPilotedVehicleKey.IsEmpty()))
+	{
+		CachedPilotedVehicle = PilotedVehicle;
+		CachedPilotedVehicleKey = PilotedVehicle ? FAPSFleetCommand::KeyOf(PilotedVehicle) : FString();
+	}
 	CachedPlayerPawnClass = PlayerPawn->GetClass()->GetPathName();
 	CachedPlayerPawnTransform = PlayerPawn->GetActorTransform();
 	// Saves stay in the generation frame (headquarters at 0,0,0) after the world origin moved to the player.
 	if (const UAPSWorldOriginSubsystem* WorldOrigin = GetWorld() ? GetWorld()->GetSubsystem<UAPSWorldOriginSubsystem>() : nullptr)
 	{
-		CachedPlayerPawnTransform.SetLocation(WorldOrigin->ToGenerationFrame(CachedPlayerPawnTransform.GetLocation()));
+		// Rio 06.10 (still ship): riding a ship that owes its travel, the player is truly that much further on.
+		CachedPlayerPawnTransform.SetLocation(WorldOrigin->ToGenerationFrame(CachedPlayerPawnTransform.GetLocation())
+			- WorldOrigin->GetSkyOffset());
 	}
 	CachedPlayerControlRotation = GetControlRotation();
 	bHasCachedPlayerState = true;
@@ -151,11 +147,24 @@ void AGravityPlayerController::ToggleStrategicMap()
 	}
 	if (!GEngine || !GEngine->GameViewport || !GetWorld()) return;
 
-	AAstroGenerator* Generator = Cast<AAstroGenerator>(
-		UGameplayStatics::GetActorOfClass(GetWorld(), AAstroGenerator::StaticClass()));
-	if (!Generator) return;
+	// The live generator (never a menu preview one): the map reads the home star, planet and system from it. The map
+	// works without one too; it never calls the generator's preview camera or presentation (Rio 02.10: "HOME SYSTEM
+	// shows nothing, the camera falls into the star; the planet is see-through; FPS drops when rotating").
+	AAstroGenerator* Generator = nullptr;
+	TArray<AActor*> Generators;
+	UGameplayStatics::GetAllActorsOfClass(GetWorld(), AAstroGenerator::StaticClass(), Generators);
+	for (AActor* Candidate : Generators)
+	{
+		AAstroGenerator* Live = Cast<AAstroGenerator>(Candidate);
+		if (IsValid(Live) && !Live->ActorHasTag(TEXT("WorldGenerationPreview")) && !Live->UsesContinuousPreviewFrame())
+		{
+			Generator = Live;
+			break;
+		}
+	}
 
 	StrategicMapPreviousViewTarget = GetViewTarget();
+	// The panel spawns the map's own camera at the current view and takes the view target (SAPSStrategicMapPanel).
 	StrategicMapWidget = SNew(SAPSStrategicMapPanel)
 		.Controller(this)
 		.Generator(Generator)
@@ -163,13 +172,13 @@ void AGravityPlayerController::ToggleStrategicMap()
 	StrategicMapContainer = SNew(SWeakWidget).PossiblyNullContent(StrategicMapWidget.ToSharedRef());
 	GEngine->GameViewport->AddViewportWidgetContent(StrategicMapContainer.ToSharedRef(), 900);
 
+	// UI only: the pawn and the ship take no keys while the map is open (typing a star's name must not fly the ship);
+	// the panel itself closes on F10 and Esc.
 	bShowMouseCursor = true;
-	FInputModeGameAndUI InputMode;
+	FInputModeUIOnly InputMode;
 	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-	InputMode.SetHideCursorDuringCapture(false);
 	InputMode.SetWidgetToFocus(StrategicMapWidget);
 	SetInputMode(InputMode);
-	Generator->FocusPreviewTarget(EAstroPreviewFocus::Overview, this);
 }
 
 void AGravityPlayerController::CloseStrategicMap(bool bRestoreView)
@@ -179,6 +188,7 @@ void AGravityPlayerController::CloseStrategicMap(bool bRestoreView)
 		GEngine->GameViewport->RemoveViewportWidgetContent(StrategicMapContainer.ToSharedRef());
 	}
 	StrategicMapContainer.Reset();
+	// The panel releases the map camera here; it stays a moment for the blend back below, then goes by itself.
 	StrategicMapWidget.Reset();
 
 	if (bRestoreView)
@@ -262,6 +272,12 @@ bool AGravityPlayerController::SaveWorldToSlot(const FString& SlotName,
 		return false;
 	}
 
+	// Rio 06.10 (still ship): a ship owing its travel pays it first, so every saved place is in one frame.
+	if (UAPSWorldOriginSubsystem* WorldOrigin = GetWorld()->GetSubsystem<UAPSWorldOriginSubsystem>())
+	{
+		WorldOrigin->SettleDeferredTravel(TEXT("a save"));
+	}
+
 	UGameSave* SaveGameInstance = Cast<UGameSave>(
 		UGameplayStatics::CreateSaveGameObject(UGameSave::StaticClass()));
 	if (!SaveGameInstance)
@@ -327,7 +343,10 @@ bool AGravityPlayerController::SaveWorldToSlot(const FString& SlotName,
 		}
 	}
 	// Modules, fleet, surveys, outposts and the journal: the progress the actor archive below does not hold.
-	APSCivilizationSave::Capture(World, SaveGameInstance->CivilizationState);
+	// Rio 06.10 (audit: saves, aps.Save.RestorePilotedShip): the piloted-ship cache is refreshed first (a pilot who left
+	// the seat this frame is not saved seated); the call below repeats it, with the same result.
+	CapturePlayerStateForSave();
+	APSCivilizationSave::Capture(World, SaveGameInstance->CivilizationState, CachedPilotedVehicleKey);
 
 	TArray<AActor*> AllActors;
 	UGameplayStatics::GetAllActorsOfClass(World, ABaseActor::StaticClass(), AllActors);
@@ -387,7 +406,7 @@ bool AGravityPlayerController::SaveWorldToSlot(const FString& SlotName,
 	{
 		GameplayState->SaveSlotName = SlotName;
 	}
-	WriteWorldMetadataSidecar(SaveGameInstance, WorldSaveData);
+	WriteWorldMetadataSidecar(SaveGameInstance, WorldSaveData, World, GeneratedWorldModel);
 	UE_LOG(LogTemp, Log,
 		TEXT("[APS.Save] Saved slot=%s modelBytes=%d spawnBytes=%d civilization=%s actors=%d player=%s"),
 		*SlotName, SaveGameInstance->GeneratedWorldModelData.Num(),
@@ -402,6 +421,11 @@ void AGravityPlayerController::LoadWorld()
 {
 	if (UWorld* World = GetWorld())
 	{
+		// Rio 06.10 (still ship): saved places are restored into a world that owes nothing.
+		if (UAPSWorldOriginSubsystem* WorldOrigin = World->GetSubsystem<UAPSWorldOriginSubsystem>())
+		{
+			WorldOrigin->SettleDeferredTravel(TEXT("a load"));
+		}
 		UMainGameplayInstance* GameplayState = World->GetGameInstance()
 			? World->GetGameInstance()->GetSubsystem<UMainGameplayInstance>() : nullptr;
 		if (GameplayState && GameplayState->bPendingSavedWorldReplay
@@ -471,11 +495,22 @@ void AGravityPlayerController::LoadWorld()
 					{
 						continue;
 					}
+					// Rio 06.10 (audit: saves, aps.Save.SkipGeneratorOverlay): the replayed generator is the live one; its
+					// saved archive holds the old session's object paths.
+					const bool bGeneratorRecord = ActorClass->IsChildOf(AAstroGenerator::StaticClass())
+						&& APSGravityControllerSaveCVars::CVarSkipGeneratorOverlay.GetValueOnGameThread() != 0;
 					AActor* Actor = SaveData.StableEntityId.IsValid()
 						? StableIdToActorMap.FindRef(SaveData.StableEntityId) : nullptr;
 					if (!IsValid(Actor))
 					{
 						Actor = NameToActorMap.FindRef(SaveData.ActorName);
+					}
+					if (!IsValid(Actor) && bGeneratorRecord)
+					{
+						// Never a second generator next to the replayed one.
+						UE_LOG(LogTemp, Warning, TEXT("[APS.Save] No live generator for record %s; skipped"),
+							*SaveData.ActorName);
+						continue;
 					}
 					if (IsValid(Actor) && !Actor->IsA(ActorClass))
 					{
@@ -497,9 +532,12 @@ void AGravityPlayerController::LoadWorld()
 
 					if (Actor)
 					{
-						FMemoryReader MemoryReader(SaveData.ActorData, true);
-						FObjectAndNameAsStringProxyArchive Archive(MemoryReader, true);
-						Actor->Serialize(Archive);
+						if (!bGeneratorRecord)
+						{
+							FMemoryReader MemoryReader(SaveData.ActorData, true);
+							FObjectAndNameAsStringProxyArchive Archive(MemoryReader, true);
+							Actor->Serialize(Archive);
+						}
 						Actor->SetActorTransform(APSSaveFrame::ToWorld(World, SaveData.ActorTransform), false, nullptr,
 							ETeleportType::TeleportPhysics);
 
@@ -635,36 +673,8 @@ void AGravityPlayerController::SetLoadingModeFalse()
 
 FName AGravityPlayerController::GenerateUniqueName(const FString& ObjectType)
 {
-	FString GeneratedName;
-	const FString Vowels = TEXT("aeiou");
-	const FString Consonants = TEXT("bcdfghjklmnpqrstvwxyz");
-
-	std::random_device Rd;
-	std::mt19937 Generator(Rd());
-	const int32 MinLength = 3; 
-	const int32 MaxLength = 8;
-	std::uniform_int_distribution LengthDist(MinLength, MaxLength);
-	const int32 WordLength = LengthDist(Generator);
-
-	for (int32 i = 0; i < WordLength; i++)
-	{
-		if (i % 2 == 0)
-		{
-			GeneratedName += Consonants[Generator() % Consonants.Len()];
-		}
-		else
-		{
-			GeneratedName += Vowels[Generator() % Vowels.Len()];
-		}
-	}
-
-	if (GeneratedName.Len() > 0)
-	{
-		GeneratedName[0] = FChar::ToUpper(GeneratedName[0]);
-	}
-
-	FString FullName = FString::Printf(TEXT("%s %s"), *GeneratedName, *ObjectType);
-	return FName(*FullName);
+	// Rio, 02.10: generated bodies carry a name only, no PLANET/MOON/spectral suffix (APSBodyNames).
+	return FName(*APSBodyNames::Random(APSBodyNames::KindFromLegacy(ObjectType)));
 }
 
 FString AGravityPlayerController::GenerateUniqueSaveSlotName(const EAstroGenerationLevel AstroGenerationLevel) const

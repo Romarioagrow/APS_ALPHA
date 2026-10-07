@@ -4,7 +4,7 @@
 #include "Subsystems/WorldSubsystem.h"
 #include "APSFleetCommandSubsystem.generated.h"
 
-class FAPSFleetCommand;
+class FAPSFleetCommand; class FAPSInfrastructure; class FAPSMissionBoard; class FAPSStarSystems;
 
 /**
  * Owns the world's fleet command (APSFleetCommand.h: units, divisions, orders, the autopilot, surveys, outposts) and
@@ -24,4 +24,8 @@ public:
 
 private:
 	TSharedPtr<FAPSFleetCommand> Fleet;
+	/** The expansion (Rio 02.10): the cluster's star systems, the infrastructure and stocks, the department missions. */
+	TSharedPtr<FAPSStarSystems> Stars;
+	TSharedPtr<FAPSInfrastructure> Infrastructure;
+	TSharedPtr<FAPSMissionBoard> Missions;
 };

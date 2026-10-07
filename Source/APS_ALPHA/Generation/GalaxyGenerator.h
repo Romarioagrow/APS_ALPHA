@@ -20,9 +20,14 @@ public:
 
 	FGalaxyModel GenerateGalaxyByParamsModel(EGalaxyType GalaxyType, EGalaxyClass GalaxyGlass);
 
+	/**
+	 * DensityReferenceBudget (Rio 03.10, placed-star count): when > 0 and the rendered count
+	 * exceeds it, stars get smaller and dimmer (APSGalaxyMorphology::GetDensityCompensation).
+	 * 0 keeps the historic presentation for every budget.
+	 */
 	void GenerateGalaxyOctreeStars(UStarGenerator* StarGenerator, AGalaxy* NewGalaxy,
 		TSharedPtr<FGalaxyModel> GalaxyModel, int32 RenderedStarBudget, int32 GenerationSeed,
-		bool bUsePreviewPresentation = false);
+		bool bUsePreviewPresentation = false, int32 DensityReferenceBudget = 0);
 
 	FVector GenerateStarInEllipticalGalaxy(EGalaxyClass GalaxyClass, double StarDistance, double StarRadius);
 

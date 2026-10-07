@@ -22,6 +22,21 @@ void USpawnParameters::SanitizeForGeneration()
 	CivilAffairsDivisionLevel = FMath::Clamp(CivilAffairsDivisionLevel, 0, 20);
 	MilitaryDivisionLevel = FMath::Clamp(MilitaryDivisionLevel, 0, 20);
 	FleetDivisionLevel = FMath::Clamp(FleetDivisionLevel, 0, 20);
+	GroundVehicleMask = FMath::Clamp(GroundVehicleMask, 0, 7);
+}
+
+void USpawnParameters::GetColonyStartModules(const EAPSColonyStartPackage Package, TArray<FName>& OutModules)
+{
+	OutModules.Reset();
+	// Surface modules of APSColonyModuleCatalogue: living quarters and power first, then what makes the colony work.
+	if (Package == EAPSColonyStartPackage::Standard || Package == EAPSColonyStartPackage::Settlement)
+	{
+		OutModules.Append({FName(TEXT("Habitat")), FName(TEXT("SolarArray")), FName(TEXT("Storage"))});
+	}
+	if (Package == EAPSColonyStartPackage::Settlement)
+	{
+		OutModules.Append({FName(TEXT("Greenhouse")), FName(TEXT("CommsMast")), FName(TEXT("Floodlight"))});
+	}
 }
 
 int32 USpawnParameters::GetPlannedInfrastructureActorCount() const
@@ -32,6 +47,19 @@ int32 USpawnParameters::GetPlannedInfrastructureActorCount() const
 		+ FMath::Max(0, PlanetOutposts)
 		+ FMath::Max(1, OrbitalOutposts)
 		+ FMath::Max(0, GroundOutposts);
+}
+
+int32 USpawnParameters::GetPlannedUnitCount() const
+{
+	// Rio 02.10: the manifest counts what the player commands (ships, rover / hover / drone), not actors.
+	return FMath::Max(1, StartingFleetSize) + FMath::CountBits(static_cast<uint64>(FMath::Clamp(GroundVehicleMask, 0, 7)));
+}
+
+int32 USpawnParameters::GetPlannedStructureCount() const
+{
+	TArray<FName> FoundingModules;
+	GetColonyStartModules(ColonyStartPackage, FoundingModules);
+	return 2 + GetPlannedInfrastructureActorCount() + FoundingModules.Num();
 }
 
 int32 USpawnParameters::GetPlannedPhysicalActorCount() const

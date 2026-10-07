@@ -17,7 +17,8 @@ namespace APSChoosePathRenderedTests
 	constexpr double ScreenshotTimeoutSeconds = 12.0;
 	constexpr double PageSettleSeconds = 0.75;
 	constexpr double InteractionSettleSeconds = 0.20;
-	constexpr int32 ExpectedCardCount = 6;
+	// Rio 06.10, NEW WORLD: SINGLE GAME, CIVILIZATION, SPACE and PLANET (inactive); MY WORLDS moved to the landing page.
+	constexpr int32 ExpectedCardCount = 4;
 
 	struct FCardPixelMetrics
 	{
@@ -221,7 +222,7 @@ namespace APSChoosePathRenderedTests
 			int32 StaticTextureCount = 0;
 			Root->GetChoosePathDiagnosticsForAutomation(
 				CardCount, ProceduralVisualCount, StaticTextureCount);
-			Test->TestEqual(TEXT("Choose Path owns six route cards"), CardCount, ExpectedCardCount);
+			Test->TestEqual(TEXT("New World owns four route cards"), CardCount, ExpectedCardCount);
 			Test->TestEqual(TEXT("Every route card owns a procedural visual"),
 				ProceduralVisualCount, ExpectedCardCount);
 			Test->TestEqual(TEXT("Route cards reference no static texture resources"),

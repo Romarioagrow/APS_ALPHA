@@ -1,0 +1,45 @@
+{
+  "source": "/Game/MixOfAmbientMusic/Wav/NewAge_wav",
+  "source_sha256": "833b90e0491baa02de243708e4374caa7ea4bea884ecc5b03f7cd54441a879b6",
+  "output_sha256": "be996dfe62f81e5ea490279244fd830bc643ab764a82e06be6633e342505c1a0",
+  "sample_rate": 44100,
+  "duration_s": 224.0,
+  "sections": [
+    {
+      "source_start_s": 4,
+      "duration_s": 52,
+      "rms_dbfs": -31.01077365877622,
+      "peak_dbfs": -14.830378488960157,
+      "gain": 1.0
+    },
+    {
+      "source_start_s": 128,
+      "duration_s": 52,
+      "rms_dbfs": -31.0,
+      "peak_dbfs": -15.731432063691322,
+      "gain": 0.9674740926025972
+    },
+    {
+      "source_start_s": 66,
+      "duration_s": 52,
+      "rms_dbfs": -31.08606024692632,
+      "peak_dbfs": -15.116088979162694,
+      "gain": 1.0
+    },
+    {
+      "source_start_s": 190,
+      "duration_s": 52,
+      "rms_dbfs": -31.0,
+      "peak_dbfs": -14.27166475445359,
+      "gain": 0.983720341662077
+    }
+  ],
+  "fade_in_s": 7,
+  "fade_out_s": 9,
+  "pause_s": 4,
+  "highpass_hz": 70,
+  "lowpass_hz": 3200,
+  "rms_dbfs": -31.345906723795448,
+  "peak_dbfs": -14.27166475445359,
+  "boundary_peak": 3.4807191046186564e-07
+}

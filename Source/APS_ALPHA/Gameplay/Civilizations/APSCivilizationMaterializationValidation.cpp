@@ -249,6 +249,15 @@ bool UAPSCivilizationMaterializationSubsystem::ValidateMaterializedStarterSet(
 	for (const FBinding& Binding : Bindings)
 	{
 		QueryParams.AddIgnoredActor(Binding.Actor);
+		// Rio 03.10: the colony headquarters is a child actor of the base. Its floor sits centimetres above the
+		// foundation box, which an orbit start's far-from-origin colony (17,000 km, ~1 m physics precision) reported
+		// as "role 0 overlaps blocking actor BP_ColonyHQ_C_0" and blocked the whole starter set.
+		TArray<AActor*> Children;
+		Binding.Actor->GetAllChildActors(Children, true);
+		for (AActor* Child : Children)
+		{
+			QueryParams.AddIgnoredActor(Child);
+		}
 	}
 	for (const FBinding& Binding : Bindings)
 	{

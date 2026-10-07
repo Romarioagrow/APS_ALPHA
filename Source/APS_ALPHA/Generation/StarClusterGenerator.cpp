@@ -1,10 +1,193 @@
 #include "StarClusterGenerator.h"
+#include "APSHashStream.h"
 #include "APS_ALPHA/Actors/Astro/StarCluster.h"
 #include "APS_ALPHA/Core/Enums/StarClusterComposition.h"
 #include "APS_ALPHA/Core/Enums/StarClusterPopulation.h"
 #include "APS_ALPHA/Core/Enums/StarClusterSize.h"
 #include "APS_ALPHA/Core/Enums/StarClusterType.h"
 #include "APS_ALPHA/Core/Structs/StarGenerationModel.h"
+
+namespace APSClusterFormations
+{
+	// Rio 03.10: the formations appended on 03.10. Positions are fractions of the cluster bounds
+	// (each axis within +-0.5) until the final multiply; every stream is keyed by (seed, index).
+	using APSHashStream::FStream;
+
+	constexpr uint64 SaltStar = 0x4356325f53544152ull; // CV2_STAR
+	constexpr uint64 SaltGroup = 0x4356325f47525550ull; // CV2_GRUP
+	constexpr uint64 SaltFilament = 0x4356325f46494c41ull; // CV2_FILA
+
+	/** Bell noise per axis, each component in [-1, 1]. */
+	FVector Bell3(FStream& Stream)
+	{
+		const double X = Stream.Bell();
+		const double Y = Stream.Bell();
+		const double Z = Stream.Bell();
+		return FVector(X, Y, Z) / 1.5;
+	}
+
+	/** Truncated Plummer radius: scale A, cut at Cut (both in bounds fractions). */
+	double PlummerRadius(FStream& Stream, const double A, const double Cut)
+	{
+		const double MaxFraction = FMath::Pow(Cut * Cut / (Cut * Cut + A * A), 1.5);
+		const double Fraction = FMath::Max(Stream.U() * MaxFraction, 1.0e-12);
+		return A / FMath::Sqrt(FMath::Max(FMath::Pow(Fraction, -2.0 / 3.0) - 1.0, 1.0e-12));
+	}
+
+	/** Massive stars sink towards the centre of bound, dense clusters. */
+	double MassSegregation(const double StarMass)
+	{
+		return StarMass > 3.0 ? 0.55 : StarMass > 1.5 ? 0.8 : 1.0;
+	}
+
+	/** OB association: 5-8 loose, unbound sub-groups in a flattened field population. */
+	FVector YoungAssociation(FStream& Stream, const int32 Seed, const FVector& Bounds)
+	{
+		const int32 Groups = 5 + static_cast<int32>(APSHashStream::Key(Seed, 0, SaltGroup) % 4ull);
+		if (Stream.U() < 0.72)
+		{
+			FStream Group(APSHashStream::Key(Seed, 1 + Stream.Index(Groups), SaltGroup));
+			// One draw per statement: argument evaluation order is unspecified in C++.
+			const double CenterX = Group.Range(-0.30, 0.30);
+			const double CenterY = Group.Range(-0.26, 0.26);
+			const double CenterZ = Group.Range(-0.14, 0.14);
+			const FVector Center(CenterX, CenterY, CenterZ);
+			const double Size = Group.Range(0.05, 0.11);
+			return (Center + Bell3(Stream) * FVector(Size, Size * 0.9, Size * 0.6)) * Bounds;
+		}
+		return Bell3(Stream) * FVector(0.40, 0.34, 0.22) * Bounds;
+	}
+
+	/** Moving group: a sparse, elongated co-moving cloud with a faint core and a gentle S-bend. */
+	FVector MovingGroup(FStream& Stream, const FVector& Bounds)
+	{
+		if (Stream.U() < 0.15)
+		{
+			return Bell3(Stream) * FVector(0.06, 0.06, 0.05) * Bounds;
+		}
+		const double T = Stream.Bell() / 1.5;
+		const double Y = (Stream.Bell() / 1.5 * 0.30 + 0.12 * FMath::Sin(T * UE_DOUBLE_PI))
+			* (1.0 - 0.4 * T * T);
+		const double Z = Stream.Bell() / 1.5 * 0.30;
+		return FVector(T * 0.46, Y, Z) * Bounds;
+	}
+
+	/** Super star cluster: a very dense Plummer core with mass segregation and a wide halo. */
+	FVector SuperStarCluster(FStream& Stream, const FVector& Bounds, const double StarMass)
+	{
+		const double Radius = PlummerRadius(Stream, 0.035, 0.47) * MassSegregation(StarMass);
+		return Stream.UnitVector() * Radius * Bounds;
+	}
+
+	/** Embedded cluster: a dense hub fed by 4-6 gas filaments that young stars still trace. */
+	FVector EmbeddedCluster(FStream& Stream, const int32 Seed, const FVector& Bounds, const double StarMass)
+	{
+		if (Stream.U() < 0.40)
+		{
+			const FVector Direction = Stream.UnitVector();
+			return Direction * (PlummerRadius(Stream, 0.05, 0.25) * MassSegregation(StarMass)) * Bounds;
+		}
+		const int32 Filaments = 4 + static_cast<int32>(APSHashStream::Key(Seed, 0, SaltFilament) % 3ull);
+		FStream Filament(APSHashStream::Key(Seed, 1 + Stream.Index(Filaments), SaltFilament));
+		FVector Direction = Filament.UnitVector();
+		Direction.Z *= 0.35;
+		Direction = Direction.GetSafeNormal();
+		const FVector BendSeed = Filament.UnitVector();
+		const FVector Bend = (BendSeed - Direction * FVector::DotProduct(BendSeed, Direction)).GetSafeNormal() * 0.06;
+		const double Length = Filament.Range(0.28, 0.38);
+		const double T = 0.08 + 0.92 * FMath::Pow(Stream.U(), 1.3);
+		const double Width = 0.012 + 0.025 * T;
+		return (Direction * (Length * T) + Bend * (4.0 * T * (1.0 - T)) + Bell3(Stream) * Width) * Bounds;
+	}
+
+	/** Double cluster (h and chi Persei): two round open clusters side by side in a shared halo. */
+	FVector DoubleCluster(FStream& Stream, const FVector& Bounds, const double StarMass)
+	{
+		const double Selector = Stream.U();
+		if (Selector < 0.10)
+		{
+			return Bell3(Stream) * FVector(0.40, 0.30, 0.25) * Bounds;
+		}
+		const bool bFirst = Selector < 0.55;
+		const FVector Center = bFirst
+			? FVector(-0.24 * Bounds.X, -0.04 * Bounds.Y, 0.0)
+			: FVector(0.24 * Bounds.X, 0.05 * Bounds.Y, 0.02 * Bounds.Z);
+		// Round in physical space: scale by the smallest bound, not per axis.
+		const double Scale = FMath::Min3(Bounds.X, Bounds.Y, Bounds.Z);
+		const double Radius = PlummerRadius(Stream, bFirst ? 0.050 : 0.062, 0.20) * MassSegregation(StarMass);
+		return Center + Stream.UnitVector() * (Radius * Scale);
+	}
+}
+
+bool UStarClusterGenerator::SampleSeededFormation(const EStarClusterType ClusterType, const int32 GenerationSeed,
+	const int32 StarIndex, const FVector& ClusterBounds, const double StarMass, FVector& OutPosition)
+{
+	APSClusterFormations::FStream Stream(APSHashStream::Key(GenerationSeed, StarIndex, APSClusterFormations::SaltStar));
+	const FVector Bounds = ClusterBounds.GetAbs();
+	switch (ClusterType)
+	{
+	case EStarClusterType::YoungAssociation:
+		OutPosition = APSClusterFormations::YoungAssociation(Stream, GenerationSeed, Bounds);
+		return true;
+	case EStarClusterType::MovingGroup:
+		OutPosition = APSClusterFormations::MovingGroup(Stream, Bounds);
+		return true;
+	case EStarClusterType::SuperStarCluster:
+		OutPosition = APSClusterFormations::SuperStarCluster(Stream, Bounds, StarMass);
+		return true;
+	case EStarClusterType::EmbeddedCluster:
+		OutPosition = APSClusterFormations::EmbeddedCluster(Stream, GenerationSeed, Bounds, StarMass);
+		return true;
+	case EStarClusterType::DoubleCluster:
+		OutPosition = APSClusterFormations::DoubleCluster(Stream, Bounds, StarMass);
+		return true;
+	default:
+		return false;
+	}
+}
+
+double UStarClusterGenerator::GetSizeExtentFactor(const EStarClusterSize StarClusterSize)
+{
+	// Roughly constant star density (extent ~ count^1/3), softened so Tiny stays readable.
+	switch (StarClusterSize)
+	{
+	case EStarClusterSize::Tiny: return 0.30;
+	case EStarClusterSize::Small: return 0.40;
+	case EStarClusterSize::Medium: return 0.55;
+	case EStarClusterSize::Large: return 0.78;
+	case EStarClusterSize::Colossal: return 1.26;
+	case EStarClusterSize::Giant:
+	default: return 1.0;
+	}
+}
+
+int32 UStarClusterGenerator::GetPreviewFormationBudget(const EStarClusterSize StarClusterSize)
+{
+	// Each live system costs ~0.2 us per moving preview frame (continuous frame) plus its HISM instance.
+	switch (StarClusterSize)
+	{
+	case EStarClusterSize::Tiny: return 500;
+	case EStarClusterSize::Small: return 1500;
+	case EStarClusterSize::Medium: return 3000;
+	case EStarClusterSize::Large: return 6000;
+	case EStarClusterSize::Giant: return 12000;
+	case EStarClusterSize::Colossal: return 20000;
+	default: return 1000;
+	}
+}
+
+double UStarClusterGenerator::GetLogicalHalfExtent(const FVector& ClusterBounds, const EStarClusterType ClusterType)
+{
+	// Mirrors AAstroGenerator::GenerateStarCluster exactly (historic datasets must compose to the same scale).
+	double HalfExtent = ClusterBounds.GetAbs().GetMax() * 50.0;
+	if (ClusterType == EStarClusterType::GlobularCluster)
+	{
+		constexpr double MaximumGeneratedStarRadiusSolar = 1000.0;
+		HalfExtent = FMath::Max(HalfExtent,
+			(ClusterBounds.GetAbs().GetMax() * 0.5 + MaximumGeneratedStarRadiusSolar * 100.0) * 100.0);
+	}
+	return HalfExtent;
+}
 
 UStarClusterGenerator::UStarClusterGenerator()
 {
@@ -181,6 +364,15 @@ FVector UStarClusterGenerator::CalculateStarPosition(int StarIndex, AStarCluster
 			StarPosition = FVector(FMath::Cos(Angle) * Radius, FMath::Sin(Angle) * Radius, Z);
 		}
 		break;
+	case EStarClusterType::YoungAssociation:
+	case EStarClusterType::MovingGroup:
+	case EStarClusterType::SuperStarCluster:
+	case EStarClusterType::EmbeddedCluster:
+	case EStarClusterType::DoubleCluster:
+		// Rio 03.10: seeded formations, independent of the global RNG and of the render prefix.
+		SampleSeededFormation(StarCluster->ClusterType, StarCluster->GenerationSeed, StarIndex,
+			StarCluster->ClusterBounds, StarModel->Mass, StarPosition);
+		break;
 	case EStarClusterType::Unknown:
 	default:
 		StarPosition = FMath::RandPointInBox(FBox(
@@ -198,6 +390,8 @@ TMap<EStarClusterSize, TPair<int, int>> StarClusterSizes =
 	{EStarClusterSize::Large, TPair<int, int>(5000, 25000)},
 	{EStarClusterSize::Giant, TPair<int, int>(25000, 50000)},
 	{EStarClusterSize::Unknown, TPair<int, int>(0, 0)},
+	// Rio 03.10: above Giant. Every system is a sealed record in the save (~2.2 KB each today).
+	{EStarClusterSize::Colossal, TPair<int, int>(50000, 100000)},
 };
 
 int UStarClusterGenerator::GetStarsAmountByRange(EStarClusterSize StarClusterSize)
@@ -226,6 +420,11 @@ FVector UStarClusterGenerator::GetStarClusterBoundsByRange(EStarClusterType Clus
 	case EStarClusterType::ElongatedStream: return FVector(240000.0, 32000.0, 22000.0);
 	case EStarClusterType::RingArc: return FVector(160000.0, 160000.0, 18000.0);
 	case EStarClusterType::Hourglass: return FVector(100000.0, 100000.0, 200000.0);
+	case EStarClusterType::YoungAssociation: return FVector(220000.0, 160000.0, 90000.0);
+	case EStarClusterType::MovingGroup: return FVector(260000.0, 110000.0, 80000.0);
+	case EStarClusterType::SuperStarCluster: return FVector(60000.0, 60000.0, 60000.0);
+	case EStarClusterType::EmbeddedCluster: return FVector(120000.0, 120000.0, 90000.0);
+	case EStarClusterType::DoubleCluster: return FVector(200000.0, 100000.0, 80000.0);
 	case EStarClusterType::Unknown:
 	default: return FVector(100000.0, 100000.0, 100000.0);
 	}

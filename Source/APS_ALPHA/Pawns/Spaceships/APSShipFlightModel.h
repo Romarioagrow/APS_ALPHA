@@ -5,7 +5,7 @@
 #include "APSShipFlightModel.generated.h"
 
 class AAstroGenerator;
-class ASpaceship;
+class ASpaceship; struct FAPSFlightReadout;
 
 /** Speed class of the band flight model; keys 1-5 select it directly, Right Shift / Right Ctrl step through it. */
 UENUM(BlueprintType)
@@ -249,12 +249,43 @@ public:
 
 	FString GetStatusText() const;
 	FString GetHintText() const;
+	/** Rio 06.10 HUD (Claude UI): GetStatusText's fields for the flight bar (UI/Hud/SAPSShipHud), read only. */
+	FAPSFlightReadout GetHudReadout() const;
 
 	/** Called by the ship when a pilot takes it: kinematic hull, fresh body and ground data. */
 	void OnPossessed();
 
 	/** Test drive without a keyboard (aps.ExpShip.Drive): holds forward input and boost until cleared. */
 	void SetDebugDrive(bool bEnabled, float Forward, bool bBoost);
+
+	/** Autopilot of the piloted ship (Rio 02.10): turns to the target, flies the bands, brakes and stops near it.
+	 * Any helm input (thrust, strafe, brake, steering) takes the ship back. */
+	void EngageAutopilot(AActor* Target);
+	void DisengageAutopilot(const TCHAR* Reason);
+	bool IsAutopilotEngaged() const { return AutopilotTarget.IsValid(); }
+	/** Rio 03.10: the world shifted under the player (the floating origin): cached world centres move with it. */
+	void ApplyWorldShift(const FVector& Offset);
+	AActor* GetAutopilotTarget() const { return AutopilotTarget.Get(); }
+
+	/**
+	 * Star drive (Rio 02.10, key J): a separate mode for the flight between stars. It spools up for two seconds, then
+	 * the ship cruises by itself at a speed that crosses the gap between neighbouring stars in about ten seconds; W
+	 * raises and S lowers that speed smoothly, Ctrl brakes out of it. The course follows the nose with a lag, so the ship
+	 * floats through a turn. Planets, moons and the systems on the course still slow it down, and entering another star
+	 * system drops it at the CRUISE speed there. Needs an Offset-capable hull (the STELLAR band), outside an atmosphere.
+	 */
+	void ToggleStarDrive();
+	bool EngageStarDrive();
+	void DisengageStarDrive(const TCHAR* Reason);
+	bool IsStarDriveActive() const { return bStarDrive; }
+
+	/**
+	 * Steering for ASpaceship::ApplyRotationInput (Rio 02.10: in the air the hull tossed about and jerked; the star drive
+	 * steers like a yoke with a lag): scales of the hull's turn rate, angular response and passive damping (1 = as is).
+	 */
+	void GetSteeringFeel(double& OutRateScale, double& OutResponseScale, double& OutDampingScale) const;
+	/** The raw pitch/yaw/roll input smoothed over a few frames where the feel asks for it (raw elsewhere). */
+	FVector SmoothSteeringInput(const FVector& RawPitchYawRoll, float DeltaTime);
 
 	/** One entry per EAPSFlightBand, in enum order. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, EditFixedSize, Category = "Ship|Flight Bands")
@@ -378,6 +409,8 @@ private:
 	bool RebuildStarCatalogue();
 	/** Picks the nearest catalogue stars and the one whose system the course runs into. */
 	void ScanStarCatalogue(const FVector& Location, const FVector& Heading);
+	/** The same for the galaxy's drawn stars (APSGalaxyGpuStars' nearest-star index), into NearestGalaxyStars. */
+	void ScanGalaxyStars(const FVector& Location, const FVector& Heading);
 	void UpdateGroundProbe(float DeltaTime);
 	/** Height above the WorldScape terrain (or sea level) of the nearest planet with a current surface; -1 if none. */
 	double MeasureTerrainClearanceCm(const FVector& Location) const;
@@ -390,11 +423,18 @@ private:
 	void ApplyBand(EAPSFlightBand NewBand, const TCHAR* Reason);
 	EAPSFlightBand NeighbourBand(EAPSFlightBand Band, int32 Direction) const;
 	FVector StepVelocity(const FAPSFlightBandSettings& Band, const FVector& LocalInput, double Limit, double Boost,
-		double Drag, float DeltaTime) const;
+		double Drag, float DeltaTime, double ThrustScale = 1.0) const;
 
 	EAPSFlightBand FlightBand{EAPSFlightBand::Maneuver};
 	bool bManualBand{false};
 	float AutoShiftHold{0.0f};
+	/** Rio 07.10 (aps.Ship.ShiftRampSeconds): the thrust the last band-flight frame used (cm/s2), the thrust an AUTO shift
+	 * up starts its ramp from, and how far into that ramp the ship is (< 0: no ramp). */
+	double LastThrustCm{0.0};
+	double ShiftRampFromThrustCm{0.0};
+	float ShiftRampElapsed{-1.0f};
+	/** After AUTO shifted down closing in on a body, no shift up for a while (Rio 04.10: ORBITAL <-> CRUISE every 3-5 s). */
+	float UpShiftBlockSeconds{0.0f};
 	/** Nearest star (actor or catalogue point), cm to its surface; -1 unknown. */
 	double NearestStarDistanceCm{-1.0};
 	/** Smallest distance outside a star system's sphere, cm (negative inside a system); unknown without stars. */
@@ -411,6 +451,38 @@ private:
 	double LimitLocalDistanceCm{-1.0};
 	/** How far the course runs into a star system or out of charted space (CourseClearanceCm); -1 unknown. */
 	double CourseClearanceCm{-1.0};
+	/**
+	 * Rio 05.10 night ("faster, slower, faster again" at light years a second): what CourseClearanceCm came from, for the
+	 * flight log: "STAR" (an actor), "CLUSTER" or "GALAXY" (a catalogue index), "EDGE" (charted space), null for none; and
+	 * where the course passes it, cm (along the course, negative once past it, and off the course).
+	 */
+	const TCHAR* CourseSourceKind{nullptr};
+	int64 CourseSourceId{INDEX_NONE};
+	TWeakObjectPtr<const AActor> CourseSourceActor;
+	double CourseSourceAlongCm{0.0};
+	double CourseSourceMissCm{0.0};
+	/**
+	 * Rio 05.10 night (aps.RealScale.CourseGuard, the REAL SCALE star drive and STELLAR): the closing guard in two parts.
+	 * Planets, moons and the ground as before (GuardBody); stars only where the course crosses their arrival sphere, and the
+	 * edge of charted space, with a frame time of at most aps.RealScale.GuardMaxFrameSeconds (GuardCourse). -1: none.
+	 */
+	double GuardBodyCm{-1.0};
+	FVector GuardBodyOutward{FVector::ZeroVector};
+	double GuardCourseCm{-1.0};
+	FVector GuardCourseOutward{FVector::ZeroVector};
+	const TCHAR* GuardCourseKind{nullptr};
+	/** Flight log: how often a guard cut the closing speed since the last line, and its strongest cut (kept / closing). */
+	int32 GuardTriggers{0};
+	double GuardWorstShare{1.0};
+	double GuardWorstClosingCm{0.0};
+	double GuardWorstKeptCm{0.0};
+	float GuardWorstDeltaTime{0.0f};
+	const TCHAR* GuardWorstSource{nullptr};
+	/** The body LimitLocalDistanceCm comes from (its actor; the ground: this component) and the way out of it. */
+	const void* LimitLocalKey{nullptr};
+	FVector LimitLocalOutward{FVector::ZeroVector};
+	/** The flight log's shared tail: the course source, the guard since the last line (reset here), input and boost. */
+	FString FlightLogDetails(const FVector& LocalInput);
 	FString NearestBodyName;
 	double GroundClearanceCm{-1.0};
 	/** Ground clearance after the departure factor: what the surface limit sees. */
@@ -432,20 +504,182 @@ private:
 	TWeakObjectPtr<AAstroGenerator> CatalogueGenerator;
 	TWeakObjectPtr<AActor> CatalogueHome;
 	uint64 CatalogueBuildSerial{0};
+	uint64 CatalogueBatchSerial{0};
 	uint64 CatalogueMutationSerial{0};
 	TArray<FVector> CatalogueFromHome;
 	/** Bounding sphere of the catalogue around its centroid: charted space ends a little beyond it. */
 	FVector CatalogueCenterFromHome{FVector::ZeroVector};
 	double CatalogueRadiusCm{0.0};
+	/** Median distance between neighbouring catalogue stars (F2 cap on the star term of the speed limit). */
+	double CatalogueSpacingMedianCm{0.0};
+	/** How far the ship is outside the catalogue sphere, cm; 0 inside (F2: bounded speed beyond the cluster). */
+	double CatalogueGapCm{0.0};
+	/** No ceiling (Rio 02.10): how far the held limit has crept above the band's limit (1 = not at all), and the band
+	 * it crept in (a band change starts over). */
+	double LimitCreep{1.0};
+	EAPSFlightBand CreepBand{EAPSFlightBand::Flight};
 	/** The last scan: the nearest catalogue stars and the one whose system the course runs into. */
 	TArray<int32, TInlineAllocator<8>> NearestCatalogueStars;
 	int32 CourseCatalogueStar{INDEX_NONE};
+	/** Rio 03.10: the galaxy stars of the last scan, as offsets from the home system (xyz) and drawn radius (w), cm. */
+	TArray<FVector4, TInlineAllocator<10>> NearestGalaxyStars;
+	/** Their catalogue indices, in the same order (the flight log's course source). */
+	TArray<int64, TInlineAllocator<10>> NearestGalaxyStarIds;
+	/** Their local spacing (the star drive's cruise past the cluster's edge), cm; 0 unknown. */
+	double GalaxySpacingCm{0.0};
 	float CatalogueScanElapsed{TNumericLimits<float>::Max()};
 	FVector CatalogueScanHeading{FVector::ZeroVector};
 	bool bCatalogueMissingLogged{false};
 	bool bDebugDrive{false};
 	float DebugForwardInput{0.0f};
 	bool bDebugBoost{false};
+	/** Autopilot state: the target, the stop distance from its surface, the rotation it set last frame (a different
+	 * rotation now means the pilot steered), and the distance left for the HUD. */
+	void UpdateAutopilot(float DeltaTime);
+	TWeakObjectPtr<AActor> AutopilotTarget;
+	double AutopilotArrivalCm{0.0};
+	double AutopilotRemainingCm{0.0};
+	FQuat AutopilotLastRotation{FQuat::Identity};
+	bool bAutopilotRotated{false};
+	/** The course the autopilot steers along (eased toward its aim), the level up it banks from, its bank (degrees) and
+	 * the speed it holds to reach its stop evenly (no cap while off). */
+	FVector AutopilotCourse{FVector::ZeroVector};
+	FVector AutopilotLevelUp{FVector::ZeroVector};
+	double AutopilotBankDegrees{0.0};
+	double AutopilotSpeedCapCm{TNumericLimits<double>::Max()};
+	/** Star drive: moves the ship for one frame (false: the drive dropped out and the bands fly this frame). */
+	bool ApplyStarDrive(const FVector& LocalInput, float DeltaTime);
+	/** The drive's speed without input: the median star spacing in aps.Ship.Drive.CrossSeconds. */
+	double StarDriveCruiseCm() const;
+	/** Moves the ship by Velocity for one frame: the closing guard, the sweep (always for short frames) and contacts. */
+	void MoveShip(FVector Velocity, bool bSweepBand, float DeltaTime);
+	bool bStarDrive{false};
+	float StarDriveSeconds{0.0f};
+	/** Seconds S has been held at the bottom of the drive's range (a second winds the drive down). */
+	float StarDriveIdleSeconds{0.0f};
+	/** The speed the pilot set (W/S), and the speed the spool started from, cm/s. */
+	double StarDriveSetCm{0.0};
+	double StarDriveFromCm{0.0};
+	/** The drive's nearest-body distance last frame (-1: none): a growing one is a departure (aps.RealScale.DriveDepartFactor). */
+	double StarDrivePreviousLocalCm{-1.0};
+	/**
+	 * Rio 05.10 night (aps.RealScale.DriveDepartLatch): the departure latched on the body the drive's distance limit comes
+	 * from (the course's share along the way out of it, with a margin), and the departure factor's blend toward it (0..1).
+	 */
+	const void* StarDriveDepartKey{nullptr};
+	bool bStarDriveDeparting{false};
+	double StarDriveDepartBlend{0.0};
+	/** Outside every star system since engaging: entering one now is an arrival and drops the drive. */
+	bool bStarDriveLeftSystem{false};
+	/** What holds the drive below the set speed (a body near, a system ahead or around), for the HUD; null: nothing. */
+	const TCHAR* StarDriveHeldBy{nullptr};
+	/** A short line for the HUD: why the drive refused or dropped out. */
+	FString StarDriveNotice;
+	double StarDriveNoticeUntil{0.0};
+	FVector SmoothedSteering{FVector::ZeroVector};
+	/** A/D's eased yaw while the mouse is on the camera (Rio 04.10: the keys turned too sharply in cruise). */
+	double KeySteeringYaw{0.0};
 	double LastLogSeconds{0.0};
 	double LastContactLogSeconds{0.0};
+
+public:
+	/**
+	 * Ground vehicles (Rio 02.10, ASpaceship::ConfigureAsGroundVehicle): sets a parked vehicle down at rest on the ground
+	 * under it, aligned with it. The ground is the collision where it exists near the vehicle; without it, and unless
+	 * bRequireCollision, the WorldScape height. True when the vehicle now rests on collision; false for a ship, a piloted
+	 * or moving vehicle, or no ground yet.
+	 */
+	bool SettleVehicle(bool bRequireCollision);
+	/** A ground vehicle's chase-camera frame: its heading, the gravity up and the look pitch (degrees, up positive). */
+	bool GetVehicleCameraFrame(FVector& OutForward, FVector& OutUp, double& OutPitchDegrees) const;
+
+private:
+	/** The pilot's controls for one vehicle frame (nothing powered without a pilot or with the engine off). */
+	struct FVehicleControls
+	{
+		double Throttle{0.0};
+		double Steer{0.0};
+		double Strafe{0.0};
+		double Vertical{0.0};
+		double MouseYaw{0.0};
+		double MousePitch{0.0};
+		bool bBoost{false};
+		bool bBrake{false};
+		bool bPowered{false};
+	};
+	/**
+	 * What lies under a vehicle: the plane of its wheel or corner probes (else the WorldScape height) and the liquid
+	 * surface of a sea world. Heights are the vehicle origin's over them along the gravity up, cm. Probes are ordered
+	 * front-left, front-right, back-left, back-right.
+	 */
+	struct FVehicleGround
+	{
+		FVector Point{FVector::ZeroVector};
+		FVector Normal{FVector::UpVector};
+		double Height{0.0};
+		double LiquidHeight{TNumericLimits<double>::Max()};
+		FVector Contact[4]{FVector::ZeroVector, FVector::ZeroVector, FVector::ZeroVector, FVector::ZeroVector};
+		bool bHit[4]{false, false, false, false};
+		int32 Hits{0};
+		bool bValid{false};
+		bool bCollision{false};
+	};
+	/** A rover, hover or drone between frames. */
+	struct FVehicleState
+	{
+		FVector Heading{FVector::ZeroVector};
+		FVector BodyUp{FVector::ZeroVector};
+		FVector GroundNormal{FVector::UpVector};
+		FVector LastVelocity{FVector::ZeroVector};
+		FVector NoiseSampleLocation{FVector::ZeroVector};
+		double NoiseGroundRadiusCm{-1.0};
+		double NoiseSampleSeconds{-1.0};
+		double YawRate{0.0};
+		double Steer{0.0};
+		double PendingYaw{0.0};
+		double LookPitch{0.0};
+		double Roll{0.0};
+		double Pitch{0.0};
+		double WheelSpin{0.0};
+		double WheelDrop[4]{0.0, 0.0, 0.0, 0.0};
+		double GroundHeightCm{-1.0};
+		double AltitudeCm{-1.0};
+		double CeilingCm{0.0};
+		double SlopeDegrees{0.0};
+		double RestSeconds{0.0};
+		double ParkSeconds{0.0};
+		double BobSeconds{0.0};
+		/** Hover: what is left of a Space hop's soft field, and whether Space is still held (one hop per press). */
+		double HopSeconds{0.0};
+		bool bHopHeld{false};
+		double LastLogSeconds{0.0};
+		bool bGrounded{false};
+		bool bOnLiquid{false};
+		bool bCollisionGround{false};
+		bool bInitialized{false};
+	};
+	/** ApplyTranslation's branch for a ground vehicle: drives it in the gravity frame, never the bands. Always true. */
+	bool ApplyVehicleTranslation(float DeltaTime);
+	void ResetVehicleState();
+	FVehicleControls ReadVehicleControls(float DeltaTime) const;
+	/** bTrace false skips the collision probes (high over the ground, where WorldScape builds none). */
+	bool ProbeVehicleGround(const FVector& Up, double AboveCm, double BelowCm, FVehicleGround& OutGround,
+		bool bTrace = true);
+	void StepRover(const FVehicleControls& Controls, const FVector& Up, double Gravity, double DeltaTime);
+	void StepHover(const FVehicleControls& Controls, const FVector& Up, double Gravity, double DeltaTime);
+	void StepDrone(const FVehicleControls& Controls, const FVector& Up, double Gravity, double DeltaTime);
+	/** Sweeps the vehicle by Delta: walls stop it and it slides along them; a wheeled or hovering one drives on over a
+	 * ground-like bump (its probes then lift it). */
+	void MoveVehicle(FVector& Velocity, const FVector& Delta, const FVector& Up);
+	/** Turns the hull to the body frame (heading, up, lean) and the rover's tyres (roll, steering, suspension). */
+	void PoseVehicle(const FVector& Up, double DeltaTime);
+	/** At rest without a pilot: velocity zero, engine and tick off, attached to its world like the colony. */
+	void ParkVehicle();
+	FVector VehicleDown() const;
+	double VehicleGravity() const;
+	FString GetVehicleStatusText() const;
+	FString GetVehicleHintText() const;
+	/** A short HUD line for a key a vehicle does not take (flight modes, star drive, autopilot). */
+	void VehicleNotice(const TCHAR* Text);
+	FVehicleState Vehicle;
 };

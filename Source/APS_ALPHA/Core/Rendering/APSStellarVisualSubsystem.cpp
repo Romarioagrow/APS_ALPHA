@@ -1,6 +1,11 @@
 #include "APSStellarVisualSubsystem.h"
 #include "APSGameplayStarAppearance.h"
+#include "APSPlanetSurfaceFill.h"
+#include "APS_ALPHA/Core/World/APSPlaceholderGlobe.h"
+#include "APS_ALPHA/Core/World/APSWorldOriginSubsystem.h"
+#include "APS_ALPHA/Core/World/APSWorldShiftEvents.h"
 
+#include "APS_ALPHA/Actors/Astro/APSBlackHoleVisual.h"
 #include "APS_ALPHA/Actors/Astro/Star.h"
 #include "APS_ALPHA/Actors/Astro/StarSystem.h"
 #include "APS_ALPHA/Actors/Astro/StarCluster.h"
@@ -38,6 +43,8 @@ namespace
 	constexpr float GameplayStationFillMaximumAttenuationRadiusCm = 30000.0f;
 	const FLinearColor GameplayStationFillLightColor(0.72f, 0.82f, 1.0f, 1.0f);
 	const FName GameplaySurfaceFillLightTag(TEXT("APSGameplaySurfaceFillLight"));
+	/** UAPSObjectLightingSubsystem's camera-aligned fill (APSObjectLighting::ObjectFillTag): never the star's key light. */
+	const FName ObjectFillLightTag(TEXT("APSObjectFillLight"));
 	// Keep the generated star as the dominant key. This fill only lifts the
 	// fixed-exposure floor enough to retain readable normals on the night side.
 	// The dry Frozen handoff still compressed the settled ground to a nine-level
@@ -45,7 +52,6 @@ namespace
 	// response above display quantization while remaining below one quarter of the
 	// generated star key (about 9.5 lux in the standard handoff).
 	constexpr float GameplaySurfaceFillLightIntensity = 2.20f;
-	constexpr double GameplaySurfaceFillMaximumAltitudeCm = 5000000.0;
 	const FLinearColor GameplaySurfaceFillLightColor(0.78f, 0.84f, 0.94f, 1.0f);
 }
 
@@ -53,6 +59,33 @@ bool UAPSStellarVisualSubsystem::ShouldCreateSubsystem(UObject* Outer) const
 {
 	const UWorld* World = Cast<UWorld>(Outer);
 	return World && (World->WorldType == EWorldType::Game || World->WorldType == EWorldType::PIE);
+}
+
+void UAPSStellarVisualSubsystem::Initialize(FSubsystemCollectionBase& Collection)
+{
+	Super::Initialize(Collection);
+	Collection.InitializeDependency<UAPSWorldOriginSubsystem>();
+	APSWorldShiftEvents::BindPostShift(this, [this](UWorld* ShiftedWorld)
+	{
+		if (!ShiftedWorld || ShiftedWorld != GetWorld() || !bHasTargetStar) return;
+		if (const auto* Origin = ShiftedWorld->GetSubsystem<UAPSWorldOriginSubsystem>())
+		{
+			// Both barriers run after actors and the origin reach their final frame.
+			// Resolve from the canonical snapshot, so duplicate notices cannot add
+			// the shift twice. Selection and the existing light interpolation stay unchanged.
+			TargetStarLocation = Origin->FromGenerationFrame(TargetStarGenerationLocation) + Origin->GetSkyOffset();
+		}
+	});
+	// Rio 06.10 (still ship): the key light's star follows the sky every owed step and comes back with it on a pay (the
+	// same snapshot: its true place, shown at the sky offset).
+	UAPSWorldOriginSubsystem::OnSkyOffsetChanged().AddWeakLambda(this, [this](UWorld* ShiftedWorld, const FVector&)
+	{
+		if (!ShiftedWorld || ShiftedWorld != GetWorld() || !bHasTargetStar) return;
+		if (const auto* Origin = ShiftedWorld->GetSubsystem<UAPSWorldOriginSubsystem>())
+		{
+			TargetStarLocation = Origin->FromGenerationFrame(TargetStarGenerationLocation) + Origin->GetSkyOffset();
+		}
+	});
 }
 
 void UAPSStellarVisualSubsystem::Tick(float DeltaTime)
@@ -121,6 +154,11 @@ void UAPSStellarVisualSubsystem::Tick(float DeltaTime)
 		SearchElapsed = 0.0f;
 		APSGameplayStarAppearance::Apply(World);
 		ResolveNearestStar(ObserverLocation);
+	}
+	// Every frame: the stars' daylight fade follows a climb continuously (twice a second it stepped visibly, 30.09).
+	if (!ActivePreviewBody && bHasPreviewCameraLocation)
+	{
+		UpdateGameplayDaylightStars(PreviewCameraLocation);
 	}
 	UpdateGameplaySurfaceFillLight(
 		ActivePreviewBody ? nullptr : Observer,
@@ -245,6 +283,10 @@ bool UAPSStellarVisualSubsystem::GetActiveStellarTarget(
 
 void UAPSStellarVisualSubsystem::Deinitialize()
 {
+	FCoreDelegates::PostWorldOriginOffset.RemoveAll(this);
+	APSWorldShiftEvents::OnPostDoubleShift().RemoveAll(this);
+	// Rio 06.10 (audit: hygiene): the sky-offset listener bound in Initialize (a weak lambda) goes with the subsystem.
+	UAPSWorldOriginSubsystem::OnSkyOffsetChanged().RemoveAll(this);
 	ResetGameplayStellarView();
 	if (ADirectionalLight* FillLight = PreviewFillLight.Get())
 	{
@@ -292,9 +334,12 @@ void UAPSStellarVisualSubsystem::ResolveDirectionalLight()
 	for (TActorIterator<ADirectionalLight> It(World); It; ++It)
 	{
 		ADirectionalLight* Candidate = *It;
+		// Rio 04.10 ("the light in space lags, darker, then black"): the object fill is a directional light too; taken
+		// for the star's key, the two subsystems would turn and dim the same light against each other.
 		if (IsValid(Candidate)
 			&& (Candidate->ActorHasTag(PreviewFillLightTag)
-				|| Candidate->ActorHasTag(GameplaySurfaceFillLightTag)))
+				|| Candidate->ActorHasTag(GameplaySurfaceFillLightTag)
+				|| Candidate->ActorHasTag(ObjectFillLightTag)))
 		{
 			continue;
 		}
@@ -622,7 +667,8 @@ void UAPSStellarVisualSubsystem::UpdateGameplaySurfaceFillLight(
 		for (TActorIterator<APlanetaryBody> It(World); It; ++It)
 		{
 			APlanetaryBody* Candidate = *It;
-			if (!IsValid(Candidate) || !Candidate->bWorldScapeSurfaceReady)
+			if (!IsValid(Candidate) || !APSPlanetSurfaceFill::IsEligible(
+				Candidate->bWorldScapeSurfaceReady, APSPlaceholderGlobe::Handles(Candidate)))
 			{
 				continue;
 			}
@@ -634,7 +680,7 @@ void UAPSStellarVisualSubsystem::UpdateGameplaySurfaceFillLight(
 			const double RadialDistanceCm = FVector::Distance(
 				ObserverLocation, Candidate->GetActorLocation());
 			const double SurfaceAltitudeCm = FMath::Abs(RadialDistanceCm - BodyRadiusCm);
-			if (SurfaceAltitudeCm <= GameplaySurfaceFillMaximumAltitudeCm
+			if (SurfaceAltitudeCm <= APSPlanetSurfaceFill::MaximumAltitudeCm
 				&& SurfaceAltitudeCm < ClosestSurfaceAltitudeCm)
 			{
 				ClosestSurfaceBody = Candidate;
@@ -679,6 +725,10 @@ void UAPSStellarVisualSubsystem::UpdateGameplaySurfaceFillLight(
 	const FVector DesiredLightRayDirection =
 		(-SurfaceOutward * 0.72 + StarAzimuth * 0.69).GetSafeNormal();
 	const FRotator DesiredRotation = DesiredLightRayDirection.Rotation();
+	// Keep the accepted near-surface fill; fade it to zero before the existing
+	// visibility cutoff instead of switching 2.2 lux off in one orbital frame.
+	const float DesiredSurfaceFillIntensity = GameplaySurfaceFillLightIntensity
+		* APSPlanetSurfaceFill::Weight(ClosestSurfaceAltitudeCm);
 
 	if (!FillComponent)
 	{
@@ -706,7 +756,7 @@ void UAPSStellarVisualSubsystem::UpdateGameplaySurfaceFillLight(
 		FillComponent->SetForwardShadingPriority(0);
 		FillComponent->SetVolumetricScatteringIntensity(0.0f);
 		FillComponent->SetLightColor(GameplaySurfaceFillLightColor);
-		FillComponent->SetIntensity(GameplaySurfaceFillLightIntensity);
+		FillComponent->SetIntensity(DesiredSurfaceFillIntensity);
 		FillComponent->SetSpecularScale(0.0f);
 		FillComponent->SetLightingChannels(true, false, false);
 		GameplaySurfaceFillLight = FillLight;
@@ -733,9 +783,9 @@ void UAPSStellarVisualSubsystem::UpdateGameplaySurfaceFillLight(
 		FillComponent->SetLightColor(GameplaySurfaceFillLightColor);
 	}
 	if (!FMath::IsNearlyEqual(
-		FillComponent->Intensity, GameplaySurfaceFillLightIntensity, 0.001f))
+		FillComponent->Intensity, DesiredSurfaceFillIntensity, 0.00001f))
 	{
-		FillComponent->SetIntensity(GameplaySurfaceFillLightIntensity);
+		FillComponent->SetIntensity(DesiredSurfaceFillIntensity);
 	}
 	const FRotator CurrentRotation = FillLight->GetActorRotation();
 	FRotator UpdatedRotation = FMath::RInterpTo(
@@ -778,6 +828,9 @@ void UAPSStellarVisualSubsystem::ResolveNearestStar(const FVector& ObserverLocat
 	for (TActorIterator<AAstroGenerator> It(World); It; ++It)
 		if (It->UsesContinuousPreviewFrame()) { PreviewSystem = It->GetContinuousPreviewActiveSystem(); break; }
 
+	// Rio 06.10 (still ship): a ship owing its travel stays put; a star actor lights it from where it is relative to the
+	// ship truly, its sky place (a system riding with the sky where it is, any other at its place + the sky offset).
+	const FVector SkyOffset = UAPSWorldOriginSubsystem::SkyOffsetOf(World);
 	for (TActorIterator<AStar> It(World); It; ++It)
 	{
 		const AStar* Star = *It;
@@ -786,11 +839,12 @@ void UAPSStellarVisualSubsystem::ResolveNearestStar(const FVector& ObserverLocat
 			continue;
 		}
 		bHasMaterializedStar = true;
-		const double DistanceSquared = FVector::DistSquared(ObserverLocation, Star->GetActorLocation());
+		const FVector StarPlace = UAPSWorldOriginSubsystem::SkyPlace(*Star);
+		const double DistanceSquared = FVector::DistSquared(ObserverLocation, StarPlace);
 		if (DistanceSquared < BestDistanceSquared)
 		{
 			BestDistanceSquared = DistanceSquared;
-			BestLocation = Star->GetActorLocation();
+			BestLocation = StarPlace;
 			BestColor = UStarGenerator::GetStarColor(Star->SpectralClass, Star->SpectralSubclass);
 			BestTemperature = Star->SurfaceTemperature;
 			BestLuminosity = Star->Luminosity;
@@ -855,6 +909,8 @@ void UAPSStellarVisualSubsystem::ResolveNearestStar(const FVector& ObserverLocat
 		return;
 	}
 	TargetStarLocation = BestLocation;
+	const auto* Origin = World->GetSubsystem<UAPSWorldOriginSubsystem>();
+	TargetStarGenerationLocation = Origin ? Origin->ToGenerationFrame(BestLocation - SkyOffset) : BestLocation;
 	const AAstroGenerator* GeneratedWorld = GameplayStellarGenerator.Get();
 	const AStarSystem* GeneratedHomeSystem = IsValid(GeneratedWorld)
 		? GeneratedWorld->GetPreviewHomeSystem() : nullptr;
@@ -898,6 +954,17 @@ void UAPSStellarVisualSubsystem::ResolveNearestStar(const FVector& ObserverLocat
 	TargetLightColor.A = 1.0f;
 	TargetLightIntensity = 9.0f + FMath::Clamp(
 		FMath::LogX(10.0f, FMath::Max(BestLuminosity, 0.0f) + 1.0f) * 1.8f, 0.0f, 9.0f);
+	// Rio 03.10 (the black hole V2): a hole is no sun; its key is the accretion disc's dim warm glow.
+	if (IsValid(BestMaterializedStar) && BestMaterializedStar->StellarClass == EStellarType::BlackHole
+		&& APSBlackHoleVisual::IsEnabled())
+	{
+		float DiskIntensity = 3.0f;
+		float DiskKelvin = 4300.0f;
+		APSBlackHoleVisual::GetDiskKeyLight(DiskIntensity, DiskKelvin);
+		TargetLightTemperature = DiskKelvin;
+		TargetLightColor = FLinearColor::White;
+		TargetLightIntensity = DiskIntensity;
+	}
 
 	if (BestIdentity != ActiveStarIdentity)
 	{

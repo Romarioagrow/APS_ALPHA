@@ -1,4 +1,5 @@
-#if WITH_DEV_AUTOMATION_TESTS
+#if WITH_DEV_AUTOMATION_TESTS && WITH_EDITOR
+// Rio 06.10 (packaged build): editor-only material/texture APIs inside; game targets skip this file, editor automation is unchanged.
 
 #include "Misc/AutomationTest.h"
 
@@ -2476,6 +2477,9 @@ bool FAPSPlanetAtmosphereDeterministicVariationTest::RunTest(const FString& Para
 	Planet->PlanetType = EPlanetType::Terrestrial;
 	Planet->Temperature = 288;
 	Planet->WorldScapeSeed = 41771;
+	// A native APlanet starts airless. Exercise the generated 100 km atmosphere,
+	// not unchanged constructor MIDs after UpdateScale's zero-height early-out.
+	Planet->AtmosphereHeight = 100.0;
 	Planet->WorldScapePresentationScale = 1.0;
 	Planet->PlanetAtmosphere.Humidity = 62.0f;
 	Planet->PlanetAtmosphere.AtmosphericPressure = 101325.0f;
@@ -2555,18 +2559,16 @@ bool FAPSPlanetAtmosphereDeterministicVariationTest::RunTest(const FString& Para
 				&& FMath::IsNearlyEqual(EarthFirst.Opacity, EarthRepeat.Opacity, 1.0e-6f)
 				&& FMath::IsNearlyEqual(EarthFirst.MultiScattering,
 					EarthRepeat.MultiScattering, 1.0e-6f));
-		TestTrue(TEXT("Full-scale atmosphere keeps its bounded optical-depth calibration"),
-			FMath::IsNearlyEqual(EarthFirst.PresentationOpacityScale, 0.055f, 1.0e-6f));
-		TestTrue(TEXT("Main atmosphere applies the full-scale opacity calibration exactly once"),
+		TestTrue(TEXT("Full-scale atmosphere does not apply the retired second opacity attenuation"),
+			FMath::IsNearlyEqual(EarthFirst.PresentationOpacityScale, 1.0f, 1.0e-6f));
+		TestTrue(TEXT("Main atmosphere transports authored opacity exactly once"),
 			EarthFirst.MainMaterialOpacity >= 0.0f
 				&& FMath::IsNearlyEqual(EarthFirst.MainMaterialOpacity,
 					EarthFirst.Opacity * EarthFirst.PresentationOpacityScale, 1.0e-4f));
-		TestTrue(TEXT("Space atmosphere uses the same bounded calibration for a readable limb"),
+		TestTrue(TEXT("Space atmosphere uses the same authored opacity as the main shell"),
 			EarthFirst.SpaceMaterialOpacity >= 0.0f
 				&& FMath::IsNearlyEqual(EarthFirst.SpaceMaterialOpacity,
-					EarthFirst.Opacity * EarthFirst.PresentationOpacityScale, 1.0e-4f)
-				&& EarthFirst.SpaceMaterialOpacity >= 0.20f
-				&& EarthFirst.SpaceMaterialOpacity <= 1.0f);
+					EarthFirst.Opacity * EarthFirst.PresentationOpacityScale, 1.0e-4f));
 		TestTrue(TEXT("Full-scale calibration does not modify deterministic scattering inputs"),
 			FMath::IsNearlyEqual(EarthFirst.MainMaterialOpacity,
 				EarthRepeat.MainMaterialOpacity, 1.0e-6f)
@@ -2677,12 +2679,12 @@ bool FAPSPlanetAtmosphereDeterministicVariationTest::RunTest(const FString& Para
 			Probe.MieHeight >= 0.05f && Probe.MieHeight <= 15.0f);
 		TestTrue(TEXT("Atmosphere anisotropy stays physically bounded"),
 			Probe.MiePhase >= 0.08f && Probe.MiePhase <= 0.82f);
-		TestTrue(TEXT("Atmosphere airglow remains a visible bounded limb cue"),
-			Probe.AirGlow >= 0.018f && Probe.AirGlow <= 0.070f);
-		TestTrue(TEXT("Atmosphere opacity avoids a uniform colour cap"),
-			Probe.Opacity >= 4.5f && Probe.Opacity <= 18.0f);
-		TestTrue(TEXT("Atmosphere multi-scattering remains performant and bounded"),
-			Probe.MultiScattering >= 3.5f && Probe.MultiScattering <= 10.0f);
+		TestTrue(TEXT("Generated airglow stays subordinate to daylight scattering"),
+			Probe.AirGlow >= 0.0018f && Probe.AirGlow <= 0.007f);
+		TestEqual(TEXT("Generated atmosphere starts with neutral user-facing opacity"),
+			Probe.Opacity, 1.0f);
+		TestEqual(TEXT("Generated atmosphere starts with neutral user-facing multi-scattering"),
+			Probe.MultiScattering, 1.0f);
 	}
 
 	Planet->Destroy();

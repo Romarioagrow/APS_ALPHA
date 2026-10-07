@@ -1,4 +1,8 @@
 #include "WorldGenerationViewModel.h"
+#include "APSAtmosphereControlBounds.h"
+#include "APSWorldRoll.h"
+#include "APS_ALPHA/Core/Rendering/APSPlanetCloudComponent.h"
+#include "APS_ALPHA/Core/Planetary/APSPlanetCloudWeather.h"
 
 #include "APS_ALPHA/Core/Instances/MainGameplayInstance.h"
 #include "APS_ALPHA/Core/Model/GeneratedWorld.h"
@@ -20,9 +24,11 @@
 #include "APS_ALPHA/Actors/Astro/Star.h"
 #include "APS_ALPHA/Actors/Astro/StarCluster.h"
 #include "APS_ALPHA/Actors/Astro/StarSystem.h"
+#include "APS_ALPHA/Generation/APSGalaxyMorphology.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
 #include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
 #include "APS_ALPHA/Generation/StarGenerator.h"
+#include "APS_ALPHA/Gameplay/Expansion/APSStarSystems.h"
 #include "APS_ALPHA/Gameplay/Civilizations/Civilization.h"
 #include "EngineUtils.h"
 #include "Engine/World.h"
@@ -73,12 +79,14 @@ void UWorldGenerationViewModel::Initialize(UObject* InWorldContext, UGeneratedWo
 		InGeneratedWorld->SurfaceMountainScale = FMath::Clamp(InGeneratedWorld->SurfaceMountainScale, 0.0, 2.0);
 		InGeneratedWorld->SurfaceCraterScale = FMath::Clamp(InGeneratedWorld->SurfaceCraterScale, 0.0, 2.0);
 		InGeneratedWorld->SurfaceRoughnessScale = FMath::Clamp(InGeneratedWorld->SurfaceRoughnessScale, 0.25, 2.0);
-		InGeneratedWorld->AtmosphereHeight = FMath::Clamp(InGeneratedWorld->AtmosphereHeight, 0.0, 2000.0);
+		InGeneratedWorld->AtmosphereHeight = APSAtmosphereControlBounds::Height(
+			InGeneratedWorld->AtmosphereHeight, InGeneratedWorld->PlanetType);
+		InGeneratedWorld->CloudSettings = InGeneratedWorld->CloudSettings.Sanitized();
 		InGeneratedWorld->AtmosphereOpacity = FMath::Clamp(InGeneratedWorld->AtmosphereOpacity, 0.0, 40.0);
 		InGeneratedWorld->AtmosphereMultiScattering = FMath::Clamp(
 			InGeneratedWorld->AtmosphereMultiScattering, 0.0, 10.0);
-		InGeneratedWorld->AtmosphereRayleighScattering = FMath::Clamp(
-			InGeneratedWorld->AtmosphereRayleighScattering, 0.0, 64.0);
+		InGeneratedWorld->AtmosphereRayleighScattering = APSAtmosphereControlBounds::Rayleigh(
+			InGeneratedWorld->AtmosphereRayleighScattering, InGeneratedWorld->PlanetType);
 		InGeneratedWorld->StartPlanetIndex = FMath::Clamp(
 			InGeneratedWorld->StartPlanetIndex, 1, InGeneratedWorld->PlanetsAmount);
 	}
@@ -100,6 +108,7 @@ void UWorldGenerationViewModel::Initialize(UObject* InWorldContext, UGeneratedWo
 				if (UClass* ProductionPilot = APSCivilizationPilot::LoadProductionClass())
 				{
 					GameplayInstance->SpawnParameters->BP_CharacterClass = ProductionPilot;
+					DefaultedSpawnSlots.Add(EAPSStartAssetSlot::Character);
 				}
 			}
 			UE_MVVM_SET_PROPERTY_VALUE(SpawnParameters, GameplayInstance->SpawnParameters);
@@ -202,6 +211,13 @@ void UWorldGenerationViewModel::SetEnumValue(const UEnum* EnumClass, int32 Selec
 		}
 		return;
 	}
+	if (EnumClass == StaticEnum<EGalaxyType>())
+	{
+		// Rio 03.10: every type has its own subclasses. A class of another type falls to the type default, which
+		// keeps that type's historic look (Spiral + E4 becomes Sb: the same two-arm spiral).
+		GeneratedWorld->GalaxyClass = APSGalaxyMorphology::CoerceSubclass(
+			GeneratedWorld->GalaxyType, GeneratedWorld->GalaxyClass);
+	}
 	RequestPreview();
 }
 
@@ -212,7 +228,9 @@ void UWorldGenerationViewModel::SetGalaxySize(double Value)
 		return;
 	}
 
-	const int32 NewValue = FMath::RoundToInt(FMath::Clamp(Value, 1.0, 100000.0));
+	// Rio 03.10 ("SIZE 1: the galaxy as if collapsed"): physical star radii pile into each other below this size.
+	const int32 NewValue = FMath::RoundToInt(FMath::Clamp(Value,
+		static_cast<double>(APSGalaxyMorphology::MinGalaxySize), 100000.0));
 	if (GeneratedWorld->GalaxySize != NewValue)
 	{
 		GeneratedWorld->GalaxySize = NewValue;
@@ -237,6 +255,32 @@ void UWorldGenerationViewModel::SetHomeStarRadiusOverrideSolar(const double Valu
 	}
 }
 
+namespace APSStarClasses
+{
+	/** The spectral class a remnant implies; unset for an ordinary star. */
+	TOptional<ESpectralClass> ImpliedClass(const EStellarType Type)
+	{
+		switch (Type)
+		{
+		case EStellarType::BlackHole: return ESpectralClass::BH;
+		case EStellarType::Neutron:
+		case EStellarType::Pulsar: return ESpectralClass::NS;
+		case EStellarType::Protostar: return ESpectralClass::PS;
+		default: return {};
+		}
+	}
+
+	bool IsRemnantClass(const ESpectralClass Class)
+	{
+		return Class == ESpectralClass::BH || Class == ESpectralClass::NS || Class == ESpectralClass::PS;
+	}
+}
+
+bool UWorldGenerationViewModel::IsSelectedStarRemnant() const
+{
+	return APSStarClasses::ImpliedClass(GetSelectedStellarType()).IsSet();
+}
+
 bool UWorldGenerationViewModel::SetSelectedStarEnum(const UEnum* EnumClass, const int32 SelectedValue)
 {
 	FString Address;
@@ -254,6 +298,25 @@ bool UWorldGenerationViewModel::SetSelectedStarEnum(const UEnum* EnumClass, cons
 	TSharedPtr<FStarModel> NewModel = MakeShared<FStarModel>();
 	NewModel->StellarType = bStellar ? static_cast<EStellarType>(SelectedValue) : Current.StellarType;
 	NewModel->SpectralClass = bStellar ? Current.SpectralClass : static_cast<ESpectralClass>(SelectedValue);
+	// Rio 02.10 ("the black hole is duplicated"): a remnant's class follows its type, and an ordinary star does not keep
+	// a remnant's class (a "super giant of class Black Hole" drew nothing); a remnant's class is not picked by hand.
+	if (const TOptional<ESpectralClass> Implied = APSStarClasses::ImpliedClass(NewModel->StellarType))
+	{
+		if (!bStellar)
+		{
+			return true;
+		}
+		NewModel->SpectralClass = *Implied;
+	}
+	else if (APSStarClasses::IsRemnantClass(NewModel->SpectralClass))
+	{
+		if (!bStellar)
+		{
+			return true;
+		}
+		NewModel->SpectralClass = NewModel->StellarType == EStellarType::BrownDwarf ? ESpectralClass::L
+			: NewModel->StellarType == EStellarType::WhiteDwarf ? ESpectralClass::A : ESpectralClass::G;
+	}
 	UStarGenerator* Stars = NewObject<UStarGenerator>(this);
 	Stars->SetGenerationSeed(static_cast<int32>(HashCombine(
 		GetTypeHash(GeneratedWorld->GenerationSeed), FCrc::StrCrc32(*Address)) & 0x7fffffffu));
@@ -455,7 +518,8 @@ void UWorldGenerationViewModel::SetSelectedSystemPlanetCount(const double Value)
 	FString Address;
 	FStarSystemModel Current;
 	if (!PreviewGenerator.IsValid() || !PreviewGenerator->GetPreviewSystemEditContext(Address, Current)) return;
-	const int32 Total = FMath::RoundToInt(FMath::Clamp(Value, 0.0, 120.0));
+	// Rio 02.10: "a crazy slider scale ... let it be 20, but surely not 100".
+	const int32 Total = FMath::RoundToInt(FMath::Clamp(Value, 0.0, 20.0));
 	if (Current.PotentialPlanetCount == Total) return;
 	FAPSPreviewSystemEditOverride Edit;
 	if (const FAPSPreviewSystemEditOverride* Existing = GeneratedWorld->FindPreviewSystemEditOverride(Address)) Edit = *Existing;
@@ -503,6 +567,61 @@ void UWorldGenerationViewModel::SetGalaxyStarCount(double Value)
 		GeneratedWorld->GalaxyStarCount = NewValue;
 		RequestPreview();
 	}
+}
+
+void UWorldGenerationViewModel::SetGalaxyPlacedStarCount(const double Value)
+{
+	if (!GeneratedWorld || !FMath::IsFinite(Value))
+	{
+		return;
+	}
+	// A prefix of the fixed catalogue order: more stars only add to the same sky (StableIds stay). Not part of the
+	// canonical InputHash, so the preview rebuilds its render layer without a new dataset.
+	const int32 NewValue = FMath::RoundToInt(FMath::Clamp(Value,
+		static_cast<double>(APSGalaxyMorphology::PreviewReferenceBudget),
+		static_cast<double>(APSGalaxyMorphology::MaxPlacedStars)));
+	if (GeneratedWorld->GalaxyPlacedStarCount != NewValue)
+	{
+		GeneratedWorld->GalaxyPlacedStarCount = NewValue;
+		RequestPreview();
+	}
+}
+
+void UWorldGenerationViewModel::SetGalaxyStarPopulation(const int32 Value)
+{
+	// Rio 03.10: the cluster's POPULATION presets for the galaxy (sizes); the enum row cannot share SetEnumValue,
+	// which maps an enum type to the cluster's own property.
+	if (!GeneratedWorld || Value < 0 || Value >= static_cast<int32>(EStarClusterPopulation::Unknown)) return;
+	const EStarClusterPopulation NewValue = static_cast<EStarClusterPopulation>(Value);
+	if (GeneratedWorld->GalaxyStarPopulation == NewValue) return;
+	GeneratedWorld->GalaxyStarPopulation = NewValue;
+	RequestPreview();
+}
+
+void UWorldGenerationViewModel::SetGalaxyStarComposition(const int32 Value)
+{
+	if (!GeneratedWorld || Value < 0 || Value >= static_cast<int32>(EStarClusterComposition::Unknown)) return;
+	const EStarClusterComposition NewValue = static_cast<EStarClusterComposition>(Value);
+	if (GeneratedWorld->GalaxyStarComposition == NewValue) return;
+	GeneratedWorld->GalaxyStarComposition = NewValue;
+	RequestPreview();
+}
+
+void UWorldGenerationViewModel::SetRealScale(const bool bEnabled)
+{
+	// Rio 05.10 (real scale experiment): the same seed, catalogue and StableIds at real distances. Every scope changes
+	// its size by orders of magnitude, so the camera refits the current screen instead of keeping its old distance.
+	if (!GeneratedWorld || GeneratedWorld->bRealScale == bEnabled) return;
+	GeneratedWorld->bRealScale = bEnabled;
+	bForceRefocusOnNextPreview = true;
+	UE_LOG(LogTemp, Log, TEXT("[APS.RealScale] REAL SCALE %s (full scale %d; experimental)"),
+		bEnabled ? TEXT("ON") : TEXT("OFF"), GeneratedWorld->bGenerateFullScaledWorld ? 1 : 0);
+	RequestPreview();
+}
+
+bool UWorldGenerationViewModel::IsRealScaleActive() const
+{
+	return GeneratedWorld && GeneratedWorld->bRealScale && GeneratedWorld->bGenerateFullScaledWorld;
 }
 
 void UWorldGenerationViewModel::SetGalaxyStarDensity(double Value)
@@ -701,7 +820,9 @@ void UWorldGenerationViewModel::SetPlanetSurfaceSeed(const int32 Value)
 	const int32 Clamped = FMath::Clamp(Value, 0, 999983);
 	if (GeneratedWorld->PlanetSurfaceSeed == Clamped) return;
 	GeneratedWorld->PlanetSurfaceSeed = Clamped;
-	RefreshPlanetAppearancePreview(true);
+	// Gas seeds update the existing material uniforms, not terrain or the hierarchy.
+	RefreshPlanetAppearancePreview(
+		UAPSPlanetSurfaceProfileResolver::SupportsWorldScape(GeneratedWorld->PlanetType));
 }
 
 void UWorldGenerationViewModel::SetSurfaceFeatureScale(const double Value)
@@ -782,11 +903,47 @@ void UWorldGenerationViewModel::SetStartPlanetIndex(double Value)
 	const int32 MaxPlanetIndex = FMath::Max(1, GetHomeStartPlanetCount());
 	const int32 NewIndex = FMath::RoundToInt(FMath::Clamp(
 		Value, 1.0, static_cast<double>(MaxPlanetIndex)));
-	if (GeneratedWorld->StartPlanetIndex != NewIndex)
+	const int32 OldIndex = GeneratedWorld->StartPlanetIndex;
+	if (OldIndex == NewIndex) return;
+	// Rio 02.10 ("the start planet does not change its index when changed in the menu"): the designed home world is
+	// kept as edits of its orbit address (captured automatically on focus changes) and generated names belong to
+	// addresses too, so after the rebuild the home stayed on its old orbit and the new start orbit got a copy of the
+	// editor buffer. The home's edits, moons and names now swap places with the world on the new start orbit.
+	PreserveSelectedPreviewBodyEdit(true);
+	const FString From = FString::Printf(TEXT("SYS0/S0/P%d"), OldIndex - 1);
+	const FString To = FString::Printf(TEXT("SYS0/S0/P%d"), NewIndex - 1);
+	const auto Swapped = [&From, &To](const FString& Key)
 	{
-		GeneratedWorld->StartPlanetIndex = NewIndex;
-		RequestPreview();
+		if (Key == From || Key.StartsWith(From + TEXT("/"))) return To + Key.RightChop(From.Len());
+		if (Key == To || Key.StartsWith(To + TEXT("/"))) return From + Key.RightChop(To.Len());
+		return Key;
+	};
+	// The live names of both worlds and their moons, so each keeps its name on its new orbit.
+	TMap<FString, FString> LiveNames;
+	if (const AAstroGenerator* Generator = PreviewGenerator.Get(); IsValid(Generator) && Generator->GetWorld())
+	{
+		for (TActorIterator<APlanetaryBody> It(Generator->GetWorld()); It; ++It)
+		{
+			const FString Key = Generator->GetPreviewBodyStableKey(*It);
+			if (!Key.IsEmpty() && Swapped(Key) != Key) LiveNames.Add(Key, It->AstroName.ToString());
+		}
 	}
+	const auto SwapAddresses = [&Swapped](auto& Map)
+	{
+		auto Old = MoveTemp(Map);
+		Map.Reset();
+		for (auto& Pair : Old) Map.Add(Swapped(Pair.Key), MoveTemp(Pair.Value));
+	};
+	SwapAddresses(GeneratedWorld->PreviewBodyEditOverrides);
+	SwapAddresses(GeneratedWorld->PreviewDisplayNameOverrides);
+	for (const TPair<FString, FString>& Name : LiveNames)
+	{
+		GeneratedWorld->SetPreviewDisplayNameOverride(Swapped(Name.Key), Name.Value);
+	}
+	GeneratedWorld->StartPlanetIndex = NewIndex;
+	// The buffer now belongs to the moved home: do not pin it back onto the old address.
+	bSkipBodyOverrideSnapshotOnce = true;
+	RequestPreview();
 }
 
 void UWorldGenerationViewModel::PreserveSelectedPreviewBodyEdit(const bool bFlushPendingActor)
@@ -819,6 +976,11 @@ void UWorldGenerationViewModel::PreserveSelectedPreviewBodyEdit(const bool bFlus
 	UWorld* World = WorldContext.IsValid() ? WorldContext->GetWorld() : nullptr;
 	const bool bTimerActive = World
 		&& World->GetTimerManager().IsTimerActive(PlanetAppearanceTimerHandle);
+	if(World && World->GetTimerManager().IsTimerActive(CloudAppearanceTimerHandle))
+	{
+		World->GetTimerManager().ClearTimer(CloudAppearanceTimerHandle);
+		UAPSPlanetCloudComponent::Refresh(Cast<APlanet>(PreviousBody));
+	}
 	if (bPendingSurfaceAppearanceRefresh || bTimerActive)
 	{
 		AAstroGenerator::ApplyPreviewBodyEditOverrideByKey(
@@ -932,6 +1094,90 @@ void UWorldGenerationViewModel::RefreshPlanetAppearancePreview(const bool bRegen
 		&UWorldGenerationViewModel::ExecutePlanetAppearancePreviewRefresh, 0.12f, false);
 }
 
+bool UWorldGenerationViewModel::CanEditClouds() const
+{
+	const auto* Planet=Cast<APlanet>(SelectedPreviewBody.Get());
+	return GeneratedWorld && bPreviewReady && IsValid(Planet) && !Planet->IsManual
+		&& Planet->AtmosphereHeight>=4. && UAPSPlanetCloudComponent::WeatherModelEnabled();
+}
+FText UWorldGenerationViewModel::GetCloudSummary() const
+{
+	if(!UAPSPlanetCloudComponent::WeatherModelEnabled())
+		return LOCTEXT("CloudCandidatePending","MODEL CLOUD CONTROLS REQUIRE THE VALIDATED WEATHER MATERIAL (CloudWeather). CURRENT SKY IS UNCHANGED.");
+	const auto* Planet=Cast<APlanet>(SelectedPreviewBody.Get());
+	if(!IsValid(Planet)) return LOCTEXT("CloudPlanetOnly","SELECT A GENERATED PLANET WITH AN ATMOSPHERE.");
+	// Slate polls attributes every frame. Do not resolve climate or load profile
+	// assets during every UI paint; invalidate on selection/settings/climate edits.
+	const auto& S=Planet->CloudSettings;
+	FString Key=FString::Printf(TEXT("%s|%d|%d|%.6g|%d|%.6g|%.6g|%.6g|%.6g|%.6g|%.6g|%.6g|%.6g|%d"),
+		*Planet->GetPathName(),int32(Planet->PlanetType),Planet->WorldScapeSeed,Planet->AtmosphereHeight,
+		Planet->Temperature,Planet->PlanetAtmosphere.WindSpeed,Planet->PlanetAtmosphere.Humidity,
+		Planet->PlanetAtmosphere.AtmosphericPressure,S.CoverageScale,S.DensityScale,S.FeatureScale,
+		S.AltitudeScale,S.WindScale,S.SeedOffset);
+	// Numeric atmosphere values may be unset while categorical values change.
+	// Ash eligibility also depends on geology, not just temperature and humidity.
+	Key+=FString::Printf(TEXT("|manual=%d|wind=%d|humidity=%d|pressure=%d|activity=%.9g|storms=%.9g"),
+		int32(Planet->IsManual),int32(Planet->PlanetAtmosphere.WindSpeedLevel),
+		int32(Planet->PlanetAtmosphere.HumidityLevel),int32(Planet->PlanetAtmosphere.PressureLevel),
+		Planet->PlanetGeosphere.SeismicActivity,S.StormScale);
+	if(Key==CloudSummaryKey) return CloudSummary;
+	CloudSummaryKey=Key;
+	const auto L=UAPSPlanetCloudComponent::Describe(Planet);
+	CloudSummary=FText::FromString(FString::Printf(TEXT("%s / COVER %.0f%% / BASE %.1f KM / WIND %.1f M/S%s"),
+		APSPlanetCloudWeather::Name(L.Condensate),100.f*L.Coverage,L.BottomKm,L.WindKmPerSecond*1000.f,
+		L.Enabled?TEXT(""):TEXT(" / INACTIVE")));
+	return CloudSummary;
+}
+void UWorldGenerationViewModel::SetCloudParameter(EAPSCloudControl Control,double Value)
+{
+	if(!GeneratedWorld || !FMath::IsFinite(Value)) return;
+	auto& S=GeneratedWorld->CloudSettings;
+	switch(Control)
+	{
+	case EAPSCloudControl::Coverage:S.CoverageScale=Value;break;
+	case EAPSCloudControl::Density:S.DensityScale=Value;break;
+	case EAPSCloudControl::Scale:S.FeatureScale=Value;break;
+	case EAPSCloudControl::Altitude:S.AltitudeScale=Value;break;
+	case EAPSCloudControl::Wind:S.WindScale=Value;break;
+	case EAPSCloudControl::Storms:S.StormScale=Value;break;
+	case EAPSCloudControl::Seed:S.SeedOffset=FMath::RoundToInt(FMath::Clamp(Value,0.,999983.));break;
+	}
+	S=S.Sanitized();
+	RefreshCloudsPreview();
+}
+void UWorldGenerationViewModel::ResetCloudParameters()
+{
+	if(!GeneratedWorld) return;
+	GeneratedWorld->CloudSettings=FAPSPlanetCloudSettings();
+	RefreshCloudsPreview();
+}
+void UWorldGenerationViewModel::RefreshCloudsPreview()
+{
+	// Cloud-only edits must not rebuild terrain, recenter the camera, commit
+	// AtmoScape dimensions or reset any user's authored atmosphere colour.
+	if(!GeneratedWorld) return;
+	auto* Planet=Cast<APlanet>(SelectedPreviewBody.Get());
+	auto* Generator=PreviewGenerator.Get();
+	if(!IsValid(Planet) || !IsValid(Generator)) return;
+	Generator->SavePreviewBodyEditOverride(GeneratedWorld,Planet);
+	Planet->CloudSettings=GeneratedWorld->CloudSettings.Sanitized();
+	if(Planet->PlanetData.PlanetModel.IsValid())
+		Planet->PlanetData.PlanetModel->CloudSettings=Planet->CloudSettings;
+	Planet->PlanetData.PlanetModelData.CloudSettings=Planet->CloudSettings;
+	CloudSummaryKey.Reset();
+	// Throttle refresh without restarting the pending timer on every drag event.
+	// The callback reads the latest committed settings, so continuous dragging
+	// remains visible and the final value is not lost between refresh windows.
+	auto& Timers=Planet->GetWorld()->GetTimerManager();
+	if(!Timers.IsTimerActive(CloudAppearanceTimerHandle))
+	{
+		const TWeakObjectPtr<APlanet> WeakPlanet(Planet);
+		Timers.SetTimer(CloudAppearanceTimerHandle,
+			FTimerDelegate::CreateLambda([WeakPlanet]()
+			{ if(auto* P=WeakPlanet.Get()) UAPSPlanetCloudComponent::Refresh(P); }),.12f,false);
+	}
+}
+
 void UWorldGenerationViewModel::ExecutePlanetAppearancePreviewRefresh()
 {
 	const bool bRegenerateSurface = bPendingSurfaceAppearanceRefresh;
@@ -952,6 +1198,7 @@ void UWorldGenerationViewModel::CancelPendingPreview()
 	{
 		World->GetTimerManager().ClearTimer(PreviewTimerHandle);
 		World->GetTimerManager().ClearTimer(PlanetAppearanceTimerHandle);
+		World->GetTimerManager().ClearTimer(CloudAppearanceTimerHandle);
 	}
 	bPendingSurfaceAppearanceRefresh = false;
 }
@@ -960,18 +1207,138 @@ void UWorldGenerationViewModel::RegeneratePreviewVariant()
 {
 	if (GeneratedWorld)
 	{
-		GeneratedWorld->ClearPreviewBodyEditOverrides();
-		GeneratedWorld->ClearPreviewStarEditOverrides();
-		GeneratedWorld->ClearPreviewSystemEditOverrides();
-		GeneratedWorld->ClearPreviewDisplayNameOverrides();
-		bSkipBodyOverrideSnapshotOnce = true;
-	}
-	if (AAstroGenerator* Generator = FindOrCreatePreviewGenerator())
-	{
-		Generator->AdvancePreviewGenerationSeed();
+		// Rio 04.10 evening ("on every level REGENERATE rolls only its own: the planet on PLANET, the star on STAR, the
+		// system on SYSTEM, the cluster and the galaxy alike; on OVERVIEW everything, as now"). The PLANET route builds
+		// one body, so it keeps its whole roll.
+		const bool bPlanetRoute = GenerationRoute == EAPSGenerationRoute::Planet
+			|| GeneratedWorld->AstroGenerationLevel == EAstroGenerationLevel::SinglePlanet
+			|| !GeneratedWorld->bGenerateHomeSystem;
+		APSWorldRoll::EScope Scope = APSWorldRoll::EScope::System;
+		APSWorldRoll::FScopeTarget Target;
+		const AAstroGenerator* Generator = PreviewGenerator.Get();
+		if (!bPlanetRoute && bPreviewReady && IsValid(Generator))
+		{
+			switch (PreviewFocus)
+			{
+			case EAstroPreviewFocus::Galaxy:
+				Scope = APSWorldRoll::EScope::GalaxyOnly;
+				break;
+			case EAstroPreviewFocus::StarCluster:
+				Scope = APSWorldRoll::EScope::ClusterOnly;
+				break;
+			case EAstroPreviewFocus::HomeSystem:
+				Scope = APSWorldRoll::EScope::HomeSystemOnly;
+				break;
+			case EAstroPreviewFocus::HomeStar:
+			{
+				Scope = APSWorldRoll::EScope::StarOnly;
+				const AStar* Star = Cast<AStar>(SelectedPreviewBody.Get());
+				const AStarSystem* Home = Generator->GetPreviewHomeSystem();
+				if (Star && IsValid(Home))
+				{
+					Target.StarIndex = FMath::Max(Home->GetStars().IndexOfByKey(Star), 0);
+				}
+				break;
+			}
+			case EAstroPreviewFocus::HomePlanet:
+			{
+				Scope = APSWorldRoll::EScope::BodyOnly;
+				const APlanet* Planet = Cast<APlanet>(IsValid(Generator->GetActivePreviewWorldScapeBody())
+					? Generator->GetActivePreviewWorldScapeBody() : SelectedPreviewBody.Get());
+				if (IsValid(Planet))
+				{
+					Target.Zone = Planet->PlanetZone;
+				}
+				break;
+			}
+			default:
+				break;
+			}
+		}
+		if (Scope == APSWorldRoll::EScope::System || Scope == APSWorldRoll::EScope::HomeSystemOnly)
+		{
+			GeneratedWorld->ClearPreviewBodyEditOverrides();
+			GeneratedWorld->ClearPreviewStarEditOverrides();
+			GeneratedWorld->ClearPreviewSystemEditOverrides();
+			if (Scope == APSWorldRoll::EScope::System)
+			{
+				GeneratedWorld->ClearPreviewDisplayNameOverrides();
+			}
+			bSkipBodyOverrideSnapshotOnce = true;
+		}
+		if (Scope == APSWorldRoll::EScope::System)
+		{
+			// Rio 03.10: every press a genuinely new world (stars, planets, start world, moons), not the next seed of a
+			// fixed sequence that left the recipe and the planet itself untouched. The roll owns the seed now.
+			RollWorld(TEXT("REGENERATE"));
+		}
+		else
+		{
+			// A scoped roll keeps the world seed. Scripted runs chain from it, the scope and a press counter, so their
+			// presses still differ and stay reproducible.
+			static uint32 ScopedPresses = 0;
+			const int32 RollSeed = APSWorldRoll::IsInteractiveSession() ? APSWorldRoll::MakeFreshSeed()
+				: (static_cast<int32>(HashCombineFast(GetTypeHash(GeneratedWorld->GenerationSeed),
+					0x53434f50u ^ static_cast<uint32>(Scope) ^ (++ScopedPresses << 8)) & 0x7fffffffu) | 1);
+			const APSWorldRoll::FResult Roll = APSWorldRoll::Apply(*GeneratedWorld, RollSeed, Scope, Target);
+			UE_LOG(LogTemp, Log, TEXT("[APS.WorldGeneration] REGENERATE %s roll %s"), *Roll.Archetype.ToUpper(), *Roll.Summary);
+		}
 	}
 	bForceRefocusOnNextPreview = true;
 	RequestPreview();
+}
+
+void UWorldGenerationViewModel::RollFreshWorldOnce()
+{
+	if (bFreshWorldRollConsidered || !GeneratedWorld)
+	{
+		return;
+	}
+	bFreshWorldRollConsidered = true;
+	// Only an untouched model (the default seed, no edits): returning to the screen keeps what is there. Automation,
+	// the night bench and diagnostics keep the deterministic default world; load and continue never come here.
+	const UGeneratedWorld* Defaults = GetDefault<UGeneratedWorld>();
+	if (!APSWorldRoll::IsInteractiveSession() || GeneratedWorld->GenerationSeed != Defaults->GenerationSeed
+		|| !GeneratedWorld->PreviewBodyEditOverrides.IsEmpty() || !GeneratedWorld->PreviewPlanetOrbitEdits.IsEmpty()
+		|| !GeneratedWorld->PreviewStarEditOverrides.IsEmpty() || !GeneratedWorld->PreviewSystemEditOverrides.IsEmpty()
+		|| !GeneratedWorld->PreviewDisplayNameOverrides.IsEmpty())
+	{
+		return;
+	}
+	// The rolled buffer belongs to the new start world: never pin it onto a body of an earlier preview.
+	bSkipBodyOverrideSnapshotOnce = true;
+	bForceRefocusOnNextPreview = true;
+	RollWorld(TEXT("NEW WORLD"));
+}
+
+void UWorldGenerationViewModel::RollWorld(const TCHAR* Reason)
+{
+	if (!GeneratedWorld)
+	{
+		return;
+	}
+	// The PLANET route builds one body, so only the world itself is rolled there.
+	const bool bPlanetOnly = GenerationRoute == EAPSGenerationRoute::Planet
+		|| GeneratedWorld->AstroGenerationLevel == EAstroGenerationLevel::SinglePlanet
+		|| !GeneratedWorld->bGenerateHomeSystem;
+	// A person gets a seed nobody rolled before; scripted runs (menu shots, bench) a reproducible chain from the
+	// current world seed, so their frames stay comparable between runs.
+	const int32 RollSeed = APSWorldRoll::IsInteractiveSession() ? APSWorldRoll::MakeFreshSeed()
+		: (static_cast<int32>(HashCombineFast(GetTypeHash(GeneratedWorld->GenerationSeed), 0x52454745u) & 0x7fffffffu) | 1);
+	const APSWorldRoll::FResult Roll = APSWorldRoll::Apply(*GeneratedWorld, RollSeed,
+		bPlanetOnly ? APSWorldRoll::EScope::PlanetOnly : APSWorldRoll::EScope::System);
+	UE_LOG(LogTemp, Log, TEXT("[APS.WorldGeneration] %s roll %s"), Reason, *Roll.Summary);
+}
+
+void UWorldGenerationViewModel::SetPreviewMarksHidden(const bool bHidden)
+{
+	if (bPreviewMarksHidden == bHidden)
+	{
+		return;
+	}
+	bPreviewMarksHidden = bHidden;
+	UE_LOG(LogTemp, Log, TEXT("[APS.WorldGeneration] Marks %s: orbits, rings and labels %s"),
+		bHidden ? TEXT("OFF") : TEXT("ON"), bHidden ? TEXT("hidden") : TEXT("shown"));
 }
 
 void UWorldGenerationViewModel::SetPreviewFocus(EAstroPreviewFocus NewFocus)
@@ -1085,6 +1452,23 @@ void UWorldGenerationViewModel::ZoomPreview(float WheelDelta)
 	{
 		Generator->ZoomPreviewCamera(WheelDelta);
 	}
+}
+
+bool UWorldGenerationViewModel::SelectPreviewUnderCursor()
+{
+	UWorld* World = WorldContext.IsValid() ? WorldContext->GetWorld() : nullptr;
+	APlayerController* Controller = World ? World->GetFirstPlayerController() : nullptr;
+	AAstroGenerator* Generator = PreviewGenerator.Get();
+	float MouseX = 0.0f;
+	float MouseY = 0.0f;
+	if (!Controller || !Generator || GetPreviewFocus() != EAstroPreviewFocus::StarCluster
+		|| !Controller->GetMousePosition(MouseX, MouseY)
+		|| !Generator->SelectPreviewClusterSystemAtScreenPosition(Controller, FVector2D(MouseX, MouseY)))
+	{
+		return false;
+	}
+	UE_MVVM_SET_PROPERTY_VALUE(PreviewRevision, PreviewRevision + 1);
+	return true;
 }
 
 bool UWorldGenerationViewModel::FocusPreviewUnderCursor()
@@ -1305,7 +1689,9 @@ void UWorldGenerationViewModel::HydratePreviewBodyEditorBuffer(APlanetaryBody* B
 	GeneratedWorld->SurfaceMountainScale = FMath::Clamp(Body->SurfaceMountainScale, 0.0, 2.0);
 	GeneratedWorld->SurfaceCraterScale = FMath::Clamp(Body->SurfaceCraterScale, 0.0, 2.0);
 	GeneratedWorld->SurfaceRoughnessScale = FMath::Clamp(Body->SurfaceRoughnessScale, 0.25, 2.0);
-	GeneratedWorld->AtmosphereHeight = FMath::Clamp(Body->AtmosphereHeight, 0.0, 2000.0);
+	GeneratedWorld->AtmosphereHeight = APSAtmosphereControlBounds::Height(
+		Body->AtmosphereHeight, Body->PlanetType);
+	GeneratedWorld->CloudSettings = Body->CloudSettings.Sanitized();
 	// Bodies without a materialized AtmoScape must start from their own defaults,
 	// never from whichever planet happened to be selected immediately before them.
 	GeneratedWorld->AtmosphereOpacity = 1.0;
@@ -1318,14 +1704,14 @@ void UWorldGenerationViewModel::HydratePreviewBodyEditorBuffer(APlanetaryBody* B
 		&& IsValid(Body->PlanetaryEnvironmentGenerator->PlanetAtmosphere))
 	{
 		const AAtmoScape* Atmosphere = Body->PlanetaryEnvironmentGenerator->PlanetAtmosphere;
-		GeneratedWorld->AtmosphereHeight = FMath::Clamp(
-			static_cast<double>(Atmosphere->AtmosphereHeight), 0.0, 2000.0);
+		GeneratedWorld->AtmosphereHeight = APSAtmosphereControlBounds::Height(
+			static_cast<double>(Atmosphere->AtmosphereHeight), Body->PlanetType);
 		GeneratedWorld->AtmosphereOpacity = FMath::Clamp(
 			static_cast<double>(Atmosphere->AtmosphereOpacity), 0.0, 40.0);
 		GeneratedWorld->AtmosphereMultiScattering = FMath::Clamp(
 			static_cast<double>(Atmosphere->MultiScatering), 0.0, 10.0);
-		GeneratedWorld->AtmosphereRayleighScattering = FMath::Clamp(
-			static_cast<double>(Atmosphere->RayleighHeight), 0.0, 64.0);
+		GeneratedWorld->AtmosphereRayleighScattering = APSAtmosphereControlBounds::Rayleigh(
+			static_cast<double>(Atmosphere->RayleighHeight), Body->PlanetType);
 		GeneratedWorld->AtmosphereColor = Atmosphere->RayleighScattering;
 	}
 
@@ -1515,17 +1901,31 @@ FText UWorldGenerationViewModel::GetPreviewScopeSummary() const
 	{
 		return UEnum::GetDisplayValueAsText(Value).ToString().ToUpper();
 	};
+	// Rio 05.10 (real scale experiment): real sizes in light years while REAL SCALE applies; OFF texts are unchanged.
+	double RealGalaxyRadiusCm = 0.0, RealClusterRadiusCm = 0.0, RealNeighbourCm = 0.0;
+	const bool bRealScale = IsRealScaleActive();
+	const bool bRealScaleSizes = bRealScale && Generator
+		&& Generator->GetRealScaleSummary(RealGalaxyRadiusCm, RealClusterRadiusCm, RealNeighbourCm);
+	const auto LightYears = [](const double Cm)
+	{
+		const double Years = Cm / 9.4607304725808e17;
+		return Years >= 1000.0 ? FString::Printf(TEXT("%.1f THOUSAND LY"), Years / 1000.0)
+			: Years >= 10.0 ? FString::Printf(TEXT("%.0f LY"), Years) : FString::Printf(TEXT("%.1f LY"), Years);
+	};
 
 	switch (PreviewFocus)
 	{
 	case EAstroPreviewFocus::Galaxy:
+		// Rio 03.10 ("MODELED 100 MILLION but visually few"): show what is placed; the catalogue size stays internal.
 		return FText::FromString(FString::Printf(
-			TEXT("GALAXY TYPE  %s\nCLASS  %s\nMODELED STARS  %lld\nRENDERED SAMPLE  %d\nSIZE  %d  /  DENSITY  %.2f"),
+			TEXT("GALAXY TYPE  %s\nCLASS  %s\nSTARS  %d\nSIZE  %d  /  DENSITY  %.2f\nPOPULATION  %s\nCOMPOSITION  %s"),
 			*EnumText(GeneratedWorld->GalaxyType), *EnumText(GeneratedWorld->GalaxyClass),
-			Generator ? Generator->GetPreviewGalaxyModeledStarCount()
-				: static_cast<int64>(GeneratedWorld->GalaxyStarCount),
-			Generator ? Generator->GetPreviewGalaxyRenderedStarCount() : 0,
-			GeneratedWorld->GalaxySize, GeneratedWorld->GalaxyStarDensity));
+			Generator ? Generator->GetPreviewGalaxyRenderedStarCount()
+				: (GeneratedWorld->GalaxyPlacedStarCount > 0 ? GeneratedWorld->GalaxyPlacedStarCount
+					: APSGalaxyMorphology::PreviewReferenceBudget),
+			GeneratedWorld->GalaxySize, GeneratedWorld->GalaxyStarDensity,
+			*EnumText(GeneratedWorld->GalaxyStarPopulation), *EnumText(GeneratedWorld->GalaxyStarComposition))
+			+ (bRealScaleSizes ? TEXT("\nREAL DISTANCES  ") + LightYears(2.0 * RealGalaxyRadiusCm) + TEXT(" ACROSS") : FString()));
 
 	case EAstroPreviewFocus::StarCluster:
 		return FText::FromString(FString::Printf(
@@ -1533,7 +1933,9 @@ FText UWorldGenerationViewModel::GetPreviewScopeSummary() const
 			*EnumText(GeneratedWorld->StarClusterType), *EnumText(GeneratedWorld->StarClusterSize),
 			*EnumText(GeneratedWorld->StarClusterPopulation), *EnumText(GeneratedWorld->StarClusterComposition),
 			Generator ? Generator->GetPreviewClusterModeledSystemCount() : 0,
-			Generator ? Generator->GetPreviewClusterRenderedStarCount() : 0));
+			Generator ? Generator->GetPreviewClusterRenderedStarCount() : 0)
+			+ (bRealScaleSizes ? TEXT("\nREAL DISTANCES  ") + LightYears(2.0 * RealClusterRadiusCm) + TEXT(" ACROSS  /  NEIGHBOURS ~")
+				+ LightYears(RealNeighbourCm) : FString()));
 
 	case EAstroPreviewFocus::HomeSystem:
 	{
@@ -1550,7 +1952,7 @@ FText UWorldGenerationViewModel::GetPreviewScopeSummary() const
 			const APlanetarySystem* Family = IsValid(LiveSystem->MainStar) ? LiveSystem->MainStar->PlanetarySystem : nullptr;
 			const FString Context = LiveSystem->StableSystemId == GeneratedWorld->CanonicalStellarDataset.HomeStableId
 				? FString::Printf(TEXT("HOME START PLANET  %d"), GeneratedWorld->StartPlanetIndex)
-				: TEXT("CLUSTER SYSTEM  ") + LiveSystem->StableSystemId.ToString(EGuidFormats::Short);
+				: TEXT("CLUSTER SYSTEM  ") + APSStars::SystemName(0, LiveSystem->StableSystemId);
 			return FText::FromString(FString::Printf(
 				TEXT("SYSTEM TYPE  %s\nORBIT DISTRIBUTION  %s\nSTARS  %d  /  TOTAL PLANETS  %d\n%s\nSTATE  LIVE PHYSICAL HIERARCHY"),
 				*EnumText(Type), Family ? *EnumText(Family->OrbitDistributionType) : TEXT("--"), Stars, PlanetCount, *Context));
@@ -1632,9 +2034,14 @@ FText UWorldGenerationViewModel::GetPreviewScopeSummary() const
 				if (IsValid(Star) && IsValid(Star->PlanetarySystem)) HomePlanetCount += Star->PlanetarySystem->PlanetsActorsList.Num();
 		return FText::FromString(FString::Printf(
 			TEXT("GALAXY STARS  %d\nCLUSTER  %s / %s\nHOME SYSTEM PLANETS  %d\nHOME START PLANET  %d\nFULL SCALE  %s"),
-			GeneratedWorld->GalaxyStarCount, *EnumText(GeneratedWorld->StarClusterSize),
+			GeneratedWorld->GalaxyPlacedStarCount > 0 ? GeneratedWorld->GalaxyPlacedStarCount
+				: APSGalaxyMorphology::PreviewReferenceBudget, *EnumText(GeneratedWorld->StarClusterSize),
 			*EnumText(GeneratedWorld->StarClusterType), HomePlanetCount,
-			GeneratedWorld->StartPlanetIndex, GeneratedWorld->bGenerateFullScaledWorld ? TEXT("ON") : TEXT("OFF")));
+			GeneratedWorld->StartPlanetIndex, GeneratedWorld->bGenerateFullScaledWorld ? TEXT("ON") : TEXT("OFF"))
+			+ (!bRealScale ? FString() : bRealScaleSizes
+				? TEXT("\nREAL DISTANCES  ON  /  GALAXY ") + LightYears(2.0 * RealGalaxyRadiusCm)
+					+ TEXT("  /  NEIGHBOURS ~") + LightYears(RealNeighbourCm)
+				: FString(TEXT("\nREAL DISTANCES  ON"))));
 	}
 	}
 }
@@ -1678,6 +2085,7 @@ void UWorldGenerationViewModel::SetSpawnClass(EAPSStartAssetSlot Slot, UClass* N
 		if (NewClass->IsChildOf(ASpaceShipyard::StaticClass())) SpawnParameters->BP_HomeSpaceShipyard = NewClass;
 		break;
 	}
+	DefaultedSpawnSlots.Remove(Slot);
 }
 
 int32 UWorldGenerationViewModel::GetHomePlanetMoonCount() const
@@ -1792,8 +2200,11 @@ void UWorldGenerationViewModel::ExecutePreview()
 		GeneratedWorld ? GeneratedWorld->PlanetsAmount : 0, GeneratedWorld ? GeneratedWorld->MoonsAmount : 0,
 		GeneratedWorld ? GeneratedWorld->PlanetRadius : 0.0);
 	// Keep the failure text accurate for missing targets and rejected projection data.
+	// Rio 05.10 (real scale experiment): a REAL SCALE preview says so.
 	SetPreviewStatus(
-		bGenerated ? LOCTEXT("PreviewReady", "LIVE FULL-SCALE PREVIEW") : LOCTEXT("PreviewFailed", "PREVIEW GENERATION INCOMPLETE"),
+		!bGenerated ? LOCTEXT("PreviewFailed", "PREVIEW GENERATION INCOMPLETE")
+			: IsRealScaleActive() ? LOCTEXT("PreviewReadyRealScale", "LIVE PREVIEW  /  REAL DISTANCES")
+			: LOCTEXT("PreviewReady", "LIVE FULL-SCALE PREVIEW"),
 		bGenerated);
 	bPreserveCameraOnNextPreview = false;
 	bForceRefocusOnNextPreview = false;
@@ -1879,15 +2290,34 @@ void UWorldGenerationViewModel::InitializeSpawnDefaultsFromGenerator(AAstroGener
 	else if (UClass* ProductionPilot = APSCivilizationPilot::LoadProductionClass())
 	{
 		SpawnParameters->BP_CharacterClass = ProductionPilot;
+		DefaultedSpawnSlots.Add(EAPSStartAssetSlot::Character);
 	}
 	else if (!SpawnParameters->BP_CharacterClass)
 	{
 		SpawnParameters->BP_CharacterClass = Generator->BP_CharacterClass;
+		DefaultedSpawnSlots.Add(EAPSStartAssetSlot::Character);
 	}
-	if (!SpawnParameters->BP_HomeSpaceship) SpawnParameters->BP_HomeSpaceship = Generator->BP_HomeSpaceship;
-	if (!SpawnParameters->BP_HomeSpaceStation) SpawnParameters->BP_HomeSpaceStation = Generator->BP_HomeSpaceStation;
-	if (!SpawnParameters->BP_HomeSpaceHeadquarters) SpawnParameters->BP_HomeSpaceHeadquarters = Generator->BP_HomeSpaceHeadquarters;
-	if (!SpawnParameters->BP_HomeSpaceShipyard) SpawnParameters->BP_HomeSpaceShipyard = Generator->BP_HomeSpaceShipyard;
+	// The generator's own classes stand in until the player picks; the menu may load its start defaults over them.
+	if (!SpawnParameters->BP_HomeSpaceship)
+	{
+		SpawnParameters->BP_HomeSpaceship = Generator->BP_HomeSpaceship;
+		DefaultedSpawnSlots.Add(EAPSStartAssetSlot::Spaceship);
+	}
+	if (!SpawnParameters->BP_HomeSpaceStation)
+	{
+		SpawnParameters->BP_HomeSpaceStation = Generator->BP_HomeSpaceStation;
+		DefaultedSpawnSlots.Add(EAPSStartAssetSlot::SpaceStation);
+	}
+	if (!SpawnParameters->BP_HomeSpaceHeadquarters)
+	{
+		SpawnParameters->BP_HomeSpaceHeadquarters = Generator->BP_HomeSpaceHeadquarters;
+		DefaultedSpawnSlots.Add(EAPSStartAssetSlot::Headquarters);
+	}
+	if (!SpawnParameters->BP_HomeSpaceShipyard)
+	{
+		SpawnParameters->BP_HomeSpaceShipyard = Generator->BP_HomeSpaceShipyard;
+		DefaultedSpawnSlots.Add(EAPSStartAssetSlot::Shipyard);
+	}
 }
 
 void UWorldGenerationViewModel::CommitAndOpenLevel(FName LevelName)
@@ -1897,6 +2327,13 @@ void UWorldGenerationViewModel::CommitAndOpenLevel(FName LevelName)
 	{
 		UE_LOG(LogTemp, Error, TEXT("[APS.WorldGeneration] Commit rejected: world context or generated model is missing"));
 		return;
+	}
+	// Rio 05.10 ("we only made the distances bigger and the world shift works: connect it and we test how it goes"): a
+	// REAL SCALE world travels into the game like any other, as an experiment (the floating origin keeps the player
+	// near 0,0,0; flight and far-sky refinements follow).
+	if (IsRealScaleActive())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[APS.RealScale] gameplay start (experimental): the world travels at real scale"));
 	}
 	// Flush the final selected body's debounced UI buffer before duplicating the
 	// model into GameInstance. Otherwise the last slider movement exists only in

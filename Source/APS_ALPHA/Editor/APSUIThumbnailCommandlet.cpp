@@ -4,6 +4,7 @@
 #include "APS_ALPHA/Actors/Tech/SpaceHeadquarters.h"
 #include "APS_ALPHA/Actors/Tech/SpaceShipyard.h"
 #include "APS_ALPHA/Actors/Tech/SpaceStation.h"
+#include "APS_ALPHA/Pawns/Characters/CustomGravityCharacter.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
 #include "APS_ALPHA/UI/MainMenu/APSStartAssetFilter.h"
 #include "APS_ALPHA/UI/MainMenu/APSUIThumbnails.h"
@@ -277,9 +278,15 @@ namespace
 	/**
 	 * Frames the visible object: crops a square around the pixels with alpha (plus a small margin) and
 	 * resamples it to OutSize with 4x4 bilinear taps in premultiplied space. Long, thin hulls that the
-	 * bounds-sphere camera leaves small fill the icon this way; magnification is capped at 2x.
+	 * bounds-sphere camera leaves small fill the icon this way; magnification is capped at 2x. Zoom above 1 frames
+	 * tighter (Rio 02.10: the S P3 icon "a bit bigger, add 50% zoom"); a long hull's ends may then leave the icon.
+	 *
+	 * Rio 05.10 ("the icon in full size: use the most room at the top and the sides"): with bWide the crop takes the
+	 * object's own shape, up to 3:1, so a long hull fills a wide card edge to edge instead of a thin band in a square.
+	 * OutHeight is then OutSize divided by that aspect; the menu shows icons with ScaleToFit, so either shape fits.
 	 */
-	bool CropToContent(const TArray<uint8>& Source, int32 SourceSize, TArray<uint8>& Out, int32 OutSize)
+	bool CropToContent(const TArray<uint8>& Source, int32 SourceSize, TArray<uint8>& Out, int32 OutSize, int32& OutHeight,
+		double Zoom = 1.0, bool bWide = false)
 	{
 		int32 MinX = SourceSize;
 		int32 MinY = SourceSize;
@@ -304,14 +311,23 @@ namespace
 		}
 		const double CenterX = (MinX + MaxX + 1) * 0.5;
 		const double CenterY = (MinY + MaxY + 1) * 0.5;
-		const double Side = FMath::Clamp(FMath::Max(MaxX - MinX + 1, MaxY - MinY + 1) * 1.12,
-			OutSize * 0.5, static_cast<double>(SourceSize));
-		const double Left = FMath::Clamp(CenterX - Side * 0.5, 0.0, SourceSize - Side);
-		const double Top = FMath::Clamp(CenterY - Side * 0.5, 0.0, SourceSize - Side);
-		const double Scale = Side / OutSize;
+		const double ContentWidth = MaxX - MinX + 1;
+		const double ContentHeight = MaxY - MinY + 1;
+		// Width over height of the crop: 1 for the square icons; the object's own, 1 to 3, for -Wide.
+		const double Aspect = bWide ? FMath::Clamp(ContentWidth / ContentHeight, 1.0, 3.0) : 1.0;
+		// A thin margin around a wide crop (it should fill the card); the square icons keep their 12 %.
+		const double Margin = bWide ? 1.05 : 1.12;
+		double CropHeight = FMath::Max(ContentHeight, ContentWidth / Aspect) * Margin / FMath::Max(Zoom, 0.25);
+		OutHeight = bWide ? FMath::Max(16, FMath::RoundToInt(OutSize / Aspect / 2.0) * 2) : OutSize;
+		CropHeight = FMath::Clamp(CropHeight, OutHeight * 0.5, static_cast<double>(SourceSize));
+		double CropWidth = FMath::Min(CropHeight * Aspect, static_cast<double>(SourceSize));
+		CropHeight = CropWidth / Aspect;
+		const double Left = FMath::Clamp(CenterX - CropWidth * 0.5, 0.0, SourceSize - CropWidth);
+		const double Top = FMath::Clamp(CenterY - CropHeight * 0.5, 0.0, SourceSize - CropHeight);
+		const double Scale = CropWidth / OutSize;
 		constexpr int32 Taps = 4;
-		Out.SetNumZeroed(OutSize * OutSize * 4);
-		for (int32 Y = 0; Y < OutSize; ++Y)
+		Out.SetNumZeroed(OutSize * OutHeight * 4);
+		for (int32 Y = 0; Y < OutHeight; ++Y)
 		{
 			for (int32 X = 0; X < OutSize; ++X)
 			{
@@ -358,14 +374,14 @@ namespace
 	}
 
 	/** Gives fully transparent pixels their neighbours' colour so bilinear scaling in Slate leaves no dark fringe. */
-	void BleedIntoTransparent(TArray<uint8>& Pixels, int32 Size)
+	void BleedIntoTransparent(TArray<uint8>& Pixels, int32 Width, int32 Height)
 	{
 		const TArray<uint8> Source = Pixels;
-		for (int32 Y = 0; Y < Size; ++Y)
+		for (int32 Y = 0; Y < Height; ++Y)
 		{
-			for (int32 X = 0; X < Size; ++X)
+			for (int32 X = 0; X < Width; ++X)
 			{
-				uint8* Target = &Pixels[(Y * Size + X) * 4];
+				uint8* Target = &Pixels[(Y * Width + X) * 4];
 				if (Target[3] != 0)
 				{
 					continue;
@@ -378,8 +394,8 @@ namespace
 					{
 						const int32 NX = X + DX;
 						const int32 NY = Y + DY;
-						const uint8* Neighbour = NX >= 0 && NY >= 0 && NX < Size && NY < Size
-							? &Source[(NY * Size + NX) * 4] : nullptr;
+						const uint8* Neighbour = NX >= 0 && NY >= 0 && NX < Width && NY < Height
+							? &Source[(NY * Width + NX) * 4] : nullptr;
 						if (Neighbour && Neighbour[3] != 0)
 						{
 							Sum[0] += Neighbour[0];
@@ -399,12 +415,12 @@ namespace
 		}
 	}
 
-	void SaveReviewPng(const FString& Directory, const FString& Name, TArray<uint8>& Pixels, int32 Size)
+	void SaveReviewPng(const FString& Directory, const FString& Name, TArray<uint8>& Pixels, int32 Width, int32 Height)
 	{
 		if (!Directory.IsEmpty())
 		{
 			FImageUtils::SaveImageByExtension(*FPaths::Combine(Directory, Name + TEXT(".png")),
-				FImageView(Pixels.GetData(), Size, Size, 1, ERawImageFormat::BGRA8, EGammaSpace::sRGB));
+				FImageView(Pixels.GetData(), Width, Height, 1, ERawImageFormat::BGRA8, EGammaSpace::sRGB));
 		}
 	}
 }
@@ -418,6 +434,11 @@ int32 UAPSUIThumbnailCommandlet::Main(const FString& Params)
 	Size = FMath::Clamp(Size, 64, 1024);
 	FString Only;
 	FParse::Value(*Params, TEXT("Only="), Only);
+	// -Zoom=1.5 frames the object 1.5 times tighter (with -Only, for one Blueprint's icon).
+	double Zoom = 1.0;
+	FParse::Value(*Params, TEXT("Zoom="), Zoom);
+	// -Wide crops to the object's own shape (up to 3:1) for a long hull: Size is then the icon's width.
+	const bool bWide = FParse::Param(*Params, TEXT("Wide"));
 	FString PngDir;
 	FParse::Value(*Params, TEXT("PngDir="), PngDir);
 	const bool bKeepBackground = FParse::Param(*Params, TEXT("KeepBackground"));
@@ -462,6 +483,19 @@ int32 UAPSUIThumbnailCommandlet::Main(const FString& Params)
 	}
 	WantedClasses.Add(FTopLevelAssetPath(
 		TEXT("/Game/APS/APS_ALPHA/Blueprints/BP_CustomGravityCharacter.BP_CustomGravityCharacter_C")));
+	// Rio 02.10 ("the new pilot has no icon"): every APS_ALPHA pilot the menu lists, the Ranger among them.
+	{
+		TSet<FTopLevelAssetPath> Pilots;
+		Registry.GetDerivedClassNames({ACustomGravityCharacter::StaticClass()->GetClassPathName()},
+			TSet<FTopLevelAssetPath>(), Pilots);
+		for (const FTopLevelAssetPath& Pilot : Pilots)
+		{
+			if (Pilot.GetPackageName().ToString().StartsWith(TEXT("/Game/APS/APS_ALPHA/")))
+			{
+				WantedClasses.Add(Pilot);
+			}
+		}
+	}
 
 	FARFilter Filter;
 	Filter.PackagePaths.Add(TEXT("/Game/APS"));
@@ -613,7 +647,7 @@ int32 UAPSUIThumbnailCommandlet::Main(const FString& Params)
 		const FString ObjectPath = APSUIThumbnails::TexturePathForBlueprintPackage(Asset.PackageName.ToString());
 		const FString PackageName = FPackageName::ObjectPathToPackageName(ObjectPath);
 		const FString TextureName = FPackageName::GetShortName(PackageName);
-		SaveReviewPng(PngDir, TextureName + TEXT("_raw"), Pixels, RenderSize);
+		SaveReviewPng(PngDir, TextureName + TEXT("_raw"), Pixels, RenderSize, RenderSize);
 		bool bMatted = bSceneAlpha && ApplySceneAlpha(Pixels, RenderSize);
 		float BackgroundFraction = 0.0f;
 		if (!bMatted)
@@ -625,7 +659,8 @@ int32 UAPSUIThumbnailCommandlet::Main(const FString& Params)
 			BackgroundFraction = bKeepBackground ? 0.0f : CutOutBackground(Pixels, RenderSize);
 		}
 		TArray<uint8> Icon;
-		if (BackgroundFraction > 0.995f || !CropToContent(Pixels, RenderSize, Icon, Size))
+		int32 IconHeight = Size;
+		if (BackgroundFraction > 0.995f || !CropToContent(Pixels, RenderSize, Icon, Size, IconHeight, Zoom, bWide))
 		{
 			++Failed;
 			UE_LOG(LogAPSUIThumbnails, Warning, TEXT("[APS.UIThumbnails] nothing visible for %s"),
@@ -634,9 +669,9 @@ int32 UAPSUIThumbnailCommandlet::Main(const FString& Params)
 			ClassesWithoutVisuals.Add(ClassPath);
 			continue;
 		}
-		BleedIntoTransparent(Icon, Size);
+		BleedIntoTransparent(Icon, Size, IconHeight);
 		Pixels = MoveTemp(Icon);
-		SaveReviewPng(PngDir, TextureName, Pixels, Size);
+		SaveReviewPng(PngDir, TextureName, Pixels, Size, IconHeight);
 
 		UPackage* Package = FPackageName::DoesPackageExist(PackageName)
 			? LoadPackage(nullptr, *PackageName, LOAD_None)
@@ -652,7 +687,7 @@ int32 UAPSUIThumbnailCommandlet::Main(const FString& Params)
 			Texture = NewObject<UTexture2D>(Package, *TextureName, RF_Public | RF_Standalone | RF_Transactional);
 			FAssetRegistryModule::AssetCreated(Texture);
 		}
-		Texture->Source.Init(Size, Size, 1, 1, TSF_BGRA8, Pixels.GetData());
+		Texture->Source.Init(Size, IconHeight, 1, 1, TSF_BGRA8, Pixels.GetData());
 		Texture->CompressionSettings = TC_EditorIcon;
 		Texture->LODGroup = TEXTUREGROUP_UI;
 		Texture->MipGenSettings = TMGS_NoMipmaps;
@@ -669,8 +704,8 @@ int32 UAPSUIThumbnailCommandlet::Main(const FString& Params)
 		if (UPackage::SavePackage(Package, Texture, *Filename, SaveArgs))
 		{
 			++Rendered;
-			UE_LOG(LogAPSUIThumbnails, Display, TEXT("[APS.UIThumbnails] %s -> %s matte=%s from=%s"),
-				*Asset.PackageName.ToString(), *ObjectPath, bMatted ? TEXT("alpha") : TEXT("key"), *DrawnFrom);
+			UE_LOG(LogAPSUIThumbnails, Display, TEXT("[APS.UIThumbnails] %s -> %s matte=%s from=%s icon=%dx%d"),
+				*Asset.PackageName.ToString(), *ObjectPath, bMatted ? TEXT("alpha") : TEXT("key"), *DrawnFrom, Size, IconHeight);
 		}
 		else
 		{

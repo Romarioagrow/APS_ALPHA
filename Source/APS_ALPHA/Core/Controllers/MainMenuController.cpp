@@ -167,6 +167,9 @@ void AMainMenuController::InstallSlateMenu()
 	if (!MenuGeneratedWorld)
 	{
 		MenuGeneratedWorld = NewObject<UGeneratedWorld>(this);
+		// Rio 06.10 ("make Real Scale the default"): a new world starts at real distances; the class default stays
+		// off so a save without the flag still loads as it was made.
+		MenuGeneratedWorld->bRealScale = true;
 	}
 	if (!WorldGenerationViewModel)
 	{

@@ -1,5 +1,6 @@
 ﻿#include "GravityDetectorComponent.h"
 
+#include "Components/BoxComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "Engine/Engine.h"
@@ -12,6 +13,75 @@
 #include "APS_ALPHA/Gameplay/Gravity/GravitySource.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
 #include "GameFramework/Character.h"
+
+namespace APSGravityDetectorLocal
+{
+	/**
+	 * F3 (Rio, 02.10: "walking by the ship is bad"): beside a world, a ship's artificial gravity holds only for a character
+	 * in or on the ship: standing on it, or with the ship under its feet (its deck while jumping inside). Next to a
+	 * landed ship the world pulls, so a ship resting on a slope no longer tilts the ground around it and the edge of its
+	 * gravity sphere no longer flips the character between two "downs". A passenger aboard (attached, inside the hull's
+	 * bounds) stays in, floating or high above a deck; "under its feet" is along the ship's own down, so a banked or
+	 * inverted ship keeps its people (02.10, walking about a flying ship).
+	 */
+	bool IsInOrOnShip(const AActor* Self, const ASpaceship* Ship, const AActor* Body)
+	{
+		const ACharacter* Character = Cast<ACharacter>(Self);
+		if (!Character || !Self->GetWorld()) return true;
+		if (const UPrimitiveComponent* Base = Character->GetMovementBase(); Base && Base->GetOwner() == Ship) return true;
+		if (Self->GetAttachParentActor() == Ship && Ship->InteractionBoundsComponent)
+		{
+			const UBoxComponent* Bounds = Ship->InteractionBoundsComponent;
+			const FVector Local = Bounds->GetComponentTransform().InverseTransformPositionNoScale(Self->GetActorLocation());
+			const FVector Extent = Bounds->GetScaledBoxExtent();
+			if (FMath::Abs(Local.X) <= Extent.X && FMath::Abs(Local.Y) <= Extent.Y && FMath::Abs(Local.Z) <= Extent.Z)
+			{
+				return true;
+			}
+		}
+		(void)Body;
+		const UCapsuleComponent* Capsule = Character->GetCapsuleComponent();
+		const float HalfHeight = Capsule ? Capsule->GetScaledCapsuleHalfHeight() : 88.0f;
+		const FVector Start = Self->GetActorLocation();
+		const FVector Down = -Ship->GetActorUpVector();
+		FCollisionQueryParams Params(SCENE_QUERY_STAT(APSShipGravityFloor), false, Self);
+		FHitResult Hit;
+		return Self->GetWorld()->LineTraceSingleByChannel(Hit, Start, Start + Down * (HalfHeight + 250.0f), ECC_Pawn, Params)
+			&& Hit.GetActor() == Ship;
+	}
+
+	/**
+	 * Rio 02.10 ("I flew to the station and stepped out of the ship: the planet pulled, not the station"): the source a
+	 * character stands in once a ship it is only beside has been passed over: a station's gravity before a world's zone,
+	 * the nearer of two of a kind; null when nothing else holds it.
+	 */
+	AActor* BestSourceBesideShip(AActor* Self, const ASpaceship* Ship)
+	{
+		TArray<AActor*> Overlapping;
+		Self->GetOverlappingActors(Overlapping);
+		AActor* Best = nullptr;
+		int32 BestPriority = MIN_int32;
+		double BestDistanceSquared = DBL_MAX;
+		for (AActor* Candidate : Overlapping)
+		{
+			if (!IsValid(Candidate) || Candidate == Self || Candidate == Ship || Candidate->IsA(ASpaceship::StaticClass())
+				|| !Candidate->GetClass()->ImplementsInterface(UGravitySource::StaticClass()))
+			{
+				continue;
+			}
+			const int32 Priority = Candidate->IsA(ASpaceStation::StaticClass()) ? 200
+				: Candidate->IsA(AOrbitalBody::StaticClass()) ? 100 : 0;
+			const double DistanceSquared = FVector::DistSquared(Self->GetActorLocation(), Candidate->GetActorLocation());
+			if (Priority > BestPriority || (Priority == BestPriority && DistanceSquared < BestDistanceSquared))
+			{
+				Best = Candidate;
+				BestPriority = Priority;
+				BestDistanceSquared = DistanceSquared;
+			}
+		}
+		return Best;
+	}
+}
 
 UGravityDetectorComponent::UGravityDetectorComponent()
 {
@@ -54,7 +124,29 @@ void UGravityDetectorComponent::RunGravityCheckForActor(AActor* Self)
 		return;
 	}
 
-	if (AActor* OverlappingSource = FindBestOverlappingSource(Self))
+	AActor* OverlappingSource = FindBestOverlappingSource(Self);
+	// Natural bodies: their overlap zones are coarse (a planet's reaches past its moons, a moon has none), so on a moon
+	// the parent planet pulled (Rio, 01.10). Among natural bodies the one whose surface is nearest pulls; stations and
+	// ships keep their place above them.
+	if (OverlappingSource && OverlappingSource->IsA(AOrbitalBody::StaticClass()))
+	{
+		if (AActor* NearestBody = FindClosestFullScaleSource(Self); IsValid(NearestBody) && NearestBody != OverlappingSource)
+		{
+			OverlappingSource = NearestBody;
+		}
+	}
+	else if (const ASpaceship* Ship = Cast<ASpaceship>(OverlappingSource); Ship && Self->IsA(ACharacter::StaticClass()))
+	{
+		if (AActor* Body = FindClosestFullScaleSource(Self); IsValid(Body)
+			&& !APSGravityDetectorLocal::IsInOrOnShip(Self, Ship, Body))
+		{
+			// Beside the ship, not in or on it: the station the character stands in pulls (a docked ship's deck is not the
+			// station's floor); only with none, the nearest world.
+			AActor* Beside = APSGravityDetectorLocal::BestSourceBesideShip(Self, Ship);
+			OverlappingSource = Beside && Beside->IsA(ASpaceStation::StaticClass()) ? Beside : Body;
+		}
+	}
+	if (OverlappingSource)
 	{
 		if (OverlappingSource != GravityTargetActor)
 		{
@@ -190,6 +282,18 @@ AActor* UGravityDetectorComponent::FindBestOverlappingSource(AActor* Actor) cons
 
 	TArray<AActor*> OverlappingActors;
 	Actor->GetOverlappingActors(OverlappingActors);
+	// Rio 04.10 evening (a passenger left in space at cruise): the ship a character rides as a passenger (attached to its
+	// hull, not seated) holds it while it is inside that ship's gravity sphere, also in a frame whose cached overlaps miss
+	// it (at cruise the deck moves hundreds of thousands of km a frame).
+	const USceneComponent* ActorRoot = Actor->GetRootComponent();
+	const USceneComponent* RiddenHull = ActorRoot ? ActorRoot->GetAttachParent() : nullptr;
+	if (ASpaceship* Ridden = RiddenHull ? Cast<ASpaceship>(RiddenHull->GetOwner()) : nullptr;
+		Ridden && RiddenHull == Ridden->GetRootComponent() && Ridden->ProvidesShipGravity() && Ridden->SphereCollisionComponent
+		&& FVector::DistSquared(Actor->GetActorLocation(), Ridden->SphereCollisionComponent->GetComponentLocation())
+			<= FMath::Square(Ridden->SphereCollisionComponent->GetScaledSphereRadius()))
+	{
+		OverlappingActors.AddUnique(Ridden);
+	}
 
 	// Vehicle collision is intentionally lightweight and may not overlap volumes
 	// configured only for ECC_Pawn. Supplement it with point-in-volume checks while
@@ -213,7 +317,7 @@ AActor* UGravityDetectorComponent::FindBestOverlappingSource(AActor* Actor) cons
 			}
 			else if (const ASpaceship* Ship = Cast<ASpaceship>(Candidate))
 			{
-				GravitySphere = Ship->bProvidesArtificialGravity ? Ship->SphereCollisionComponent : nullptr;
+				GravitySphere = Ship->ProvidesShipGravity() ? Ship->SphereCollisionComponent : nullptr;
 			}
 
 			if (GravitySphere && FVector::DistSquared(Actor->GetActorLocation(), GravitySphere->GetComponentLocation())
@@ -235,7 +339,7 @@ AActor* UGravityDetectorComponent::FindBestOverlappingSource(AActor* Actor) cons
 		{
 			continue;
 		}
-		if (const ASpaceship* Ship = Cast<ASpaceship>(Candidate); Ship && !Ship->bProvidesArtificialGravity)
+		if (const ASpaceship* Ship = Cast<ASpaceship>(Candidate); Ship && !Ship->ProvidesShipGravity())
 		{
 			continue;
 		}

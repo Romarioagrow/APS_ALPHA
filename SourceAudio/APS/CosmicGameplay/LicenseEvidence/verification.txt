@@ -1,0 +1,34 @@
+APOSFERA gameplay music - source verification on 2026-10-03
+
+Author: Stellardrone (Edgaras Zakevicius)
+Album: Light Years (2013), released by Energostatic Records.
+Author album page: https://stellardrone.bandcamp.com/album/light-years
+The album's license link was followed with the web tool and resolves to:
+https://creativecommons.org/licenses/by/4.0/
+That page permits distribution and adaptation, including commercial use, with
+credit, a license link and an indication of changes. Do not imply endorsement.
+
+The author's album page explicitly links this alternate free download:
+https://archive.org/details/stasis017
+The mirror identifies the uploader as energostatic. Its file metadata and MD5
+checksums are retained in archive-metadata.json. Each original MP3 was checked
+against that checksum. SHA-256 hashes and per-track source URLs are in sources.json.
+
+Original 2013 distribution is also documented as CC BY 3.0 on Free Music Archive:
+https://freemusicarchive.org/music/Stellardrone/Light_Years_1227
+Preserve that older notice alongside the author's current CC BY 4.0 license:
+https://creativecommons.org/licenses/by/3.0/
+
+Selected: Airglow, Comet Halley, Ultra Deep Field, Light Years, In Time,
+Cepheid, Red Giant, Messier 45. The author pages for all eight were opened.
+Eternity and Eternity (Reprise) are excluded, avoiding the spoken-word track
+and a repeated composition. No album artwork is used.
+
+Integration edits: stereo 44.1 kHz conversion, fixed gain matching, gentle EQ,
+quiet intro/tail edits, fades, and six-second overlaps between tracks.
+Credit, both license URLs, source URLs and modification notice must ship with
+the game and appear in the Audio settings credits.
+
+This file records the source check; it is not a copy of the author's web page.
+Direct script requests to Bandcamp returned a JavaScript challenge, so the
+author page and its license were checked through the web tool instead.

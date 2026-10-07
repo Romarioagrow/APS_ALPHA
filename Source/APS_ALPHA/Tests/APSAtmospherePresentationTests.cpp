@@ -3,6 +3,7 @@
 #include "Misc/AutomationTest.h"
 #include "Engine/World.h"
 #include "PlanetaryAtmosphere.h"
+#include "APS_ALPHA/Core/Rendering/APSPreviewAtmosphereShell.h"
 
 namespace APSAtmospherePresentationTests
 {
@@ -166,6 +167,62 @@ bool FAPSAtmospherePresentationOpticsTest::RunTest(const FString& Parameters)
 	}
 	World->DestroyWorld(false);
 	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAPSPreviewAtmosphereShellTest,
+    "APS.Preview.Atmosphere.InsideOutsideShell",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FAPSPreviewAtmosphereShellTest::RunTest(const FString& Parameters)
+{
+    // Reproduce the user's final menu-wheel step: 100 km atmosphere, 67.5 km
+    // minimum camera clearance. Include compressed and large translated frames.
+    for (double Scale : {1.0, 0.001})
+    {
+        const FVector Center(123456789.0, -234567891.0, 345678912.0);
+        const double PlanetRadius = 6750.0 * 100000.0 * Scale;
+        const double ShellRadius = PlanetRadius + 100.0 * 100000.0 * Scale;
+        for (double HeightKm : {120.0, 100.001, 99.999, 90.0, 67.5, 90.0, 120.0})
+        {
+            const FVector Camera = Center + FVector(PlanetRadius + HeightKm * 100000.0 * Scale, 0, 0);
+            TestEqual(TEXT("Select shell in the presented camera frame in both directions"),
+                APSPreviewAtmosphereShell::IsInside(Camera, Center, ShellRadius), HeightKm < 100.0);
+        }
+    }
+    UWorld* World = APSAtmospherePresentationTests::CreateWorld();
+    if (!TestNotNull(TEXT("Test world"), World)) return false;
+    AAtmoScape* Atmo = World->SpawnActor<AAtmoScape>();
+    if (TestNotNull(TEXT("Atmosphere"), Atmo))
+    {
+        TInlineComponentArray<UStaticMeshComponent*> Meshes;
+        Atmo->GetComponents(Meshes);
+        UStaticMeshComponent* Outside = nullptr;
+        UStaticMeshComponent* Inside = nullptr;
+        for (UStaticMeshComponent* Mesh : Meshes)
+        {
+            if (Mesh->GetFName() == TEXT("SpacePlanetaryAtmoMesh")) Outside = Mesh;
+            if (Mesh->GetFName() == TEXT("PlanetaryAtmoMesh")) Inside = Mesh;
+        }
+        if (TestNotNull(TEXT("Outer shell"), Outside) && TestNotNull(TEXT("Inner shell"), Inside))
+        {
+            const FVector Center(123000, -456000, 789000);
+            const double Radius = 685000.0;
+            const FQuat Rotation = FRotator(17, 36, 21).Quaternion();
+            TestTrue(TEXT("Interior camera uses inward mesh"),
+                APSPreviewAtmosphereShell::Select(Outside, Inside, Center + FVector(Radius - 100, 0, 0),
+                    Center, Radius, Rotation) == Inside);
+            Inside->UpdateBounds();
+            TestTrue(TEXT("Inner shell has the same committed centre"), Inside->Bounds.Origin.Equals(Center, 0.1));
+            TestTrue(TEXT("Inner shell uses the same optical material"), Inside->GetMaterial(0) == Outside->GetMaterial(0));
+            const FTransform Before = Inside->GetComponentTransform();
+            TestTrue(TEXT("Leaving restores the exterior mesh"),
+                APSPreviewAtmosphereShell::Select(Outside, Inside, Center + FVector(Radius + 100, 0, 0),
+                    Center, Radius, Rotation) == Outside);
+            TestTrue(TEXT("Crossing does not change shell scale/position"), Inside->GetComponentTransform().Equals(Before, 0.0));
+        }
+    }
+    World->DestroyWorld(false);
+    return true;
 }
 
 #endif

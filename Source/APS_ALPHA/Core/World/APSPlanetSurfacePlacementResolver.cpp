@@ -7,6 +7,7 @@
 #include "Components/SceneComponent.h"
 #include "Engine/World.h"
 #include "HAL/PlatformTime.h"
+#include "HAL/IConsoleManager.h"
 #include "Math/RotationMatrix.h"
 #include "ProfilingDebugging/CpuProfilerTrace.h"
 
@@ -14,6 +15,9 @@ DEFINE_LOG_CATEGORY_STATIC(LogAPSPlanetSurfacePlacement, Log, All);
 
 namespace APSPlanetSurfacePlacement
 {
+	TAutoConsoleVariable<int32> CVarPlacementTraceDiagnostics(
+		TEXT("aps.Surface.PlacementTraceDiagnostics"), 0,
+		TEXT("Log failed placement collision traces (actor, expected height and error). Diagnostic only."), ECVF_Default);
 	bool ShouldDeferToStreaming(const APlanetaryBody* Body)
 	{
 		if (!IsValid(Body) || !Body->bStreamWorldScapeSurface) return false;
@@ -23,12 +27,23 @@ namespace APSPlanetSurfacePlacement
 		const APlanetaryBody* Selected = Streaming ? Streaming->GetActiveBody() : nullptr;
 		// Permit initial placement bootstrap before an observer is selected. Once
 		// streaming owns another body, background placement cannot seize its budget.
+		// After the first observer pass an empty selection is deliberate too: the
+		// observer is outside every family's range. Re-activating the home body then
+		// fought the streaming unload every half second, a full WorldScape regeneration
+		// each time (about 7 FPS in deep space, 29.09).
+		if (Streaming && Streaming->HasObservedPawn())
+		{
+			return Selected != Body;
+		}
 		return IsValid(Selected) && Selected != Body;
 	}
 
 	constexpr int32 RingDirections = 12;
 	constexpr int32 HeadingCount = 4;
 	constexpr int32 GlobalDirections = 96;
+	/** The search rings round the preferred site; with the site itself they come first among the directions. */
+	constexpr double SearchRadiiCm[] = {10000.0, 25000.0, 50000.0, 100000.0, 500000.0};
+	constexpr int32 NearDirections = 1 + RingDirections * static_cast<int32>(UE_ARRAY_COUNT(SearchRadiiCm));
 	constexpr int32 RouteProbeCount = 9;
 	constexpr double RouteHalfWidthCm = 150.0;
 	constexpr double TraceHalfLengthCm = 5000.0;
@@ -206,10 +221,19 @@ namespace APSPlanetSurfacePlacement
 		Params.AddIgnoredActor(Body);
 		Params.AddIgnoredActor(Surface);
 		FHitResult Hit;
-		return World->LineTraceSingleByChannel(Hit,
+		const bool bHit = World->LineTraceSingleByChannel(Hit,
 			Expected + Direction * TraceHalfLengthCm,
-			Expected - Direction * TraceHalfLengthCm, ECC_Visibility, Params)
-			&& FVector::Distance(Hit.ImpactPoint, Expected) <= ToleranceCm;
+			Expected - Direction * TraceHalfLengthCm, ECC_Visibility, Params);
+		const double ErrorCm = bHit ? FVector::Distance(Hit.ImpactPoint, Expected) : -1.0;
+		const bool bMatches = bHit && ErrorCm <= ToleranceCm;
+		if (!bMatches && CVarPlacementTraceDiagnostics.GetValueOnGameThread() != 0)
+		{
+			UE_LOG(LogAPSPlanetSurfacePlacement, Display,
+				TEXT("[APS.Placement.Trace] hit=%d actor=%s expectedHeightCm=%.3f errorCm=%.3f toleranceCm=%.3f expected=%s impact=%s"),
+				bHit, *GetPathNameSafe(Hit.GetActor()), HeightCm, ErrorCm, ToleranceCm,
+				*Expected.ToCompactString(), *Hit.ImpactPoint.ToCompactString());
+		}
+		return bMatches;
 	}
 
 	FName AnchorTag(const int64 PlacementKey, const TCHAR* Role)
@@ -396,6 +420,11 @@ bool UAPSPlanetSurfacePlacementResolver::AdvanceCivilizationFootprint(
 	{
 		FVector SeedForward;
 		BuildSeedFrame(PlacementKey, PreferredUp, SeedForward);
+		if (!Request.PreferredUp.IsNearlyZero())
+		{
+			// A caller-chosen site (a surface start): the seed only turns the search rings.
+			PreferredUp = Request.PreferredUp.GetSafeNormal();
+		}
 		FVector TangentA;
 		FVector TangentB;
 		PreferredUp.FindBestAxisVectors(TangentA, TangentB);
@@ -403,10 +432,8 @@ bool UAPSPlanetSurfacePlacementResolver::AdvanceCivilizationFootprint(
 			FVector::DotProduct(SeedForward, TangentB),
 			FVector::DotProduct(SeedForward, TangentA));
 
-		Directions.Reserve(1 + RingDirections * 5 + GlobalDirections);
+		Directions.Reserve(NearDirections + GlobalDirections);
 		Directions.Add(PreferredUp);
-		constexpr double SearchRadiiCm[] = {
-			10000.0, 25000.0, 50000.0, 100000.0, 500000.0};
 		for (const double SearchRadiusCm : SearchRadiiCm)
 		{
 			const double Angle = FMath::Clamp(SearchRadiusCm / RadiusCm, 1.0e-6, 0.35);
@@ -507,7 +534,12 @@ bool UAPSPlanetSurfacePlacementResolver::AdvanceCivilizationFootprint(
 					Candidate.Route.MaxSlope) * 20.0
 				- MaxDeviation / 5000.0
 				+ (bHasLiquid ? FMath::Clamp(DryMargin / 10000.0, 0.0, 2.0) : 1.0);
-			if (Candidate.Score > Best.Score)
+			// Rio 03.10: a caller-chosen site (a surface start) keeps the colony by the pilot. On flatness alone a
+			// planet-wide direction 26 degrees round won (3088 km): those count only while no ring site is valid.
+			const bool bNear = DirectionIndex < NearDirections;
+			const bool bBestNear = Best.bValid && Best.Ordinal / HeadingCount < NearDirections;
+			const bool bNearFirst = !Request.PreferredUp.IsNearlyZero() && Best.bValid && bNear != bBestNear;
+			if (bNearFirst ? bNear : Candidate.Score > Best.Score)
 			{
 				Best = Candidate;
 			}
@@ -574,14 +606,27 @@ bool UAPSPlanetSurfacePlacementResolver::AdvanceCivilizationFootprint(
 	const FVector RouteMidUp = OffsetDirection(Best.BaseUp, Best.Forward, Best.Right,
 		{(RouteStartCm + RouteEndCm) * 0.5, 0.0}, RadiusCm);
 	const double RouteMidHeight = HeightAt(Root, Center, RadiusCm, RouteMidUp);
+	// Platform transforms use footprint maxima for clearance. A terrain trace
+	// at the centre must instead match terrain AT THAT POINT: a valid sloped
+	// footprint can have a maximum more than the collision tolerance above it.
+	const double BaseCenterHeight = HeightAt(Root, Center, RadiusCm, Best.BaseUp);
+	const double PadCenterHeight = HeightAt(Root, Center, RadiusCm, Best.PadUp);
 	OutResult.bCollisionReady = bCollisionMeshReady
 		&& Root->WorldScapeLodInGeneration.Num() == 0
 		&& TraceMatchesHeight(HomeBody->GetWorld(), HomeBody, Surface, Center,
-			RadiusCm, Best.BaseUp, Best.Base.MaxHeightCm, CollisionToleranceCm)
+			RadiusCm, Best.BaseUp, BaseCenterHeight, CollisionToleranceCm)
 		&& TraceMatchesHeight(HomeBody->GetWorld(), HomeBody, Surface, Center,
-			RadiusCm, Best.PadUp, Best.Pad.MaxHeightCm, CollisionToleranceCm)
+			RadiusCm, Best.PadUp, PadCenterHeight, CollisionToleranceCm)
 		&& TraceMatchesHeight(HomeBody->GetWorld(), HomeBody, Surface, Center,
 			RadiusCm, RouteMidUp, RouteMidHeight, CollisionToleranceCm);
+	if (!OutResult.bCollisionReady && CVarPlacementTraceDiagnostics.GetValueOnGameThread() != 0)
+	{
+		UE_LOG(LogAPSPlanetSurfacePlacement, Display,
+			TEXT("[APS.Placement.Collision] root=%s generate=%d transit=%d patches=%d meshReady=%d workers=%d anchors=%d basePeakAboveCenterCm=%.3f padPeakAboveCenterCm=%.3f toleranceCm=%.3f"),
+			*Root->GetPathName(), Root->bGenerateCollision, Root->ActorHasTag(TEXT("APS.Surface.Transit")),
+			Root->CollisionLods.Num(), bCollisionMeshReady, Root->WorldScapeLodInGeneration.Num(), Root->CollisionDependantActor.Num(),
+			Best.Base.MaxHeightCm - BaseCenterHeight, Best.Pad.MaxHeightCm - PadCenterHeight, CollisionToleranceCm);
+	}
 	OutResult.bFoliageClearanceApplied = false;
 	OutResult.bReadyForMaterialization = OutResult.bTerrainResolved
 		&& OutResult.bDry && OutResult.bSlopeValid && OutResult.bWalkableRoute
@@ -690,7 +735,9 @@ bool UAPSPlanetSurfacePlacementResolver::RequestPlacementAnchors(
 			ETeleportType::TeleportPhysics);
 		Root->CollisionDependantActor.AddUnique(Anchor);
 	}
-	Root->bGenerateCollision = true;
+	// Keep placement anchors available for the return, but do not fight the
+	// distant transit tier by recreating its collision patches every refresh.
+	Root->bGenerateCollision = !Root->ActorHasTag(TEXT("APS.Surface.Transit"));
 	Root->SetActorTickEnabled(true);
 	return true;
 }

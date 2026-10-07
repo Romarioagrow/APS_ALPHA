@@ -1,9 +1,24 @@
 #include "SAPSMainMenuRoot.h"
+#include "Widgets/Layout/SGridPanel.h"
+#include "APS_ALPHA/Core/Audio/APSAudioSubsystem.h"
+#include "APS_ALPHA/UI/Settings/SAPSAudioSettings.h"
+#include "APS_ALPHA/UI/Settings/SAPSSettingsPage.h"
+#include "APS_ALPHA/UI/Settings/APSAudioSettingsBridge.h"
+#include "Engine/World.h"
+#include "APS_ALPHA/UI/Style/APSUINumber.h"
 #include "SAPSChamferedOverlay.h"
 
 #include "APS_ALPHA/Core/Controllers/MainMenuController.h"
+#include "APS_ALPHA/Core/Instances/MainGameplayInstance.h"
 #include "APS_ALPHA/UI/MainMenu/APSStartAssetFilter.h"
 #include "APS_ALPHA/UI/MainMenu/APSUIThumbnails.h"
+#include "APS_ALPHA/UI/MainMenu/SAPSWorldSchemePreview.h"
+#include "APS_ALPHA/UI/Style/APSMenuChrome.h"
+#include "APS_ALPHA/UI/Style/APSUITheme.h"
+#include "Brushes/SlateColorBrush.h"
+#include "Brushes/SlateImageBrush.h"
+#include "Containers/Ticker.h"
+#include "UnrealClient.h"
 #include "Engine/SkeletalMesh.h"
 #include "Engine/StaticMesh.h"
 #include "APS_ALPHA/Core/Loading/APSAuthoredLevelLaunchSubsystem.h"
@@ -23,6 +38,7 @@
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Blueprint/BlueprintSupport.h"
 #include "Engine/Blueprint.h"
+#include "Engine/Engine.h"
 #include "Engine/Texture2D.h"
 #include "Engine/Font.h"
 #include "Engine/AssetManager.h"
@@ -30,6 +46,7 @@
 #include "Engine/StreamableManager.h"
 #include "Blueprint/UserWidget.h"
 #include "Framework/Application/SlateApplication.h"
+#include "HAL/IConsoleManager.h"
 #include "GameFramework/Pawn.h"
 #include "HAL/FileManager.h"
 #include "Input/Events.h"
@@ -43,10 +60,14 @@
 #include "Textures/SlateShaderResource.h"
 #include "Styling/AppStyle.h"
 #include "Styling/SlateBrush.h"
+#include "Styling/StyleDefaults.h"
+#include "Widgets/Layout/SWrapBox.h"
+#include "Widgets/SNullWidget.h"
 #include "Widgets/Images/SImage.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SSearchBox.h"
 #include "Widgets/Input/SEditableTextBox.h"
+#include "Widgets/Input/SMenuAnchor.h"
 #include "Widgets/Input/SSpinBox.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
@@ -193,8 +214,19 @@ namespace
 					Center + FVector2D(Radius * 0.62f, Radius * 0.70f), Center + FVector2D(-Radius * 0.62f, Radius * 0.70f)}, true);
 				break;
 			case EAPSMenuGlyph::Profile:
-				Circle(Center + FVector2D(0.0f, -Radius * 0.43f), Radius * 0.36f, Radius * 0.36f);
-				Circle(Center + FVector2D(0.0f, Radius * 0.68f), Radius * 0.78f, Radius * 0.62f);
+				{
+					// Head and shoulders spanning -0.76..0.80 of the radius: centred on the box (Rio 03.10: the old
+					// full-ellipse body hung 1.3 radii down and the person sat low in its badge).
+					Circle(Center + FVector2D(0.0f, -Radius * 0.42f), Radius * 0.34f, Radius * 0.34f);
+					TArray<FVector2D> Shoulders;
+					for (int32 Index = 0; Index <= 16; ++Index)
+					{
+						const float Angle = UE_PI + UE_PI * static_cast<float>(Index) / 16.0f;
+						Shoulders.Add(Center + FVector2D(FMath::Cos(Angle) * Radius * 0.74f,
+							Radius * 0.80f + FMath::Sin(Angle) * Radius * 0.62f));
+					}
+					Draw(Shoulders, true);
+				}
 				break;
 			case EAPSMenuGlyph::Settings:
 				Circle(Center, Radius * 0.42f, Radius * 0.42f);
@@ -465,15 +497,19 @@ namespace
 		bool bChamferBottom{true};
 	};
 
-	/** Readability scrim and restrained sensor furniture for the live landing scene. */
-	class SLandingAtmosphere final : public SLeafWidget
+	/** Rio 06.10, the Observatory menu: dark bands fading in from the top and the bottom edge keep the title and the
+	 * button row readable over the galaxy, which stays clear in the middle. */
+	class SObservatoryVeil final : public SLeafWidget
 	{
 	public:
-		SLATE_BEGIN_ARGS(SLandingAtmosphere) {}
+		SLATE_BEGIN_ARGS(SObservatoryVeil) : _LeftShade(false) {}
+			/** NEW WORLD: also a band from the left edge under the page's text. */
+			SLATE_ARGUMENT(bool, LeftShade)
 		SLATE_END_ARGS()
 
-		void Construct(const FArguments&)
+		void Construct(const FArguments& InArgs)
 		{
+			bLeftShade = InArgs._LeftShade;
 			SetVisibility(EVisibility::HitTestInvisible);
 		}
 
@@ -491,374 +527,222 @@ namespace
 			{
 				return LayerId;
 			}
-
-			// Piecewise strips create a genuine left-to-right scrim without adding a
-			// heavy opaque panel between the player and the real 3D scene.
-			constexpr int32 ScrimBands = 18;
-			const float ScrimWidth = Size.X * 0.43f;
-			for (int32 Band = 0; Band < ScrimBands; ++Band)
+			// Piecewise strips fade from the edge inwards without an opaque panel between the player and the scene.
+			constexpr int32 Bands = 14;
+			// Rio 06.10: Classic keeps its deep teal; the other themes darken with their own darkest tone.
+			const FLinearColor VeilTone = APSUITheme::Current() == EAPSUITheme::Classic
+				? FLinearColor(0.002f, 0.012f, 0.020f, 1.0f) : APSUITheme::Palette().InsetFill.CopyWithNewOpacity(1.0f);
+			const auto Veil = [&](const double Height, const float MaxAlpha, const bool bFromBottom)
 			{
-				const float T0 = static_cast<float>(Band) / ScrimBands;
-				const float T1 = static_cast<float>(Band + 1) / ScrimBands;
-				const float Alpha = FMath::Square(1.0f - T0) * 0.72f;
-				FSlateDrawElement::MakeBox(OutDrawElements, LayerId,
-					Geometry.ToPaintGeometry(
-						FVector2D(ScrimWidth * (T1 - T0) + 1.0f, Size.Y),
-						FSlateLayoutTransform(FVector2D(ScrimWidth * T0, 0.0f))),
-					FAppStyle::GetBrush("WhiteBrush"), ESlateDrawEffect::None,
-					FLinearColor(0.002f, 0.012f, 0.020f, Alpha));
-			}
-
-			// Match the camera's 47% scene anchor. The rings sit in the free space to
-			// the right of the navigation rail, while a faint datum visually connects
-			// both parts of the composition instead of leaving a detached reticle.
-			const double HeroAnchorX = FMath::Max(0.47, 0.92 * Size.Y / Size.X + 0.035);
-			const FVector2D HeroCenter(Size.X * HeroAnchorX, Size.Y * 0.50f);
-			const float Radius = FMath::Min(Size.X, Size.Y) * 0.275f;
-			const FLinearColor SensorGlow(0.08f, 0.54f, 0.66f, 0.055f);
-			const FLinearColor SensorLine(0.20f, 0.76f, 0.88f, 0.18f);
-			const FLinearColor SensorAccent(0.32f, 0.86f, 0.96f, 0.27f);
-			const auto DrawLine = [&](const TArray<FVector2D>& Points,
-				const FLinearColor& Color, const float Width = 1.0f)
-			{
-				FSlateDrawElement::MakeLines(OutDrawElements, LayerId + 1,
-					Geometry.ToPaintGeometry(), Points, ESlateDrawEffect::None,
-					Color, true, Width);
-			};
-			const auto DrawEllipse = [&](const float RadiusX, const float RadiusY,
-				const FLinearColor& Color, const float Width)
-			{
-				TArray<FVector2D> Points;
-				Points.Reserve(65);
-				for (int32 Index = 0; Index <= 64; ++Index)
+				for (int32 Band = 0; Band < Bands; ++Band)
 				{
-					const float Angle = UE_TWO_PI * static_cast<float>(Index) / 64.0f;
-					Points.Add(HeroCenter + FVector2D(
-						FMath::Cos(Angle) * RadiusX, FMath::Sin(Angle) * RadiusY));
+					const double T0 = static_cast<double>(Band) / Bands;
+					const double T1 = static_cast<double>(Band + 1) / Bands;
+					const float Alpha = FMath::Square(1.0f - static_cast<float>(T0)) * MaxAlpha;
+					const double Top = bFromBottom ? Size.Y - Height * T1 : Height * T0;
+					FSlateDrawElement::MakeBox(OutDrawElements, LayerId,
+						Geometry.ToPaintGeometry(FVector2D(Size.X, Height * (T1 - T0) + 1.0),
+							FSlateLayoutTransform(FVector2D(0.0, Top))),
+						FAppStyle::GetBrush("WhiteBrush"), ESlateDrawEffect::None,
+						VeilTone.CopyWithNewOpacity(Alpha));
 				}
-				DrawLine(Points, SensorGlow, Width + 1.6f);
-				DrawLine(Points, Color, Width);
 			};
-			DrawEllipse(Radius, Radius * 0.52f, SensorLine, 0.95f);
-			DrawEllipse(Radius * 0.76f, Radius * 0.38f, SensorLine, 0.85f);
-			DrawEllipse(Radius * 0.51f, Radius * 0.245f, SensorAccent, 0.75f);
-
-			// A segmented datum starts just beyond the button rail and gains energy
-			// toward the orbital graphic. It makes the scene furniture feel like a
-			// continuation of the menu grid while keeping the gap airy and readable.
-			const float RailEdgeX = Size.X * 0.205f;
-			const float OrbitLeftX = HeroCenter.X - Radius * 1.08f;
-			if (OrbitLeftX > RailEdgeX + 48.0f)
+			Veil(Size.Y * 0.24, 0.55f, false);
+			Veil(Size.Y * 0.30, 0.70f, true);
+			if (bLeftShade)
 			{
-				constexpr int32 DatumSegments = 11;
-				const float DatumSpan = OrbitLeftX - RailEdgeX;
-				for (int32 Segment = 0; Segment < DatumSegments; ++Segment)
+				const double Width = Size.X * 0.50;
+				for (int32 Band = 0; Band < Bands; ++Band)
 				{
-					const float T0 = static_cast<float>(Segment) / DatumSegments;
-					const float T1 = FMath::Min(T0 + 0.058f, 1.0f);
-					const float Alpha = FMath::Lerp(0.035f, 0.145f, T0);
-					DrawLine({FVector2D(RailEdgeX + DatumSpan * T0, HeroCenter.Y),
-						FVector2D(RailEdgeX + DatumSpan * T1, HeroCenter.Y)},
-						FLinearColor(0.20f, 0.76f, 0.88f, Alpha), 0.75f);
+					const double T0 = static_cast<double>(Band) / Bands;
+					const double T1 = static_cast<double>(Band + 1) / Bands;
+					const float Alpha = FMath::Square(1.0f - static_cast<float>(T0)) * 0.78f;
+					FSlateDrawElement::MakeBox(OutDrawElements, LayerId,
+						Geometry.ToPaintGeometry(FVector2D(Width * (T1 - T0) + 1.0, Size.Y),
+							FSlateLayoutTransform(FVector2D(Width * T0, 0.0))),
+						FAppStyle::GetBrush("WhiteBrush"), ESlateDrawEffect::None,
+						VeilTone.CopyWithNewOpacity(Alpha));
 				}
-				DrawLine({FVector2D(RailEdgeX, HeroCenter.Y - 7.0f),
-					FVector2D(RailEdgeX, HeroCenter.Y + 7.0f)}, SensorLine, 0.8f);
 			}
-
-			DrawLine({HeroCenter - FVector2D(Radius * 1.18f, 0.0f),
-				HeroCenter - FVector2D(Radius * 0.92f, 0.0f)}, SensorAccent, 1.0f);
-			DrawLine({HeroCenter + FVector2D(Radius * 0.92f, 0.0f),
-				HeroCenter + FVector2D(Radius * 1.18f, 0.0f)}, SensorAccent, 1.0f);
-			DrawLine({HeroCenter - FVector2D(0.0f, Radius * 0.74f),
-				HeroCenter - FVector2D(0.0f, Radius * 0.57f)}, SensorAccent, 1.0f);
-			DrawLine({HeroCenter + FVector2D(0.0f, Radius * 0.57f),
-				HeroCenter + FVector2D(0.0f, Radius * 0.74f)}, SensorAccent, 1.0f);
-			return LayerId + 1;
+			return LayerId;
 		}
+
+	private:
+		bool bLeftShade{false};
 	};
 
-	/** Animated, code-native mission diagram used by the Choose Your Path cards.
-	 * It deliberately has no texture/resource dependency: the card remains crisp
-	 * at every resolution and its meaning is carried by geometry, motion and data
-	 * rather than by an unrelated screenshot. */
-	class SPathCardVisual final : public SLeafWidget
+	/**
+	 * Rio 06.10, NEW WORLD's picture of the picked path ("instead of this circle we should render something nice"):
+	 * CIVILIZATION is a home system with its planets on their orbits and the home world ringed; SPACE is a dense star
+	 * cluster turning slowly. Code-drawn, about six hundred boxes and lines at 30 frames a second, no textures.
+	 */
+	class SNewWorldVisual final : public SLeafWidget
 	{
 	public:
-		SLATE_BEGIN_ARGS(SPathCardVisual) {}
-			SLATE_ARGUMENT(EAPSPathVisual, Visual)
-			SLATE_ATTRIBUTE(FLinearColor, Accent)
-			SLATE_ATTRIBUTE(bool, Hovered)
-			SLATE_ARGUMENT(bool, Enabled)
+		SLATE_BEGIN_ARGS(SNewWorldVisual) {}
+			SLATE_ATTRIBUTE(EAPSNewWorldPath, Path)
 		SLATE_END_ARGS()
 
 		void Construct(const FArguments& InArgs)
 		{
-			Visual = InArgs._Visual;
-			Accent = InArgs._Accent;
-			Hovered = InArgs._Hovered;
-			bEnabled = InArgs._Enabled;
+			Path = InArgs._Path;
 			SetVisibility(EVisibility::HitTestInvisible);
-			RegisterActiveTimer(1.0f / 30.0f,
-				FWidgetActiveTimerDelegate::CreateSP(this, &SPathCardVisual::Animate));
+			// The cluster's stars: a fixed seed, a soft gaussian ball, a few warm and a few blue.
+			FRandomStream Stream(20261006);
+			const auto Gauss = [&Stream]()
+			{
+				const float U = FMath::Max(Stream.GetFraction(), 1.0e-4f);
+				return FMath::Sqrt(-2.0f * FMath::Loge(U)) * FMath::Cos(UE_TWO_PI * Stream.GetFraction());
+			};
+			for (int32 Index = 0; Index < 520; ++Index)
+			{
+				ClusterStars.Add(FVector3f(Gauss(), Gauss(), Gauss()) * 0.33f);
+				const float Kind = Stream.GetFraction();
+				ClusterColours.Add(Kind < 0.18f ? FLinearColor(1.0f, 0.72f, 0.52f) : Kind < 0.45f ? FLinearColor(0.66f, 0.80f, 1.0f)
+					: FLinearColor(0.93f, 0.96f, 1.0f));
+				ClusterSizes.Add(Stream.GetFraction() < 0.92f ? 1.6f : 2.8f);
+			}
+			RegisterActiveTimer(1.0f / 30.0f, FWidgetActiveTimerDelegate::CreateSP(this, &SNewWorldVisual::Animate));
 		}
 
 		virtual FVector2D ComputeDesiredSize(float) const override
 		{
-			return FVector2D::ZeroVector;
+			return FVector2D(480.0f, 320.0f);
 		}
 
-		virtual int32 OnPaint(const FPaintArgs&, const FGeometry& Geometry,
-			const FSlateRect&, FSlateWindowElementList& OutDrawElements, int32 LayerId,
-			const FWidgetStyle&, bool) const override
+		virtual int32 OnPaint(const FPaintArgs&, const FGeometry& Geometry, const FSlateRect&,
+			FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool) const override
 		{
 			const FVector2D Size = Geometry.GetLocalSize();
-			if (Size.X < 12.0f || Size.Y < 12.0f)
+			if (Size.X < 40.0f || Size.Y < 40.0f)
 			{
 				return LayerId;
 			}
-
-			const bool bCardHovered = bEnabled && Hovered.Get(false);
-			FLinearColor Main = Accent.Get(FLinearColor(0.12f, 0.82f, 1.0f));
-			if (!bEnabled)
+			static const FSlateRoundedBoxBrush Disc(FLinearColor::White);
+			const FLinearColor Tint = InWidgetStyle.GetColorAndOpacityTint();
+			const float Line = Geometry.GetAccumulatedLayoutTransform().GetScale();
+			const FVector2D Centre = Size * 0.5;
+			// The drawing keeps a 1.6:1 frame whatever the slot's shape.
+			const float Unit = static_cast<float>(FMath::Min(Size.X / 1.6, Size.Y));
+			const bool bClassicTheme = APSUITheme::Current() == EAPSUITheme::Classic;
+			const FLinearColor Cyan = bClassicTheme ? FLinearColor(0.055f, 0.67f, 0.84f, 1.0f) : APSUITheme::Palette().Highlight;
+			const FLinearColor Amber = bClassicTheme ? FLinearColor(0.89f, 0.46f, 0.012f, 1.0f) : APSUITheme::Palette().Action;
+			const auto DiscAt = [&](const FVector2D& At, const float Radius, const FLinearColor& Colour, const int32 Layer)
 			{
-				Main = FLinearColor(0.30f, 0.40f, 0.46f, 1.0f);
-			}
-			const float Energy = bCardHovered ? 1.0f : 0.48f;
-			const float Pulse = 0.5f + 0.5f * FMath::Sin(AnimationSeconds * (bCardHovered ? 2.8f : 1.35f));
-			const FVector2D Center(Size.X * 0.5f, Size.Y * 0.43f);
-			const float Unit = FMath::Min(Size.X, Size.Y);
-
-			const auto DrawLine = [&](const TArray<FVector2D>& Points, const FLinearColor& Color,
-				float Width = 1.0f, int32 LayerOffset = 0, bool bAntialias = true)
-			{
-				if (Points.Num() >= 2)
-				{
-					FSlateDrawElement::MakeLines(OutDrawElements, LayerId + LayerOffset,
-						Geometry.ToPaintGeometry(), Points, ESlateDrawEffect::None,
-						Color, bAntialias, Width);
-				}
+				FSlateDrawElement::MakeBox(OutDrawElements, Layer, Geometry.ToPaintGeometry(FVector2D(Radius * 2.0f),
+					FSlateLayoutTransform(At - FVector2D(Radius))), &Disc, ESlateDrawEffect::None, Colour * Tint);
 			};
-			const auto DrawCircle = [&](const FVector2D& C, float RadiusX, float RadiusY,
-				const FLinearColor& Color, float Width = 1.0f, float Rotation = 0.0f, int32 Segments = 48)
+			const auto Ellipse = [&](const FVector2D& At, const float RadiusX, const float RadiusY, const float Rotation,
+				const FLinearColor& Colour, const bool bDashed, const int32 Layer)
 			{
-				TArray<FVector2D> Points;
-				Points.Reserve(Segments + 1);
+				constexpr int32 Steps = 96;
 				const float CosR = FMath::Cos(Rotation);
 				const float SinR = FMath::Sin(Rotation);
-				for (int32 Index = 0; Index <= Segments; ++Index)
+				const auto Point = [&](const int32 Step)
 				{
-					const float Angle = UE_TWO_PI * static_cast<float>(Index) / Segments;
+					const float Angle = UE_TWO_PI * static_cast<float>(Step) / Steps;
 					const FVector2D P(FMath::Cos(Angle) * RadiusX, FMath::Sin(Angle) * RadiusY);
-					Points.Add(C + FVector2D(P.X * CosR - P.Y * SinR, P.X * SinR + P.Y * CosR));
-				}
-				DrawLine(Points, Color, Width, 2);
-			};
-			const auto DrawDot = [&](const FVector2D& P, float Radius, const FLinearColor& Color,
-				int32 LayerOffset = 3)
-			{
-				FSlateDrawElement::MakeBox(OutDrawElements, LayerId + LayerOffset,
-					Geometry.ToPaintGeometry(FVector2D(Radius * 2.0f),
-						FSlateLayoutTransform(P - FVector2D(Radius))),
-					FAppStyle::GetBrush("WhiteBrush"), ESlateDrawEffect::None, Color);
-			};
-			const auto DrawBracket = [&](const FVector2D& C, float Radius, const FLinearColor& Color)
-			{
-				const float Arm = Radius * 0.42f;
-				for (int32 XSign : {-1, 1})
+					return At + FVector2D(P.X * CosR - P.Y * SinR, P.X * SinR + P.Y * CosR);
+				};
+				if (bDashed)
 				{
-					for (int32 YSign : {-1, 1})
+					for (int32 Step = 0; Step < Steps; Step += 2)
 					{
-						const FVector2D Corner = C + FVector2D(XSign * Radius, YSign * Radius);
-						DrawLine({Corner, Corner - FVector2D(XSign * Arm, 0.0f)}, Color, 1.25f, 3);
-						DrawLine({Corner, Corner - FVector2D(0.0f, YSign * Arm)}, Color, 1.25f, 3);
+						FSlateDrawElement::MakeLines(OutDrawElements, Layer, Geometry.ToPaintGeometry(),
+							TArray<FVector2D>{Point(Step), Point(Step + 1)}, ESlateDrawEffect::None, Colour * Tint, true, Line);
 					}
+					return;
 				}
+				TArray<FVector2D> Points;
+				Points.Reserve(Steps + 1);
+				for (int32 Step = 0; Step <= Steps; ++Step)
+				{
+					Points.Add(Point(Step));
+				}
+				FSlateDrawElement::MakeLines(OutDrawElements, Layer, Geometry.ToPaintGeometry(), Points,
+					ESlateDrawEffect::None, Colour * Tint, true, Line);
 			};
 
-			// Deep technical plate and sparse coordinate grid.  The alternating bands
-			// approximate a soft vignette without a bitmap or post-process material.
-			for (int32 Band = 0; Band < 6; ++Band)
+			if (Path.Get(EAPSNewWorldPath::Civilization) == EAPSNewWorldPath::Space)
 			{
-				const float Alpha = 0.80f - static_cast<float>(Band) * 0.075f;
-				const float Inset = static_cast<float>(Band) * 7.0f;
-				if (Size.X <= Inset * 2.0f + 1.0f || Size.Y <= Inset * 2.0f + 1.0f)
+				// A soft core, then the stars turning about the vertical axis, nearer ones a little larger.
+				DiscAt(Centre, Unit * 0.30f, FLinearColor(1.0f, 0.95f, 0.88f, 0.035f), LayerId);
+				DiscAt(Centre, Unit * 0.17f, FLinearColor(1.0f, 0.95f, 0.88f, 0.07f), LayerId);
+				DiscAt(Centre, Unit * 0.07f, FLinearColor(1.0f, 0.97f, 0.92f, 0.14f), LayerId);
+				const float Turn = Seconds * 0.09f;
+				const float CosT = FMath::Cos(Turn);
+				const float SinT = FMath::Sin(Turn);
+				constexpr float Tilt = 0.35f;
+				for (int32 Index = 0; Index < ClusterStars.Num(); ++Index)
 				{
-					continue;
+					const FVector3f& Star = ClusterStars[Index];
+					const float X = Star.X * CosT + Star.Z * SinT;
+					const float Z = -Star.X * SinT + Star.Z * CosT;
+					const float Y = Star.Y * FMath::Cos(Tilt) - Z * FMath::Sin(Tilt);
+					const float Depth = Z * FMath::Cos(Tilt) + Star.Y * FMath::Sin(Tilt);
+					const float Radius = ClusterSizes[Index] * FMath::Clamp(1.0f + Depth * 0.6f, 0.6f, 1.5f) * 0.5f;
+					DiscAt(Centre + FVector2D(X, Y) * Unit, Radius, ClusterColours[Index].CopyWithNewOpacity(0.85f), LayerId + 1);
 				}
-				FSlateDrawElement::MakeBox(OutDrawElements, LayerId,
-					Geometry.ToPaintGeometry(Size - FVector2D(Inset * 2.0f),
-						FSlateLayoutTransform(FVector2D(Inset))),
-					FAppStyle::GetBrush("WhiteBrush"), ESlateDrawEffect::None,
-					FLinearColor(0.001f, 0.009f + 0.002f * Band, 0.018f + 0.003f * Band, Alpha));
-			}
-			const FLinearColor Grid(Main.R, Main.G, Main.B, 0.030f + (bCardHovered ? 0.020f : 0.0f));
-			for (float X = 24.0f; X < Size.X; X += 36.0f)
-			{
-				DrawLine({FVector2D(X, 0.0f), FVector2D(X, Size.Y)}, Grid, 0.55f, 1, false);
-			}
-			for (float Y = 20.0f; Y < Size.Y; Y += 32.0f)
-			{
-				DrawLine({FVector2D(0.0f, Y), FVector2D(Size.X, Y)}, Grid, 0.55f, 1, false);
-			}
-
-			const FLinearColor Trace(Main.R, Main.G, Main.B, 0.34f + Energy * 0.36f);
-			const FLinearColor Soft(Main.R, Main.G, Main.B, 0.10f + Energy * 0.13f);
-			const FLinearColor Bright(
-				FMath::Lerp(Main.R, 1.0f, 0.34f), FMath::Lerp(Main.G, 1.0f, 0.34f),
-				FMath::Lerp(Main.B, 1.0f, 0.34f), 0.74f + 0.22f * Pulse);
-
-			switch (Visual)
-			{
-			case EAPSPathVisual::LiveSystem:
+				// Corner brackets frame the cluster, as the map marks a target.
+				const float Half = Unit * 0.46f;
+				const float Arm = Unit * 0.07f;
+				for (const FVector2D Corner : {FVector2D(-1.0, -1.0), FVector2D(1.0, -1.0), FVector2D(-1.0, 1.0), FVector2D(1.0, 1.0)})
 				{
-					const float Radius = Unit * 0.145f;
-					DrawCircle(Center, Radius * 0.45f, Radius * 0.45f, Soft, 7.0f);
-					DrawCircle(Center, Radius * 0.28f, Radius * 0.28f, Bright, 2.0f);
-					DrawDot(Center, Radius * 0.17f, Bright);
-					for (int32 Orbit = 1; Orbit <= 5; ++Orbit)
-					{
-						const float OrbitRadius = Radius * (0.80f + Orbit * 0.47f);
-						DrawCircle(Center, OrbitRadius, OrbitRadius * 0.38f, Soft, Orbit == 3 ? 1.2f : 0.75f, -0.08f);
-						const float Angle = AnimationSeconds * (0.23f + Orbit * 0.045f) + Orbit * 1.27f;
-						const FVector2D P = Center + FVector2D(FMath::Cos(Angle) * OrbitRadius,
-							FMath::Sin(Angle) * OrbitRadius * 0.38f);
-						DrawDot(P, Orbit == 3 ? 3.2f : 1.8f, Orbit == 3 ? Bright : Trace);
-						if (Orbit == 3) DrawBracket(P, 9.0f + 2.0f * Pulse, Bright);
-					}
-					DrawLine({Center + FVector2D(-Radius * 3.4f, 0.0f), Center + FVector2D(Radius * 3.4f, 0.0f)}, Soft, 0.65f, 1);
-					DrawLine({Center + FVector2D(0.0f, -Radius * 1.65f), Center + FVector2D(0.0f, Radius * 1.65f)}, Soft, 0.65f, 1);
+					const FVector2D At = Centre + Corner * Half;
+					FSlateDrawElement::MakeLines(OutDrawElements, LayerId + 2, Geometry.ToPaintGeometry(),
+						TArray<FVector2D>{At - FVector2D(Corner.X * Arm, 0.0), At, At - FVector2D(0.0, Corner.Y * Arm)},
+						ESlateDrawEffect::None, Amber * Tint, true, 2.0f * Line);
 				}
-				break;
-			case EAPSPathVisual::WorldArchive:
-				{
-					const float Radius = Unit * 0.23f;
-					const FVector2D C = Center + FVector2D(0.0f, Unit * 0.015f);
-					DrawCircle(C, Radius * 1.08f + Pulse * 2.0f, Radius * 1.08f + Pulse * 2.0f, Soft, 3.0f);
-					DrawCircle(C, Radius, Radius, Trace, 1.6f);
-					for (int32 Latitude = -2; Latitude <= 2; ++Latitude)
-					{
-						const float Y = Latitude * Radius * 0.30f;
-						const float Width = FMath::Sqrt(FMath::Max(0.0f, Radius * Radius - Y * Y));
-						DrawCircle(C + FVector2D(0.0f, Y), Width, Radius * 0.085f, Soft, 0.75f);
-					}
-					DrawCircle(C, Radius * 0.42f, Radius, Soft, 0.9f);
-					DrawCircle(C, Radius * 1.48f, Radius * 0.28f, Trace, 1.0f, -0.28f);
-					const float MoonAngle = AnimationSeconds * 0.34f;
-					DrawDot(C + FVector2D(FMath::Cos(MoonAngle) * Radius * 1.48f,
-						FMath::Sin(MoonAngle) * Radius * 0.28f), 2.8f, Bright);
-					DrawBracket(C, Radius * 1.24f, FLinearColor(Main.R, Main.G, Main.B, 0.42f));
-				}
-				break;
-			case EAPSPathVisual::CivilizationNetwork:
-				{
-					const float Radius = Unit * 0.25f;
-					DrawCircle(Center, Radius, Radius, Soft, 1.0f);
-					DrawCircle(Center, Radius * 0.76f, Radius * 0.24f, Soft, 0.8f);
-					DrawCircle(Center, Radius * 0.42f, Radius, Soft, 0.8f);
-					TArray<FVector2D> Nodes;
-					for (int32 Index = 0; Index < 9; ++Index)
-					{
-						const float Angle = Index * 2.399963f + 0.14f * FMath::Sin(AnimationSeconds * 0.45f + Index);
-						const float R = Radius * (0.24f + 0.072f * Index);
-						Nodes.Add(Center + FVector2D(FMath::Cos(Angle) * R, FMath::Sin(Angle) * R * 0.74f));
-					}
-					for (int32 Index = 0; Index < Nodes.Num(); ++Index)
-					{
-						DrawLine({Nodes[Index], Nodes[(Index + 3) % Nodes.Num()]}, Soft, 0.8f, 2);
-						DrawDot(Nodes[Index], Index % 3 == 0 ? 3.0f : 1.8f,
-							Index == FMath::FloorToInt(AnimationSeconds * 1.4f) % Nodes.Num() ? Bright : Trace);
-					}
-					DrawDot(Center, 4.0f + Pulse * 1.2f, Bright);
-				}
-				break;
-			case EAPSPathVisual::GalaxySynthesis:
-				{
-					const float Radius = Unit * 0.28f;
-					DrawCircle(Center, Radius * 1.15f, Radius * 1.15f, Soft, 0.8f);
-					for (int32 Arm = 0; Arm < 3; ++Arm)
-					{
-						TArray<FVector2D> Spiral;
-						for (int32 Index = 0; Index < 42; ++Index)
-						{
-							const float Alpha = static_cast<float>(Index) / 41.0f;
-							const float Angle = Arm * UE_TWO_PI / 3.0f + Alpha * UE_TWO_PI * 1.65f + AnimationSeconds * 0.055f;
-							Spiral.Add(Center + FVector2D(FMath::Cos(Angle), FMath::Sin(Angle) * 0.55f) * Radius * Alpha);
-							if (Index > 8 && Index % 7 == 0)
-							{
-								DrawDot(Spiral.Last(), 1.0f + (Index % 3) * 0.45f, Index % 2 ? Trace : Bright);
-							}
-						}
-						DrawLine(Spiral, Trace, 1.1f, 2);
-					}
-					DrawCircle(Center, Radius * 0.13f, Radius * 0.09f, Bright, 4.0f);
-					DrawDot(Center, 3.0f + Pulse * 1.5f, Bright);
-				}
-				break;
-			case EAPSPathVisual::PlanetLaboratory:
-				{
-					const float Radius = Unit * 0.25f;
-					DrawCircle(Center, Radius + Pulse * 1.5f, Radius + Pulse * 1.5f, Trace, 1.5f);
-					for (int32 Latitude = -2; Latitude <= 2; ++Latitude)
-					{
-						const float Y = Latitude * Radius * 0.30f;
-						const float Width = FMath::Sqrt(FMath::Max(0.0f, Radius * Radius - Y * Y));
-						DrawCircle(Center + FVector2D(0.0f, Y), Width, Radius * 0.075f, Soft, 0.72f);
-					}
-					for (int32 Longitude = 0; Longitude <= 2; ++Longitude)
-					{
-						DrawCircle(Center, Radius * (0.20f + 0.19f * Longitude), Radius,
-							Soft, 0.72f);
-					}
-					const float ScanY = Center.Y - Radius + FMath::Fmod(AnimationSeconds * Radius * 0.38f, Radius * 2.0f);
-					const float Span = FMath::Sqrt(FMath::Max(0.0f, Radius * Radius - FMath::Square(ScanY - Center.Y)));
-					DrawLine({FVector2D(Center.X - Span, ScanY), FVector2D(Center.X + Span, ScanY)}, Bright, 1.3f, 3);
-					DrawBracket(Center, Radius * 1.22f, Trace);
-				}
-				break;
-			case EAPSPathVisual::StoryArchive:
-				{
-					const float Radius = Unit * 0.23f;
-					TArray<FVector2D> Nodes;
-					for (int32 Index = 0; Index < 8; ++Index)
-					{
-						const float Angle = Index * 0.91f + (Index % 2) * 0.37f;
-						const float R = Radius * (0.35f + 0.08f * Index);
-						Nodes.Add(Center + FVector2D(FMath::Cos(Angle) * R, FMath::Sin(Angle) * R * 0.72f));
-					}
-					for (int32 Index = 1; Index < Nodes.Num(); ++Index)
-					{
-						DrawLine({Nodes[Index - 1], Nodes[Index]}, Soft, 0.85f, 2);
-					}
-					for (const FVector2D& Node : Nodes) DrawDot(Node, 1.7f, Trace);
-					DrawCircle(Center + FVector2D(0.0f, -Radius * 0.13f), Radius * 0.32f, Radius * 0.38f, Trace, 1.2f);
-					DrawLine({Center + FVector2D(-Radius * 0.42f, -Radius * 0.02f), Center + FVector2D(Radius * 0.42f, -Radius * 0.02f),
-						Center + FVector2D(Radius * 0.42f, Radius * 0.52f), Center + FVector2D(-Radius * 0.42f, Radius * 0.52f),
-						Center + FVector2D(-Radius * 0.42f, -Radius * 0.02f)}, Trace, 1.4f, 3);
-				}
-				break;
+				return LayerId + 2;
 			}
 
-			// Persistent reticle makes every tile read as an interactive instrument.
-			DrawLine({FVector2D(18.0f, 18.0f), FVector2D(54.0f, 18.0f)}, Soft, 1.0f, 3);
-			DrawLine({FVector2D(18.0f, 18.0f), FVector2D(18.0f, 34.0f)}, Soft, 1.0f, 3);
-			DrawLine({FVector2D(Size.X - 54.0f, 18.0f), FVector2D(Size.X - 18.0f, 18.0f)}, Soft, 1.0f, 3);
-			DrawLine({FVector2D(Size.X - 18.0f, 18.0f), FVector2D(Size.X - 18.0f, 34.0f)}, Soft, 1.0f, 3);
-			return LayerId + 4;
+			// The home system: three orbits, the outer one dashed, and the star with two faint shells.
+			constexpr float Rotation = -0.14f;
+			const float Orbits[3] = {Unit * 0.30f, Unit * 0.50f, Unit * 0.74f};
+			const float Speeds[3] = {0.34f, 0.2f, 0.11f};
+			const float Phases[3] = {0.6f, 2.5f, 4.3f};
+			const float Sizes[3] = {Unit * 0.017f, Unit * 0.026f, Unit * 0.022f};
+			const FLinearColor Worlds[3] = {FLinearColor(0.55f, 0.75f, 1.0f), FLinearColor(0.36f, 0.86f, 0.5f), FLinearColor(0.94f, 0.76f, 0.56f)};
+			for (int32 Orbit = 0; Orbit < 3; ++Orbit)
+			{
+				Ellipse(Centre, Orbits[Orbit], Orbits[Orbit] * 0.36f, Rotation, Cyan.CopyWithNewOpacity(0.55f - 0.12f * Orbit), Orbit == 2, LayerId);
+			}
+			DiscAt(Centre, Unit * 0.10f, FLinearColor(1.0f, 0.88f, 0.70f, 0.10f), LayerId + 1);
+			DiscAt(Centre, Unit * 0.066f, FLinearColor(1.0f, 0.90f, 0.75f, 0.22f), LayerId + 1);
+			DiscAt(Centre, Unit * 0.042f, FLinearColor(1.0f, 0.96f, 0.88f, 1.0f), LayerId + 2);
+			const float CosR = FMath::Cos(Rotation);
+			const float SinR = FMath::Sin(Rotation);
+			for (int32 Orbit = 0; Orbit < 3; ++Orbit)
+			{
+				const float Angle = Phases[Orbit] + Seconds * Speeds[Orbit];
+				const FVector2D P(FMath::Cos(Angle) * Orbits[Orbit], FMath::Sin(Angle) * Orbits[Orbit] * 0.36f);
+				const FVector2D At = Centre + FVector2D(P.X * CosR - P.Y * SinR, P.X * SinR + P.Y * CosR);
+				DiscAt(At, Sizes[Orbit], Worlds[Orbit], LayerId + 2);
+				if (Orbit == 1)
+				{
+					// The home world: an amber ring and a leader to the caption in the top-left corner.
+					Ellipse(At, Sizes[Orbit] * 1.9f, Sizes[Orbit] * 1.9f, 0.0f, Amber, false, LayerId + 2);
+					const FVector2D Caption(Size.X * 0.06, Size.Y * 0.16);
+					FSlateDrawElement::MakeLines(OutDrawElements, LayerId + 1, Geometry.ToPaintGeometry(),
+						TArray<FVector2D>{Caption, At}, ESlateDrawEffect::None, Amber.CopyWithNewOpacity(0.6f) * Tint, true, Line);
+				}
+			}
+			return LayerId + 2;
 		}
 
 	private:
 		EActiveTimerReturnType Animate(double, float DeltaTime)
 		{
-			AnimationSeconds = FMath::Fmod(AnimationSeconds + DeltaTime, 4096.0f);
+			Seconds = FMath::Fmod(Seconds + DeltaTime, 4096.0f);
 			Invalidate(EInvalidateWidgetReason::Paint);
 			return EActiveTimerReturnType::Continue;
 		}
 
-		EAPSPathVisual Visual{EAPSPathVisual::LiveSystem};
-		TAttribute<FLinearColor> Accent{FLinearColor::White};
-		TAttribute<bool> Hovered{false};
-		bool bEnabled{true};
-		float AnimationSeconds{0.0f};
+		TAttribute<EAPSNewWorldPath> Path;
+		TArray<FVector3f> ClusterStars;
+		TArray<FLinearColor> ClusterColours;
+		TArray<float> ClusterSizes;
+		float Seconds{0.0f};
 	};
 }
 
@@ -871,31 +755,154 @@ namespace APSMenu
 	{
 		return FLinearColor::FromSRGBColor(FColor(R, G, B, A));
 	}
-	const FLinearColor Background = SRGB(2, 7, 11, 20);
-	const FLinearColor Panel = SRGB(8, 32, 42, 242);
-	const FLinearColor PanelSoft = SRGB(6, 19, 26, 232);
-	const FLinearColor Cyan = SRGB(67, 214, 236);
-	const FLinearColor CyanDim = SRGB(27, 83, 96, 178);
-	const FLinearColor Amber = SRGB(242, 181, 29);
-	const FLinearColor White = SRGB(234, 246, 248);
-	const FLinearColor Muted = SRGB(88, 114, 122);
-	const FLinearColor Success = SRGB(100, 214, 166);
-	const FLinearColor CivPanel = SRGB(6, 19, 26, 249);
-	const FLinearColor CivRaised = SRGB(12, 41, 52, 251);
-	const FLinearColor CivControl = SRGB(8, 32, 42, 252);
+	// Rio 06.10: the palette is the active interface theme's (APSUITheme), copied in by ApplyTheme() when the menu
+	// opens and after every theme switch; the values below are Classic, the look until 06.10.
+	static FLinearColor Background = SRGB(2, 7, 11, 20);
+	static FLinearColor Panel = SRGB(8, 32, 42, 242);
+	static FLinearColor PanelSoft = SRGB(6, 19, 26, 232);
+	static FLinearColor Cyan = SRGB(67, 214, 236);
+	static FLinearColor CyanDim = SRGB(27, 83, 96, 178);
+	static FLinearColor Amber = SRGB(242, 181, 29);
+	static FLinearColor White = SRGB(234, 246, 248);
+	static FLinearColor Muted = SRGB(88, 114, 122);
+	static FLinearColor Success = SRGB(100, 214, 166);
+	static FLinearColor CivPanel = SRGB(6, 19, 26, 249);
+	static FLinearColor CivRaised = SRGB(12, 41, 52, 251);
+	static FLinearColor CivControl = SRGB(8, 32, 42, 252);
+	// Rio 03.10 (world browser: "tiny dim grey labels"): the in-game chrome's lighter secondary grey, readable on the
+	// dark panels, and a muted red for the one destructive action.
+	static FLinearColor Readable = SRGB(170, 194, 202);
+	/** Footnotes: dimmer than Readable, still legible (an old card's "System recorded on next save"). */
+	static FLinearColor Quiet = SRGB(124, 150, 158);
+	static FLinearColor Danger = SRGB(222, 108, 92);
+	static FLinearColor DangerBright = SRGB(255, 142, 120);
+	/** Fill of a selected (action-framed) card, chip or toggle. */
+	static FLinearColor ActionFillStrong = FLinearColor(0.42f, 0.19f, 0.01f, 1.0f);
+	/** Fill of an idle highlight-framed chip or toggle. */
+	static FLinearColor ControlFill = FLinearColor(0.015f, 0.09f, 0.12f, 0.96f);
+	/** Brighter quiet frame of a feature panel. */
+	static FLinearColor FrameBright = FLinearColor(0.035f, 0.28f, 0.37f, 0.95f);
+	/** Fill of the full-page shades behind pages (alpha set at the call). */
+	static FLinearColor PageShade = FLinearColor(0.0f, 0.008f, 0.016f, 1.0f);
+	/** Tint of the menu's background image (alpha set at the call). */
+	static FLinearColor ImageTint = FLinearColor(0.14f, 0.26f, 0.36f, 1.0f);
+	// Rio 06.10: the landing chips' and NEW WORLD cards' fills and frames.
+	static FLinearColor ChipRest = SRGB(3, 24, 34, 236);
+	static FLinearColor ChipLit = SRGB(6, 50, 63, 246);
+	static FLinearColor ChipDisabled = SRGB(4, 14, 20, 200);
+	static FLinearColor DisabledFrame = SRGB(40, 58, 64, 160);
+	static FLinearColor CardSelectedFill = SRGB(48, 34, 4, 236);
+	static FLinearColor PlateTint = SRGB(2, 14, 20, 218);
+	static FLinearColor SplashFill = SRGB(2, 6, 10);
+	static FLinearColor ActionBright = SRGB(255, 208, 82);
+	static FLinearColor ActionPeak = SRGB(255, 226, 140);
+	static FLinearColor OnAction = SRGB(4, 18, 26);
+	static FLinearColor OnActionCode = SRGB(90, 61, 0);
+	/** Rio 06.10: the start-up title screen (SAPSMainMenuRoot::TickSplash). */
+	TAutoConsoleVariable<float> CVarSplashTimeout(TEXT("aps.Menu.SplashTimeout"), 8.0f,
+		TEXT("Seconds the start-up title screen waits at most before the main menu opens; 0 skips it."));
 	constexpr float CardPerimeterThickness = 1.0f;
+	/** RECENT: the worlds saved last (Rio 03.10). */
+	constexpr int32 RecentWorldCount = 6;
 	TWeakObjectPtr<UFont> DisplayFont;
 	TWeakObjectPtr<UFont> BodyFont;
-	const FSlateRoundedBoxBrush PanelBrush(Panel, 10.0f, CyanDim, 1.0f);
-	const FSlateRoundedBoxBrush PanelSoftBrush(PanelSoft, 9.0f, CyanDim, 1.0f);
-	const FSlateRoundedBoxBrush InsetBrush(FLinearColor(0.001f, 0.012f, 0.022f, 0.96f), 6.0f, FLinearColor(0.04f, 0.22f, 0.31f, 1.0f), 1.0f);
-	const FSlateRoundedBoxBrush CyanBadgeBrush(FLinearColor(0.01f, 0.07f, 0.10f, 0.98f), 18.0f, Cyan, 1.25f);
-	const FSlateRoundedBoxBrush AmberPanelBrush(FLinearColor(0.11f, 0.045f, 0.002f, 0.96f), 9.0f, Amber, 1.4f);
-	const FSlateRoundedBoxBrush CivControlBrush(CivControl, 6.0f, FLinearColor(0.025f, 0.18f, 0.25f, 0.95f), 1.0f);
-	const FSlateRoundedBoxBrush CivMetricBrush(FLinearColor(0.005f, 0.028f, 0.044f, 0.98f), 6.0f,
+	static FSlateRoundedBoxBrush PanelBrush(Panel, 10.0f, CyanDim, 1.0f);
+	static FSlateRoundedBoxBrush PanelSoftBrush(PanelSoft, 9.0f, CyanDim, 1.0f);
+	static FSlateRoundedBoxBrush InsetBrush(FLinearColor(0.001f, 0.012f, 0.022f, 0.96f), 6.0f, FLinearColor(0.04f, 0.22f, 0.31f, 1.0f), 1.0f);
+	static FSlateRoundedBoxBrush CyanBadgeBrush(FLinearColor(0.01f, 0.07f, 0.10f, 0.98f), 18.0f, Cyan, 1.25f);
+	static FSlateRoundedBoxBrush AmberPanelBrush(FLinearColor(0.11f, 0.045f, 0.002f, 0.96f), 9.0f, Amber, 1.4f);
+	static FSlateRoundedBoxBrush CivControlBrush(CivControl, 6.0f, FLinearColor(0.025f, 0.18f, 0.25f, 0.95f), 1.0f);
+	static FSlateRoundedBoxBrush CivMetricBrush(FLinearColor(0.005f, 0.028f, 0.044f, 0.98f), 6.0f,
 		FLinearColor(0.035f, 0.23f, 0.31f, 0.88f), 1.0f);
-	const FSlateRoundedBoxBrush CivStatusBrush(FLinearColor(0.004f, 0.04f, 0.06f, 0.96f), 5.0f,
+	static FSlateRoundedBoxBrush CivStatusBrush(FLinearColor(0.004f, 0.04f, 0.06f, 0.96f), 5.0f,
 		FLinearColor(0.06f, 0.45f, 0.57f, 0.95f), 1.0f);
+	static uint32 AppliedThemeRevision = 0;
+	/** Rio 06.10: an outline alone in the action colour (a start card's image frame). */
+	static FSlateRoundedBoxBrush OutlineBrush(FLinearColor::Transparent, 6.0f, SRGB(242, 181, 29), 2.0f);
+	/** Rio 06.10: a progress bar's track (the default style's trough and blue fill ignored the palette). */
+	static FSlateColorBrush ProgressTrackBrush(FLinearColor(0.035f, 0.23f, 0.31f, 0.5f));
+
+	/** Rio 06.10: copies the active theme into the palette and brushes above. Brushes are referenced by pointer, so
+	 * what is on screen recolours at once; colours passed by value need the page rebuilt (SAPSMainMenuRoot does). */
+	void ApplyTheme()
+	{
+		if (AppliedThemeRevision == APSUITheme::Revision())
+		{
+			return;
+		}
+		AppliedThemeRevision = APSUITheme::Revision();
+		const FAPSUIThemePalette& P = APSUITheme::Palette();
+		const bool bClassic = APSUITheme::Current() == EAPSUITheme::Classic;
+		Background = APSUITheme::Fade(P.Scrim, 20.0f / 150.0f);
+		Panel = P.Panel;
+		PanelSoft = P.PanelSoft;
+		Cyan = P.Highlight;
+		CyanDim = P.Frame;
+		Amber = P.Action;
+		White = P.Text;
+		Muted = P.TextDim;
+		Success = P.Success;
+		CivPanel = P.PanelSoft.CopyWithNewOpacity(249.0f / 255.0f);
+		CivRaised = P.Raised;
+		CivControl = P.Panel.CopyWithNewOpacity(252.0f / 255.0f);
+		Readable = P.TextSoft;
+		Quiet = P.TextQuiet;
+		Danger = P.Danger;
+		DangerBright = P.DangerBright;
+		ActionFillStrong = bClassic ? FLinearColor(0.42f, 0.19f, 0.01f, 1.0f)
+			: FMath::Lerp(P.ActionFill, P.Action, 0.38f).CopyWithNewOpacity(1.0f);
+		ControlFill = bClassic ? FLinearColor(0.015f, 0.09f, 0.12f, 0.96f) : P.Raised.CopyWithNewOpacity(0.96f);
+		FrameBright = bClassic ? FLinearColor(0.035f, 0.28f, 0.37f, 0.95f)
+			: FMath::Lerp(P.Frame, P.Highlight, 0.18f).CopyWithNewOpacity(0.95f);
+		PageShade = bClassic ? FLinearColor(0.0f, 0.008f, 0.016f, 1.0f) : P.InsetFill.CopyWithNewOpacity(1.0f);
+		ImageTint = bClassic ? FLinearColor(0.14f, 0.26f, 0.36f, 1.0f) : FLinearColor(0.20f, 0.20f, 0.21f, 1.0f);
+		ChipRest = bClassic ? SRGB(3, 24, 34, 236) : FMath::Lerp(P.Panel, P.Raised, 0.3f).CopyWithNewOpacity(236.0f / 255.0f);
+		ChipLit = bClassic ? SRGB(6, 50, 63, 246) : FMath::Lerp(P.Raised, P.Highlight, 0.06f).CopyWithNewOpacity(246.0f / 255.0f);
+		ChipDisabled = bClassic ? SRGB(4, 14, 20, 200) : P.PanelSoft.CopyWithNewOpacity(200.0f / 255.0f);
+		DisabledFrame = bClassic ? SRGB(40, 58, 64, 160) : APSUITheme::Fade(P.Frame, 0.6f);
+		CardSelectedFill = bClassic ? SRGB(48, 34, 4, 236)
+			: FMath::Lerp(P.ActionFill, P.Action, 0.25f).CopyWithNewOpacity(236.0f / 255.0f);
+		PlateTint = bClassic ? SRGB(2, 14, 20, 218) : P.PanelSoft.CopyWithNewOpacity(218.0f / 255.0f);
+		SplashFill = bClassic ? SRGB(2, 6, 10) : P.InsetFill.CopyWithNewOpacity(1.0f);
+		ActionBright = P.ActionBright;
+		ActionPeak = P.ActionPeak;
+		OnAction = P.OnAction;
+		OnActionCode = P.OnActionCode;
+
+		const FLinearColor StatusFill = bClassic ? FLinearColor(0.004f, 0.04f, 0.06f, 0.96f)
+			: FMath::Lerp(P.InsetFill, P.HighlightFill, 0.6f).CopyWithNewOpacity(0.96f);
+		const FLinearColor StatusFrame = bClassic ? FLinearColor(0.06f, 0.45f, 0.57f, 0.95f)
+			: FMath::Lerp(P.InsetFrame, P.Highlight, 0.35f).CopyWithNewOpacity(0.95f);
+		const FLinearColor ControlFrame = bClassic ? FLinearColor(0.025f, 0.18f, 0.25f, 0.95f)
+			: FMath::Lerp(P.InsetFrame, P.Highlight, 0.08f).CopyWithNewOpacity(0.95f);
+		const FLinearColor MetricFill = bClassic ? FLinearColor(0.005f, 0.028f, 0.044f, 0.98f)
+			: FMath::Lerp(P.InsetFill, P.Panel, 0.35f).CopyWithNewOpacity(0.98f);
+		const FLinearColor MetricFrame = bClassic ? FLinearColor(0.035f, 0.23f, 0.31f, 0.88f)
+			: APSUITheme::Fade(P.InsetFrame, 0.88f);
+		PanelBrush = FSlateRoundedBoxBrush(Panel, 10.0f, CyanDim, 1.0f);
+		PanelSoftBrush = FSlateRoundedBoxBrush(PanelSoft, 9.0f, CyanDim, 1.0f);
+		InsetBrush = FSlateRoundedBoxBrush(P.InsetFill, 6.0f, P.InsetFrame, 1.0f);
+		CyanBadgeBrush = FSlateRoundedBoxBrush(P.HighlightFill, 18.0f, Cyan, 1.25f);
+		AmberPanelBrush = FSlateRoundedBoxBrush(P.ActionFill, 9.0f, Amber, 1.4f);
+		CivControlBrush = FSlateRoundedBoxBrush(CivControl, 6.0f, ControlFrame, 1.0f);
+		CivMetricBrush = FSlateRoundedBoxBrush(MetricFill, 6.0f, MetricFrame, 1.0f);
+		CivStatusBrush = FSlateRoundedBoxBrush(StatusFill, 5.0f, StatusFrame, 1.0f);
+		ProgressTrackBrush = FSlateColorBrush(APSUITheme::Fade(CyanDim, 0.7f));
+		OutlineBrush = FSlateRoundedBoxBrush(FLinearColor::Transparent, 6.0f, Amber, 2.0f);
+	}
+
+	/** Rio 06.10: a Classic chrome tone (dark teal fills, teal frames, pale cyan) in the active theme: the same
+	 * luminance in the hue of the theme's panels. Classic returns it unchanged. */
+	FLinearColor Retint(const FLinearColor& ClassicTone)
+	{
+		return APSUITheme::Retint(ClassicTone);
+	}
+
+	/** The same for a Classic amber tone (a selected toggle's tint): the theme's action colour at that luminance. */
+	FLinearColor RetintAction(const FLinearColor& ClassicTone)
+	{
+		return APSUITheme::RetintAction(ClassicTone);
+	}
 
 	TSharedRef<SWidget> ChamferPanel(TSharedRef<SWidget> Content, const FMargin& Padding,
 		const FLinearColor& Accent = CyanDim, float Thickness = 1.0f)
@@ -921,6 +928,11 @@ namespace APSMenu
 
 	FSlateFontInfo Font(const FName Typeface, int32 Size)
 	{
+		// Rio 06.10: Chakra Petch for bold labels and titles, Exo 2 for text (aps.UI.LegacyFonts 1: Orbitron, Roboto).
+		if (!APSUITheme::UsesLegacyFonts())
+		{
+			return Typeface == TEXT("Bold") ? APSUITheme::DisplayFont(Typeface, Size) : APSUITheme::BodyFont(Typeface, Size);
+		}
 		if (Typeface == TEXT("Bold"))
 		{
 			if (UFont* FontObject = DisplayFont.Get())
@@ -929,6 +941,25 @@ namespace APSMenu
 			}
 		}
 		return FCoreStyle::GetDefaultFontStyle(Typeface, Size);
+	}
+
+	/** Rio 03.10 ("the text strictly centred by height and width"): an upper-case label sits by its capitals, not by
+	 * Slate's line box, which holds Orbitron's capitals 0.11 em high (APSChrome::CapsCenterOffset). */
+	TOptional<FSlateRenderTransform> CapsShift(const FName Typeface, const int32 Size)
+	{
+		return APSChrome::CapsCenterShift(Font(Typeface, Size));
+	}
+
+	/** For a label of symbols alone ("<", ">", "+", "-", "v"), which sit lower than capitals. */
+	TOptional<FSlateRenderTransform> SymbolShift(const FName Typeface, const int32 Size)
+	{
+		return APSChrome::SymbolCenterShift(Font(Typeface, Size));
+	}
+
+	/** Button padding for a label in this font: 16 each side and the same air above and below at every size. */
+	FMargin ButtonPadding(const FName Typeface, const int32 Size, const float Horizontal = 16.0f)
+	{
+		return APSChrome::ButtonPadding(Font(Typeface, Size), Horizontal);
 	}
 
 	TSharedRef<SWidget> Badge(const FText& Glyph, const FLinearColor& Accent, float Size = 34.0f)
@@ -943,6 +974,7 @@ namespace APSMenu
 				[
 					SNew(STextBlock).Text(Glyph).Justification(ETextJustify::Center)
 					.Font(Font("Bold", FMath::RoundToInt(Size * 0.34f))).ColorAndOpacity(Accent)
+					.RenderTransform(CapsShift("Bold", FMath::RoundToInt(Size * 0.34f)))
 				]
 			]
 		];
@@ -1006,9 +1038,23 @@ namespace APSMenu
 	FText SaveSizeText(int64 Bytes)
 	{
 		const double MB = static_cast<double>(Bytes) / (1024.0 * 1024.0);
-		return FText::FromString(MB >= 1.0
-			? FString::Printf(TEXT("%.1f MB"), MB)
+		return FText::FromString(MB >= 1024.0 ? FString::Printf(TEXT("%.1f GB"), MB / 1024.0)
+			: MB >= 1.0 ? FString::Printf(TEXT("%.1f MB"), MB)
 			: FString::Printf(TEXT("%.0f KB"), static_cast<double>(Bytes) / 1024.0));
+	}
+
+	/** A modal dialog's action: caps label centred both ways, even padding (Rio 03.10). */
+	TSharedRef<SWidget> DialogButton(const FButtonStyle* Style, const TAttribute<FText>& Label,
+		const TAttribute<FSlateColor>& Color, const FOnClicked& Action, const TAttribute<bool>& Enabled = true,
+		const float MinWidth = 150.0f)
+	{
+		const FSlateFontInfo LabelFont = Font("Bold", 13);
+		return SNew(SBox).MinDesiredWidth(MinWidth)
+		[
+			SNew(SButton).ButtonStyle(Style).ContentPadding(APSChrome::ButtonPadding(LabelFont, 18.0f))
+			.HAlign(HAlign_Center).VAlign(VAlign_Center).IsEnabled(Enabled).OnClicked(Action)
+			[APSChrome::CenteredLabel(Label, LabelFont, Color)]
+		];
 	}
 
 	bool LoadWorldMetadataSidecar(const FString& MetadataPath, FAPSExistingWorldEntry& Entry)
@@ -1019,7 +1065,7 @@ namespace APSMenu
 		}
 
 		FConfigFile Metadata;
-		Metadata.Read(MetadataPath);
+		APSWorldBrowserMetadata::ReadSidecar(MetadataPath, Metadata);
 		int64 Version = 0;
 		if (!Metadata.GetInt64(TEXT("APSWorld"), TEXT("Version"), Version) || Version < 1)
 		{
@@ -1042,6 +1088,8 @@ namespace APSMenu
 		{
 			Entry.InhabitedPlanets = static_cast<int32>(FMath::Clamp<int64>(Value, 0, MAX_int32));
 		}
+		// Version 2 adds the home system the game read from the live hierarchy (Rio 03.10); older records keep false.
+		Entry.bSystemRecorded = APSWorldBrowserMetadata::ReadSystemRecord(Metadata, Entry.System);
 		Entry.bMetadataLoaded = true;
 		return true;
 	}
@@ -1109,30 +1157,557 @@ namespace APSMenu
 		const UEnum* Enum = StaticEnum<T>();
 		return Enum ? Enum->GetDisplayNameTextByValue(static_cast<int64>(Value)).ToString() : TEXT("UNKNOWN");
 	}
+
+	/** Saved/SaveGames holds more than worlds: the MBLS settings panel keeps its audio volumes in
+	 * GameSettings_SaveSlot.sav (BP_SG_GameSettings). World slots read "<Name> Cluster 1630" and never end in
+	 * "_SaveSlot", so such saves are neither listed nor deletable as worlds (Rio 03.10). */
+	bool IsWorldSaveSlot(const FString& SlotName)
+	{
+		return !SlotName.IsEmpty() && !SlotName.EndsWith(TEXT("_SaveSlot"), ESearchCase::IgnoreCase);
+	}
+
+	/** "NO PLANETS", "1 PLANET", "7 PLANETS". */
+	FText PlanetCountText(const int32 Count)
+	{
+		if (Count <= 0)
+		{
+			return LOCTEXT("NoPlanetsCount", "NO PLANETS");
+		}
+		return Count == 1 ? LOCTEXT("OnePlanetCount", "1 PLANET")
+			: FText::Format(LOCTEXT("PlanetsCount", "{0} PLANETS"), APSUINumber::Number(Count));
+	}
+
+	/** The home star's class. Even a version 1 record holds the menu's home star setting, which the generator applies. */
+	FString StarClassOf(const FAPSExistingWorldEntry& Entry)
+	{
+		return APSWorldScheme::StarClassFromLabel(Entry.bSystemRecorded ? Entry.System.StarClassLabel : Entry.StarType);
+	}
+
+	/** "G YELLOW DWARF", "K ORANGE GIANT", "BLACK HOLE". */
+	FText StarText(const FAPSExistingWorldEntry& Entry)
+	{
+		return FText::FromString(APSWorldScheme::DescribeStar(StarClassOf(Entry), Entry.System.StellarType));
+	}
+
+	FText UpperText(const FString& Value)
+	{
+		return FText::FromString(Value.ToUpper());
+	}
+
+	const FAPSWorldPlanetRecord* HomeRecord(const FAPSExistingWorldEntry& Entry)
+	{
+		return Entry.bSystemRecorded && Entry.System.Planets.IsValidIndex(Entry.System.HomePlanetIndex)
+			? &Entry.System.Planets[Entry.System.HomePlanetIndex] : nullptr;
+	}
+
+	/** The card chip (Rio 03.10: "1 PLANETS / G - Yellow" -> "1 PLANET  •  G YELLOW DWARF"); empty until recorded. */
+	FText WorldChipText(const FAPSExistingWorldEntry& Entry)
+	{
+		return Entry.bSystemRecorded
+			? FText::Format(LOCTEXT("WorldChip", "{0}  •  {1}"), PlanetCountText(Entry.TotalPlanets), StarText(Entry))
+			: FText::GetEmpty();
+	}
+
+	/** The card's second line: the home world once recorded, else when its record arrives. */
+	FText WorldCardLine(const FAPSExistingWorldEntry& Entry)
+	{
+		if (!Entry.bMetadataLoaded)
+		{
+			return LOCTEXT("CardLegacy", "Details load on launch");
+		}
+		if (!Entry.bSystemRecorded)
+		{
+			return LOCTEXT("CardUnrecorded", "System recorded on next save");
+		}
+		const FAPSWorldPlanetRecord* Home = HomeRecord(Entry);
+		return FText::Format(LOCTEXT("CardHome", "HOME  •  {0}"), UpperText(Home ? Home->Type : Entry.PlanetType));
+	}
+
+	/** File times are UTC; the player reads his local time ("03 OCT 2026  01:17"). */
+	FText LocalTimeText(const int64 UnixUtc, const TCHAR* Format)
+	{
+		const FTimespan Offset = FTimespan::FromMinutes(FMath::RoundToDouble(
+			(FDateTime::Now() - FDateTime::UtcNow()).GetTotalMinutes()));
+		return FText::FromString((FDateTime::FromUnixTimestamp(UnixUtc) + Offset).ToFormattedString(Format).ToUpper());
+	}
+
+	/** What one world's scheme is drawn from: the recorded system, else only its star and its slot name. */
+	FAPSWorldSchemeInput SchemeInput(const FAPSExistingWorldEntry& Entry)
+	{
+		FAPSWorldSchemeInput Input;
+		Input.Key = Entry.SaveFileName;
+		Input.StarClass = StarClassOf(Entry);
+		Input.bRecorded = Entry.bSystemRecorded;
+		if (Entry.bSystemRecorded)
+		{
+			Input.StellarType = Entry.System.StellarType;
+			Input.StarCount = Entry.System.StarCount;
+			Input.HomeIndex = Entry.System.HomePlanetIndex;
+			for (const FAPSWorldPlanetRecord& Planet : Entry.System.Planets)
+			{
+				FAPSWorldSchemePlanet& Body = Input.Planets.AddDefaulted_GetRef();
+				Body.Type = Planet.Type;
+				Body.Orbit = Planet.OrbitAu;
+				Body.RadiusKm = Planet.RadiusKm;
+				Body.Moons = Planet.Moons;
+				Body.Star = Planet.Star;
+				Body.bInhabited = Planet.bInhabited;
+			}
+		}
+		return Input;
+	}
+
+	/** Rio 03.10 (filters): a field an older record cannot vouch for files the world here, never under a guess. */
+	const TCHAR* const UnrecordedFilterKey = TEXT("UNRECORDED");
+
+	/** The world's option in one filter: a star class, a system type, inhabited or not, the home world's type. */
+	FString WorldFilterKey(const FAPSExistingWorldEntry& Entry, const EAPSWorldFilterKind Kind)
+	{
+		switch (Kind)
+		{
+		case EAPSWorldFilterKind::StarType:
+			{
+				// The star class holds even in a version 1 record: the generator applies the menu's home-star class.
+				if (Entry.bSystemRecorded)
+				{
+					const FString Stellar = Entry.System.StellarType.ToUpper().Replace(TEXT(" "), TEXT(""));
+					if (Stellar.Contains(TEXT("WHITEDWARF"))) return TEXT("WD");
+					if (Stellar.Contains(TEXT("BLACKHOLE"))) return TEXT("BH");
+					if (Stellar.Contains(TEXT("NEUTRON")) || Stellar.Contains(TEXT("PULSAR"))) return TEXT("NS");
+					if (Stellar.Contains(TEXT("PROTO"))) return TEXT("PS");
+				}
+				const FString Class = Entry.bMetadataLoaded ? StarClassOf(Entry) : FString();
+				return Class.IsEmpty() ? FString(UnrecordedFilterKey) : Class;
+			}
+		case EAPSWorldFilterKind::WorldType:
+			{
+				if (!Entry.bSystemRecorded) return UnrecordedFilterKey;
+				// Display names ("Gas Giant  System") and bare enum names ("GasGiantsSystem") alike.
+				const FString Type = Entry.SystemType.ToUpper().Replace(TEXT(" "), TEXT(""));
+				if (Type.Contains(TEXT("MULTI"))) return TEXT("MULTI PLANET");
+				if (Type.Contains(TEXT("SINGLE"))) return TEXT("SINGLE PLANET");
+				if (Type.Contains(TEXT("HABITABLE"))) return TEXT("HABITABLE ZONE");
+				if (Type.Contains(TEXT("GAS"))) return TEXT("GAS GIANTS");
+				if (Type.Contains(TEXT("NOPLANET"))) return TEXT("NO PLANETS");
+				return TEXT("OTHER");
+			}
+		case EAPSWorldFilterKind::Inhabited:
+			// A version 1 count says nothing: every world, colonised or not, recorded its home planet (often again and again).
+			if (!Entry.bSystemRecorded) return UnrecordedFilterKey;
+			return Entry.InhabitedPlanets > 0 ? TEXT("INHABITED") : TEXT("UNINHABITED");
+		default:
+			{
+				if (!Entry.bSystemRecorded) return UnrecordedFilterKey;
+				const FAPSWorldPlanetRecord* Home = HomeRecord(Entry);
+				FString Type = (Home ? Home->Type : Entry.PlanetType).ToUpper().TrimStartAndEnd();
+				Type.RemoveFromEnd(TEXT(" PLANET"));
+				return Type.IsEmpty() ? FString(TEXT("OTHER")) : Type;
+			}
+		}
+	}
+
+	/** Star classes hot to cold, then the remnants; other filters read alphabetically. UNRECORDED always last. */
+	int32 WorldFilterOrder(const EAPSWorldFilterKind Kind, const FString& Key)
+	{
+		static const TCHAR* const StarOrder[] = {TEXT("O"), TEXT("B"), TEXT("A"), TEXT("F"), TEXT("G"), TEXT("K"), TEXT("M"),
+			TEXT("L"), TEXT("T"), TEXT("Y"), TEXT("WD"), TEXT("NS"), TEXT("PS"), TEXT("BH")};
+		static const TCHAR* const TypeOrder[] = {TEXT("MULTI PLANET"), TEXT("SINGLE PLANET"), TEXT("HABITABLE ZONE"),
+			TEXT("GAS GIANTS"), TEXT("NO PLANETS"), TEXT("OTHER")};
+		static const TCHAR* const InhabitedOrder[] = {TEXT("INHABITED"), TEXT("UNINHABITED")};
+		if (Key == UnrecordedFilterKey)
+		{
+			return 1000;
+		}
+		const auto Find = [&Key](const TCHAR* const* Order, const int32 Count)
+		{
+			for (int32 Index = 0; Index < Count; ++Index)
+			{
+				if (Key == Order[Index]) return Index;
+			}
+			return 500;
+		};
+		switch (Kind)
+		{
+		case EAPSWorldFilterKind::StarType: return Find(StarOrder, static_cast<int32>(UE_ARRAY_COUNT(StarOrder)));
+		case EAPSWorldFilterKind::WorldType: return Find(TypeOrder, static_cast<int32>(UE_ARRAY_COUNT(TypeOrder)));
+		case EAPSWorldFilterKind::Inhabited: return Find(InhabitedOrder, static_cast<int32>(UE_ARRAY_COUNT(InhabitedOrder)));
+		default: return 500;
+		}
+	}
+
+	FText WorldFilterOptionLabel(const EAPSWorldFilterKind Kind, const FString& Key)
+	{
+		if (Key.IsEmpty())
+		{
+			return LOCTEXT("FilterAny", "ANY");
+		}
+		if (Key == UnrecordedFilterKey)
+		{
+			return LOCTEXT("FilterUnrecorded", "UNRECORDED");
+		}
+		if (Kind == EAPSWorldFilterKind::StarType)
+		{
+			if (Key == TEXT("O")) return LOCTEXT("FilterStarO", "O BLUE");
+			if (Key == TEXT("B")) return LOCTEXT("FilterStarB", "B BLUE-WHITE");
+			if (Key == TEXT("A")) return LOCTEXT("FilterStarA", "A WHITE");
+			if (Key == TEXT("F")) return LOCTEXT("FilterStarF", "F YELLOW-WHITE");
+			if (Key == TEXT("G")) return LOCTEXT("FilterStarG", "G YELLOW");
+			if (Key == TEXT("K")) return LOCTEXT("FilterStarK", "K ORANGE");
+			if (Key == TEXT("M")) return LOCTEXT("FilterStarM", "M RED");
+			if (Key == TEXT("L") || Key == TEXT("T") || Key == TEXT("Y"))
+			{
+				return FText::Format(LOCTEXT("FilterStarBrown", "{0} BROWN DWARF"), FText::FromString(Key));
+			}
+			if (Key == TEXT("WD")) return LOCTEXT("FilterStarWhiteDwarf", "WHITE DWARF");
+			if (Key == TEXT("NS")) return LOCTEXT("FilterStarNeutron", "NEUTRON STAR");
+			if (Key == TEXT("PS")) return LOCTEXT("FilterStarProto", "PROTOSTAR");
+			if (Key == TEXT("BH")) return LOCTEXT("FilterStarBlackHole", "BLACK HOLE");
+		}
+		return FText::FromString(Key);
+	}
 }
 
 SAPSMainMenuRoot::SAPSMainMenuRoot()
 {
+	APSMenu::ApplyTheme();
+	BuildButtonStyles();
+	ScrollBarStyle = FAppStyle::Get().GetWidgetStyle<FScrollBarStyle>("ScrollBar");
+}
+
+SAPSMainMenuRoot::~SAPSMainMenuRoot()
+{
+	APSUITheme::OnChanged().Remove(ThemeChangedHandle);
+}
+
+void SAPSMainMenuRoot::BuildButtonStyles()
+{
+	// Classic keeps the exact pre-06.10 fills; the other themes derive theirs from the palette.
+	const bool bClassic = APSUITheme::Current() == EAPSUITheme::Classic;
+	const FAPSUIThemePalette& P = APSUITheme::Palette();
+	const auto Pick = [bClassic](const FLinearColor& ClassicColour, const FLinearColor& Themed)
+	{
+		return bClassic ? ClassicColour : Themed;
+	};
+	const FLinearColor PrimaryRest = Pick(APSMenu::SRGB(74, 48, 4, 246), FMath::Lerp(P.ActionFill, P.Action, 0.30f).CopyWithNewOpacity(246.0f / 255.0f));
+	const FLinearColor PrimaryHover = Pick(APSMenu::SRGB(106, 70, 5, 252), FMath::Lerp(P.ActionFill, P.Action, 0.45f).CopyWithNewOpacity(252.0f / 255.0f));
+	const FLinearColor PrimaryDown = Pick(APSMenu::SRGB(128, 82, 4), FMath::Lerp(P.ActionFill, P.Action, 0.60f).CopyWithNewOpacity(1.0f));
+	const FLinearColor SecondaryRest = Pick(APSMenu::SRGB(8, 32, 42, 232), P.Panel.CopyWithNewOpacity(232.0f / 255.0f));
+	const FLinearColor SecondaryHover = Pick(APSMenu::SRGB(12, 52, 65, 246), FMath::Lerp(P.Raised, P.Highlight, 0.05f).CopyWithNewOpacity(246.0f / 255.0f));
+	const FLinearColor SecondaryDown = Pick(APSMenu::SRGB(13, 67, 82), FMath::Lerp(P.Raised, P.Highlight, 0.10f).CopyWithNewOpacity(1.0f));
 	PrimaryButtonStyle = FButtonStyle()
-		.SetNormal(FSlateRoundedBoxBrush(APSMenu::SRGB(74, 48, 4, 246), 8.0f, APSMenu::Amber, 1.5f))
-		.SetHovered(FSlateRoundedBoxBrush(APSMenu::SRGB(106, 70, 5, 252), 8.0f, APSMenu::SRGB(255, 208, 82), 2.0f))
-		.SetPressed(FSlateRoundedBoxBrush(APSMenu::SRGB(128, 82, 4), 8.0f, APSMenu::Amber, 2.0f))
+		.SetNormal(FSlateRoundedBoxBrush(PrimaryRest, 8.0f, APSMenu::Amber, 1.5f))
+		.SetHovered(FSlateRoundedBoxBrush(PrimaryHover, 8.0f, Pick(APSMenu::SRGB(255, 208, 82), P.ActionBright), 2.0f))
+		.SetPressed(FSlateRoundedBoxBrush(PrimaryDown, 8.0f, APSMenu::Amber, 2.0f))
 		.SetNormalPadding(FMargin(2.0f)).SetPressedPadding(FMargin(2.0f, 3.0f, 2.0f, 1.0f));
 	SecondaryButtonStyle = FButtonStyle()
-		.SetNormal(FSlateRoundedBoxBrush(APSMenu::SRGB(8, 32, 42, 232), 7.0f, APSMenu::CyanDim, 1.0f))
-		.SetHovered(FSlateRoundedBoxBrush(APSMenu::SRGB(12, 52, 65, 246), 7.0f, APSMenu::Cyan, 1.5f))
-		.SetPressed(FSlateRoundedBoxBrush(APSMenu::SRGB(13, 67, 82), 7.0f, APSMenu::Cyan, 1.5f));
+		.SetNormal(FSlateRoundedBoxBrush(SecondaryRest, 7.0f, APSMenu::CyanDim, 1.0f))
+		.SetHovered(FSlateRoundedBoxBrush(SecondaryHover, 7.0f, APSMenu::Cyan, 1.5f))
+		.SetPressed(FSlateRoundedBoxBrush(SecondaryDown, 7.0f, APSMenu::Cyan, 1.5f));
 	CardButtonStyle = SecondaryButtonStyle;
+	const FLinearColor DisabledFill = Pick(FLinearColor(0.015f, 0.025f, 0.035f, 0.82f), P.PanelSoft.CopyWithNewOpacity(0.82f));
+	const FLinearColor DisabledFrame = Pick(FLinearColor(0.20f, 0.25f, 0.28f), APSUITheme::Fade(P.Frame, 0.8f));
 	DisabledCardButtonStyle = FButtonStyle()
-		.SetNormal(FSlateRoundedBoxBrush(FLinearColor(0.015f, 0.025f, 0.035f, 0.82f), 8.0f, FLinearColor(0.20f, 0.25f, 0.28f), 1.0f))
-		.SetHovered(FSlateRoundedBoxBrush(FLinearColor(0.015f, 0.025f, 0.035f, 0.82f), 8.0f, FLinearColor(0.20f, 0.25f, 0.28f), 1.0f));
-	ScrollBarStyle = FAppStyle::Get().GetWidgetStyle<FScrollBarStyle>("ScrollBar");
+		.SetNormal(FSlateRoundedBoxBrush(DisabledFill, 8.0f, DisabledFrame, 1.0f))
+		.SetHovered(FSlateRoundedBoxBrush(DisabledFill, 8.0f, DisabledFrame, 1.0f));
+	// Rio 03.10: DELETE WORLD looks secondary until the pointer is on it; the confirmation's DELETE is red at rest.
+	const FSlateRoundedBoxBrush DangerHovered(APSMenu::SRGB(58, 14, 11, 246), 7.0f, APSMenu::Danger, 1.5f);
+	const FSlateRoundedBoxBrush DangerPressed(APSMenu::SRGB(84, 20, 15), 7.0f, APSMenu::DangerBright, 1.5f);
+	const FSlateRoundedBoxBrush DangerDisabled(Pick(APSMenu::SRGB(6, 18, 24, 200), P.PanelSoft.CopyWithNewOpacity(200.0f / 255.0f)),
+		7.0f, Pick(APSMenu::SRGB(40, 58, 64, 160), APSUITheme::Fade(P.Frame, 0.6f)), 1.0f);
+	DangerButtonStyle = FButtonStyle(SecondaryButtonStyle)
+		.SetHovered(DangerHovered).SetPressed(DangerPressed).SetDisabled(DangerDisabled);
+	DangerConfirmButtonStyle = FButtonStyle(SecondaryButtonStyle)
+		.SetNormal(FSlateRoundedBoxBrush(APSMenu::SRGB(40, 10, 8, 240), 7.0f, APSMenu::SRGB(150, 58, 48), 1.2f))
+		.SetHovered(DangerHovered).SetPressed(DangerPressed).SetDisabled(DangerDisabled);
+	DropdownOptionStyle = FButtonStyle()
+		.SetHovered(FSlateRoundedBoxBrush(SecondaryHover, 5.0f))
+		.SetPressed(FSlateRoundedBoxBrush(SecondaryDown, 5.0f));
+}
+
+namespace APSMenuChecks
+{
+	/** The menu on screen, for the check commands below. */
+	TWeakPtr<SAPSMainMenuRoot> GActiveRoot;
+
+	FAutoConsoleCommand OpenCommand(TEXT("aps.Menu.Open"),
+		TEXT("aps.Menu.Open <Landing|NewWorld|Worlds|Settings|Profile> [Video|Graphics|Audio|Interface]: opens a menu page (checks)."),
+		FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
+		{
+			const TSharedPtr<SAPSMainMenuRoot> Root = GActiveRoot.Pin();
+			const bool bOpened = Root.IsValid() && Args.Num() > 0 && Root->OpenPageByName(Args[0], Args.Num() > 1 ? Args[1] : FString());
+			UE_LOG(LogTemp, Log, TEXT("[APS.Menu] Open %s %s"), Args.Num() > 0 ? *Args[0] : TEXT("?"), bOpened ? TEXT("done") : TEXT("failed"));
+		}));
+
+	/**
+	 * aps.Menu.ThemeShots <label> [quit]: every theme through the landing, NEW WORLD and the four SETTINGS tabs, one
+	 * screenshot each with the UI (Saved/Screenshots/MenuThemes/<label>_<theme>_<page>.png). Rio 06.10: "check that the
+	 * sizes are fine and readable" in every theme.
+	 */
+	struct FThemeShots
+	{
+		FString Label;
+		bool bQuit{false};
+		int32 Step{0};
+		double NextAt{0.0};
+		bool bShotPending{false};
+		FTSTicker::FDelegateHandle Ticker;
+	};
+	TUniquePtr<FThemeShots> GShots;
+
+	bool TickThemeShots(float)
+	{
+		static const TCHAR* Pages[][2] = {
+			{TEXT("Landing"), TEXT("")}, {TEXT("NewWorld"), TEXT("")}, {TEXT("Settings"), TEXT("Video")},
+			{TEXT("Settings"), TEXT("Graphics")}, {TEXT("Settings"), TEXT("Audio")}, {TEXT("Settings"), TEXT("Interface")}};
+		constexpr int32 PageCount = UE_ARRAY_COUNT(Pages);
+		constexpr int32 ThemeCount = static_cast<int32>(EAPSUITheme::Count);
+		FThemeShots* Shots = GShots.Get();
+		const TSharedPtr<SAPSMainMenuRoot> Root = GActiveRoot.Pin();
+		if (!Shots || !Root.IsValid())
+		{
+			return false;
+		}
+		const double Now = FPlatformTime::Seconds();
+		if (Now < Shots->NextAt)
+		{
+			return true;
+		}
+		if (Shots->bShotPending)
+		{
+			// The page had its seconds to build and draw: shoot it, then move on.
+			const int32 Theme = Shots->Step / PageCount;
+			const int32 Page = Shots->Step % PageCount;
+			const FString Name = FString::Printf(TEXT("%s_%s_%s%s"), *Shots->Label,
+				*APSUITheme::DisplayName(static_cast<EAPSUITheme>(Theme)).ToString().ToLower(), Pages[Page][0], Pages[Page][1]);
+			FScreenshotRequest::RequestScreenshot(FPaths::ScreenShotDir() / TEXT("MenuThemes") / Name + TEXT(".png"), true, false);
+			UE_LOG(LogTemp, Log, TEXT("[APS.MenuThemes] shot %s"), *Name);
+			Shots->bShotPending = false;
+			++Shots->Step;
+			Shots->NextAt = Now + 0.6;
+			return true;
+		}
+		if (Shots->Step >= PageCount * ThemeCount)
+		{
+			UE_LOG(LogTemp, Log, TEXT("[APS.MenuThemes] done"));
+			APSUITheme::SetCurrent(EAPSUITheme::Obsidian);
+			if (Shots->bQuit)
+			{
+				FPlatformMisc::RequestExit(false, TEXT("aps.Menu.ThemeShots"));
+			}
+			GShots.Reset();
+			return false;
+		}
+		const EAPSUITheme Theme = static_cast<EAPSUITheme>(Shots->Step / PageCount);
+		if (APSUITheme::Current() != Theme)
+		{
+			APSUITheme::SetCurrent(Theme);
+		}
+		const int32 Page = Shots->Step % PageCount;
+		Root->OpenPageByName(Pages[Page][0], Pages[Page][1]);
+		Shots->bShotPending = true;
+		Shots->NextAt = Now + 2.0;
+		return true;
+	}
+
+	FAutoConsoleCommand ThemeShotsCommand(TEXT("aps.Menu.ThemeShots"),
+		TEXT("aps.Menu.ThemeShots <label> [quit]: screenshots of the landing, NEW WORLD and SETTINGS in every interface theme."),
+		FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
+		{
+			if (GShots.IsValid() || !GActiveRoot.IsValid())
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[APS.MenuThemes] busy or no menu"));
+				return;
+			}
+			GShots = MakeUnique<FThemeShots>();
+			GShots->Label = Args.Num() > 0 ? Args[0] : FString(TEXT("themes"));
+			GShots->bQuit = Args.Contains(TEXT("quit"));
+			GShots->NextAt = FPlatformTime::Seconds() + 3.0;
+			GShots->Ticker = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateStatic(&TickThemeShots), 0.1f);
+			UE_LOG(LogTemp, Log, TEXT("[APS.MenuThemes] start %s"), *GShots->Label);
+		}));
+}
+
+TSharedRef<SWidget> SAPSMainMenuRoot::BuildAuthoredMapGrid()
+{
+	// Rio 06.10 ("the Single Play button is stretched; it should be a grid, with preview pictures, the map's name and
+	// description, a real render instead of an icon"): one card per authored map; a click plays it. The preview is a
+	// render of the map saved as Content/Slate/MapPreviews/<map>.png (loaded by Slate from the file, no asset).
+	const FString PreviewPath = FPaths::ConvertRelativePathToFull(FPaths::ProjectContentDir() / TEXT("Slate/MapPreviews/StartLocation.png"));
+	if (!MapPreviewBrush.IsValid() && FPaths::FileExists(PreviewPath))
+	{
+		MapPreviewBrush = MakeShared<FSlateImageBrush>(FName(*PreviewPath), FVector2D(1600.0f, 900.0f));
+	}
+	const auto MapCard = [this](const FText& Title, const FText& Description, const FText& Place, const FSlateBrush* Preview,
+		const bool bPlayable) -> TSharedRef<SWidget>
+	{
+		const TSharedRef<SButton> Button = SNew(SButton)
+			.ButtonStyle(FAppStyle::Get(), "NoBorder")
+			.ContentPadding(0.0f)
+			.IsEnabled(bPlayable)
+			.OnClicked(this, &SAPSMainMenuRoot::StartSingleGame);
+		const TWeakPtr<SButton> Weak = Button;
+		const auto Lit = [Weak]()
+		{
+			const TSharedPtr<SButton> Pinned = Weak.Pin();
+			return Pinned.IsValid() && Pinned->IsHovered() && Pinned->IsEnabled();
+		};
+		const TSharedRef<SWidget> Picture = Preview
+			? StaticCastSharedRef<SWidget>(SNew(SScaleBox).Stretch(EStretch::ScaleToFill)[SNew(SImage).Image(Preview)])
+			: StaticCastSharedRef<SWidget>(
+				SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(APSMenu::PageShade)
+				.HAlign(HAlign_Center).VAlign(VAlign_Center)
+				[
+					SNew(SBox).WidthOverride(54.0f).HeightOverride(54.0f)
+					[SNew(SVectorMenuGlyph).Glyph(bPlayable ? EAPSMenuGlyph::Planet : EAPSMenuGlyph::Lock).Color(APSMenu::CyanDim).StrokeWidth(1.6f)]
+				]);
+		Button->SetContent(
+			SNew(SBox).HeightOverride(330.0f)
+			[
+				SNew(SAPSChamferedOverlay)
+				+ SOverlay::Slot()
+				[
+					SNew(SChamferedSurface).Brush(FAppStyle::GetBrush("WhiteBrush")).ChamferTop(true).ChamferBottom(true)
+					.Tint_Lambda([Lit, bPlayable]() { return !bPlayable ? APSMenu::ChipDisabled : Lit() ? APSMenu::ChipLit : APSMenu::ChipRest; })
+				]
+				+ SOverlay::Slot()
+				[
+					SNew(SVerticalBox)
+					+ SVerticalBox::Slot().AutoHeight()
+					[
+						SNew(SBox).HeightOverride(196.0f)
+						[
+							SNew(SOverlay)
+							+ SOverlay::Slot()[Picture]
+							+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Top).Padding(FMargin(14.0f, 12.0f))
+							[
+								SNew(SBorder).BorderImage(&APSMenu::InsetBrush).Padding(FMargin(8.0f, 3.0f))
+								.Visibility(bPlayable ? EVisibility::HitTestInvisible : EVisibility::Collapsed)
+								[
+									SNew(STextBlock).Text(LOCTEXT("MapAuthoredTag", "AUTHORED")).Font(APSMenu::Font("Bold", 10))
+									.ColorAndOpacity(APSMenu::Readable).RenderTransform(APSMenu::CapsShift("Bold", 10))
+								]
+							]
+						]
+					]
+					+ SVerticalBox::Slot().AutoHeight().Padding(FMargin(18.0f, 14.0f, 18.0f, 0.0f))
+					[
+						SNew(STextBlock).Text(Title).Font(APSMenu::Font("Bold", 18)).ColorAndOpacity(bPlayable ? APSMenu::White : APSMenu::Readable)
+					]
+					+ SVerticalBox::Slot().AutoHeight().Padding(FMargin(18.0f, 4.0f, 18.0f, 0.0f))
+					[
+						SNew(STextBlock).Text(Description).Font(APSMenu::Font("Regular", 14)).ColorAndOpacity(APSMenu::Readable)
+						.AutoWrapText(true)
+					]
+					+ SVerticalBox::Slot().FillHeight(1.0f)
+					+ SVerticalBox::Slot().AutoHeight().Padding(FMargin(18.0f, 0.0f, 18.0f, 14.0f))
+					[
+						SNew(SHorizontalBox)
+						+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
+						[
+							SNew(STextBlock).Text(Place).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::Quiet)
+						]
+						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+						[
+							SNew(STextBlock).Text(LOCTEXT("MapPlay", "PLAY  >")).Font(APSMenu::Font("Bold", 14))
+							.Visibility(bPlayable ? EVisibility::HitTestInvisible : EVisibility::Collapsed)
+							.ColorAndOpacity_Lambda([Lit]() { return FSlateColor(Lit() ? APSMenu::ActionBright : APSMenu::Amber); })
+							.RenderTransform(APSMenu::CapsShift("Bold", 14))
+						]
+					]
+				]
+				+ SOverlay::Slot()
+				[
+					SNew(SChamferedFrame).Thickness(1.0f)
+					.Color_Lambda([Lit, bPlayable]() { return !bPlayable ? APSMenu::DisabledFrame : Lit() ? APSMenu::Cyan : APSMenu::CyanDim; })
+				]
+			]);
+		return Button;
+	};
+
+	return SNew(SVerticalBox)
+		+ SVerticalBox::Slot().AutoHeight()
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
+			[SNew(STextBlock).Text(LOCTEXT("NewWorldMaps", "AUTHORED MAPS")).Font(APSMenu::Font("Bold", 12)).ColorAndOpacity(APSMenu::Cyan)]
+			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+			[SNew(STextBlock).Text(LOCTEXT("NewWorldMapsCount", "1 MAP")).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::Quiet)]
+		]
+		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 14.0f, 0.0f, 0.0f)
+		[
+			SNew(SUniformGridPanel).SlotPadding(FMargin(8.0f))
+			+ SUniformGridPanel::Slot(0, 0)
+			[
+				MapCard(LOCTEXT("NewWorldMapStart", "START LOCATION"),
+					LOCTEXT("NewWorldMapStartDesc", "The Alpha map: a set start with ships ready to fly."),
+					LOCTEXT("NewWorldMapStartPlace", "ALPHA"), MapPreviewBrush.Get(), true)
+			]
+			+ SUniformGridPanel::Slot(1, 0)
+			[
+				MapCard(LOCTEXT("NewWorldMapsSoon", "MORE MAPS"),
+					LOCTEXT("NewWorldMapsSoonDesc", "New maps arrive with the next versions."),
+					FText::GetEmpty(), nullptr, false)
+			]
+		];
+}
+
+bool SAPSMainMenuRoot::OpenPageByName(const FString& Page, const FString& Tab)
+{
+	EAPSMenuPage Target;
+	if (Page.Equals(TEXT("Landing"), ESearchCase::IgnoreCase)) Target = EAPSMenuPage::Landing;
+	else if (Page.Equals(TEXT("NewWorld"), ESearchCase::IgnoreCase)) Target = EAPSMenuPage::ChoosePath;
+	else if (Page.Equals(TEXT("Worlds"), ESearchCase::IgnoreCase)) Target = EAPSMenuPage::ExistingWorlds;
+	else if (Page.Equals(TEXT("Settings"), ESearchCase::IgnoreCase)) Target = EAPSMenuPage::Settings;
+	else if (Page.Equals(TEXT("Profile"), ESearchCase::IgnoreCase)) Target = EAPSMenuPage::Profile;
+	else return false;
+	if (Target == EAPSMenuPage::Settings && !Tab.IsEmpty())
+	{
+		static const TCHAR* Tabs[] = {TEXT("Video"), TEXT("Graphics"), TEXT("Audio"), TEXT("Interface")};
+		for (int32 Index = 0; Index < UE_ARRAY_COUNT(Tabs); ++Index)
+		{
+			if (Tab.Equals(Tabs[Index], ESearchCase::IgnoreCase))
+			{
+				SettingsTab = static_cast<EAPSSettingsTab>(Index);
+			}
+		}
+		if (CurrentPage == EAPSMenuPage::Settings)
+		{
+			// Same page, another tab: build it again on that tab.
+			bHasBuiltCurrentPage = false;
+		}
+	}
+	Navigate(Target);
+	return true;
+}
+
+void SAPSMainMenuRoot::HandleThemeChanged()
+{
+	APSMenu::ApplyTheme();
+	BuildButtonStyles();
+	RebuildCurrentPage();
+}
+
+void SAPSMainMenuRoot::RebuildCurrentPage()
+{
+	// The generation and civilization pages hold live editing state; they pick the theme up when next opened.
+	if (!ContentHost.IsValid() || CurrentPage == EAPSMenuPage::AstronomicalGeneration
+		|| CurrentPage == EAPSMenuPage::Civilization)
+	{
+		return;
+	}
+	bHasBuiltCurrentPage = false;
+	const EAPSMenuPage Page = CurrentPage;
+	const EAPSMenuPage Before = PreviousPage;
+	Navigate(Page);
+	PreviousPage = Before;
 }
 
 void SAPSMainMenuRoot::Construct(const FArguments& InArgs)
 {
 	Controller = InArgs._Controller;
 	ViewModel = InArgs._ViewModel;
+	ThemeChangedHandle = APSUITheme::OnChanged().AddSP(this, &SAPSMainMenuRoot::HandleThemeChanged);
+	APSMenuChecks::GActiveRoot = StaticCastSharedRef<SAPSMainMenuRoot>(AsShared());
 	LoadVisualResources();
 	BeginAuxiliaryMenuLoad();
 
@@ -1156,7 +1731,7 @@ void SAPSMainMenuRoot::Construct(const FArguments& InArgs)
 		[
 			SNew(SBorder)
 			.BorderImage(FAppStyle::GetBrush("WhiteBrush"))
-			.BorderBackgroundColor(FLinearColor(0.005f, 0.015f, 0.025f, 0.96f))
+			.BorderBackgroundColor(APSMenu::Retint(FLinearColor(0.005f, 0.015f, 0.025f, 0.96f)))
 			.HAlign(HAlign_Center).VAlign(VAlign_Center).Padding(32.0f)
 			.Visibility_Lambda([this]()
 			{
@@ -1190,8 +1765,8 @@ void SAPSMainMenuRoot::Construct(const FArguments& InArgs)
 					]
 					+ SVerticalBox::Slot().AutoHeight()
 					[
-						SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(FMargin(16.0f, 10.0f))
-						.Text(LOCTEXT("CancelSinglePlayLaunch", "BACK TO MENU"))
+						SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(APSMenu::ButtonPadding("Bold", 13))
+						.HAlign(HAlign_Center).VAlign(VAlign_Center)
 						.IsEnabled_Lambda([this]()
 						{
 							const UAPSAuthoredLevelLaunchSubsystem* Launch = GetAuthoredLaunch(Controller.Get());
@@ -1202,11 +1777,51 @@ void SAPSMainMenuRoot::Construct(const FArguments& InArgs)
 							if (UAPSAuthoredLevelLaunchSubsystem* Launch = GetAuthoredLaunch(Controller.Get())) Launch->CancelLaunch();
 							return FReply::Handled();
 						})
+						[
+							SNew(STextBlock).Text(LOCTEXT("CancelSinglePlayLaunch", "BACK TO MENU"))
+							.Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 13)).ColorAndOpacity(APSMenu::White)
+							.RenderTransform(APSMenu::CapsShift("Bold", 13))
+						]
 					]
 				]
 			]
 		]
+		+ SOverlay::Slot()
+		[
+			// Rio 06.10: the start-up title screen over everything; TickSplash lifts it once the start-up is over.
+			SAssignNew(Splash, SBorder)
+			.BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+			.BorderBackgroundColor(APSMenu::SplashFill)
+			.HAlign(HAlign_Center).VAlign(VAlign_Center)
+			.Visibility(GIsAutomationTesting || APSMenu::CVarSplashTimeout.GetValueOnGameThread() <= 0.0f
+				? EVisibility::Collapsed : EVisibility::Visible)
+			[
+				SNew(SVerticalBox)
+				+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)
+				[
+					SNew(STextBlock).Text(LOCTEXT("SplashBrand", "A P O S F E R A")).Font(APSMenu::Font("Bold", 58)).ColorAndOpacity(APSMenu::White)
+				]
+				+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0.0f, 10.0f, 0.0f, 0.0f)
+				[
+					SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+					[SNew(SBox).WidthOverride(110.0f).HeightOverride(1.0f)[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(APSMenu::Cyan)]]
+					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(18.0f, 0.0f)
+					[SNew(STextBlock).Text(LOCTEXT("SplashSubtitle", "S P A C E T R I P S")).Font(APSMenu::Font("Bold", 15)).ColorAndOpacity(APSMenu::Cyan)]
+					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+					[SNew(SBox).WidthOverride(110.0f).HeightOverride(1.0f)[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(APSMenu::Cyan)]]
+				]
+				+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0.0f, 56.0f, 0.0f, 0.0f)
+				[
+					SNew(STextBlock).Text(LOCTEXT("SplashLoading", "L O A D I N G")).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::Readable)
+				]
+			]
+		]
 	];
+	if (IsSplashVisible())
+	{
+		RegisterActiveTimer(0.0f, FWidgetActiveTimerDelegate::CreateSP(this, &SAPSMainMenuRoot::TickSplash));
+	}
 	Navigate(EAPSMenuPage::Landing);
 }
 
@@ -1235,9 +1850,23 @@ void SAPSMainMenuRoot::Navigate(EAPSMenuPage NewPage)
 		{
 			PC->CancelWorldMetadataLoad();
 		}
+		PendingDeleteWorld.Reset();
+		PendingBulkDelete.Reset();
+		WorldFilterAnchors.Reset();
 	}
 	PreviousPage = CurrentPage;
 	CurrentPage = NewPage;
+	if (CurrentPage != EAPSMenuPage::Landing && IsSplashVisible())
+	{
+		// Any other page (an automation run, a direct open) never waits under the start-up title screen.
+		Splash->SetVisibility(EVisibility::Collapsed);
+	}
+	else if ((CurrentPage == EAPSMenuPage::Landing || CurrentPage == EAPSMenuPage::ChoosePath) && PreviousPage != CurrentPage)
+	{
+		// The landing and NEW WORLD pages' letter keys need the root's focus: after a page with text fields, and after
+		// the clicked button that opened the page was rebuilt away.
+		FSlateApplication::Get().SetKeyboardFocus(AsShared(), EFocusCause::SetDirectly);
+	}
 	if (!ContentHost.IsValid()) return;
 	if (CurrentPage != EAPSMenuPage::AstronomicalGeneration)
 	{
@@ -1295,6 +1924,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildHeader(const FText& SectionTitle, boo
 					SNew(STextBlock).Text(LOCTEXT("Back", "<   BACK"))
 					.Justification(ETextJustify::Center).OverflowPolicy(ETextOverflowPolicy::Ellipsis)
 					.Font(APSMenu::Font("Bold", 15)).ColorAndOpacity(APSMenu::White)
+					.RenderTransform(APSMenu::CapsShift("Bold", 15))
 				]
 			]
 		]
@@ -1305,17 +1935,14 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildHeader(const FText& SectionTitle, boo
 			[
 				SNew(STextBlock).Text(LOCTEXT("Brand", "A P O S F E R A")).Font(APSMenu::Font("Bold", 58)).ColorAndOpacity(APSMenu::White)
 			]
-			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0.0f, 2.0f)
-			[
-				SNew(STextBlock).Text(LOCTEXT("SubBrand", "S P A C E T R I P S   G E N E R A T I O N")).Font(APSMenu::Font("Regular", 15)).ColorAndOpacity(APSMenu::White)
-			]
-			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0.0f, 8.0f, 0.0f, 0.0f)
+			// Rio 06.10: no "SPACETRIPS GENERATION" line under the brand; the section names the page.
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0.0f, 6.0f, 0.0f, 0.0f)
 			[
 				SNew(SHorizontalBox)
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 				[SNew(SBox).WidthOverride(92.0f).HeightOverride(1.0f)[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(APSMenu::Cyan)]]
-				+ SHorizontalBox::Slot().AutoWidth().Padding(18.0f, 0.0f)
-				[SNew(STextBlock).Text(SectionTitle).Font(APSMenu::Font("Bold", 18)).ColorAndOpacity(APSMenu::Cyan)]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(18.0f, 0.0f)
+				[SNew(STextBlock).Text(SectionTitle).Font(APSMenu::Font("Bold", 18)).ColorAndOpacity(APSMenu::Cyan).RenderTransform(APSMenu::CapsShift("Bold", 18))]
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 				[SNew(SBox).WidthOverride(92.0f).HeightOverride(1.0f)[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(APSMenu::Cyan)]]
 			]
@@ -1333,7 +1960,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildHeader(const FText& SectionTitle, boo
 						SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(0.0f)
 						.HAlign(HAlign_Center).VAlign(VAlign_Center)
 						.OnClicked(this, &SAPSMainMenuRoot::OpenProfile).ToolTipText(LOCTEXT("ProfileTip", "PLAYER PROFILE"))
-						[APSMenu::Badge(LOCTEXT("ProfileGlyph", "ID"), APSMenu::Cyan, 38.0f)]
+						[APSMenu::IconBadge(EAPSMenuGlyph::Profile, APSMenu::Cyan, 38.0f)]
 					]
 				]
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(5.0f)
@@ -1343,7 +1970,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildHeader(const FText& SectionTitle, boo
 						SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(0.0f)
 						.HAlign(HAlign_Center).VAlign(VAlign_Center)
 						.OnClicked(this, &SAPSMainMenuRoot::OpenSettings).ToolTipText(LOCTEXT("SettingsTip", "SETTINGS"))
-						[APSMenu::Badge(LOCTEXT("SettingsGlyph", "CFG"), APSMenu::Cyan, 38.0f)]
+						[APSMenu::IconBadge(EAPSMenuGlyph::Settings, APSMenu::Cyan, 38.0f)]
 					]
 				]
 			]
@@ -1352,62 +1979,357 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildHeader(const FText& SectionTitle, boo
 
 TSharedRef<SWidget> SAPSMainMenuRoot::BuildLandingPage()
 {
-	auto MenuEntry = [this](const FText& Label, const FOnClicked& Action,
-		bool bEnabled = true, bool bPrimary = false, int32 FontSize = 16)
+	// Rio 05.10-06.10, the "Observatory" (Docs/Design/MAIN_MENU_OBSERVATORY.md): the galaxy fills the screen, the title
+	// sits over it as on the generation page, and the actions are one row of chamfered chips along the bottom, each with
+	// its key. CONTINUE opens the newest world and the plate above the row names it. World sidecars are tiny, so the scan
+	// is cheap enough to run whenever this page is built.
+	LoadExistingWorlds();
+	LatestWorld = ExistingWorlds.IsEmpty() ? nullptr : ExistingWorlds[0];
+	const bool bHasWorld = LatestWorld.IsValid();
+
+	const auto MenuChip = [](const FText& Code, const FText& Label, const FOnClicked& Action, const bool bPrimary,
+		const bool bEnabled, const FText& Tooltip, TSharedPtr<SButton>* OutButton) -> TSharedRef<SWidget>
 	{
-		return SNew(SBox).WidthOverride(296.0f).HeightOverride(bPrimary ? 52.0f : 46.0f)
-		[
-			SNew(SButton)
+		const TSharedRef<SButton> Button = SNew(SButton)
+			.ButtonStyle(FAppStyle::Get(), "NoBorder")
+			.ContentPadding(0.0f)
 			.IsEnabled(bEnabled)
-			.ButtonStyle(bPrimary ? &PrimaryButtonStyle : &SecondaryButtonStyle)
-			.OnClicked(Action)
-			.ContentPadding(FMargin(12.0f, 6.0f))
-			.HAlign(HAlign_Fill).VAlign(VAlign_Fill)
+			.ToolTipText(Tooltip)
+			.OnClicked(Action);
+		if (OutButton)
+		{
+			*OutButton = Button;
+		}
+		const TWeakPtr<SButton> WeakButton = Button;
+		const auto Lit = [WeakButton]()
+		{
+			const TSharedPtr<SButton> Pinned = WeakButton.Pin();
+			return Pinned.IsValid() && Pinned->IsHovered();
+		};
+		const FLinearColor CodeColour = !bEnabled ? APSMenu::Muted : bPrimary ? APSMenu::OnActionCode : APSMenu::Cyan;
+		const FLinearColor LabelColour = !bEnabled ? APSMenu::Muted : bPrimary ? APSMenu::OnAction : APSMenu::White;
+		Button->SetContent(
+			SNew(SBox).HeightOverride(52.0f)
 			[
 				SNew(SOverlay)
-				+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Center)
+				+ SOverlay::Slot()
 				[
-					SNew(STextBlock).Text(FText::FromString(bEnabled ? TEXT(">") : TEXT("-")))
-					.Justification(ETextJustify::Center)
-					.Font(APSMenu::Font("Bold", FontSize)).ColorAndOpacity(bEnabled ? (bPrimary ? APSMenu::Amber : APSMenu::Cyan) : APSMenu::Muted)
+					SNew(SChamferedSurface)
+					.Brush(FAppStyle::GetBrush("WhiteBrush"))
+					.Tint_Lambda([Lit, bPrimary, bEnabled]()
+					{
+						if (!bEnabled)
+						{
+							return APSMenu::ChipDisabled;
+						}
+						if (bPrimary)
+						{
+							return Lit() ? APSMenu::ActionBright : APSMenu::Amber;
+						}
+						return Lit() ? APSMenu::ChipLit : APSMenu::ChipRest;
+					})
+					.ChamferTop(true)
+					.ChamferBottom(true)
 				]
-				+ SOverlay::Slot().HAlign(HAlign_Fill).VAlign(VAlign_Center).Padding(28.0f, 0.0f)
+				+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center).Padding(FMargin(24.0f, 0.0f))
 				[
-					SNew(STextBlock).Text(Label).Font(APSMenu::Font(bPrimary ? "Bold" : "Regular", FontSize))
-					.Justification(ETextJustify::Center).OverflowPolicy(ETextOverflowPolicy::Ellipsis)
-					.ColorAndOpacity(bEnabled ? APSMenu::White : APSMenu::Muted)
+					SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.0f, 0.0f, 11.0f, 0.0f)
+					[
+						SNew(STextBlock).Text(Code).Font(APSMenu::Font("Bold", 13)).ColorAndOpacity(CodeColour)
+						.RenderTransform(APSMenu::CapsShift("Bold", 13))
+					]
+					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+					[
+						SNew(STextBlock).Text(Label).Font(APSMenu::Font("Bold", 15)).ColorAndOpacity(LabelColour)
+						.RenderTransform(APSMenu::CapsShift("Bold", 15))
+					]
+				]
+				+ SOverlay::Slot()
+				[
+					SNew(SChamferedFrame).Thickness(1.0f)
+					.Color_Lambda([Lit, bPrimary, bEnabled]()
+					{
+						if (!bEnabled)
+						{
+							return APSMenu::DisabledFrame;
+						}
+						if (bPrimary)
+						{
+							return Lit() ? APSMenu::ActionPeak : APSMenu::ActionBright;
+						}
+						return Lit() ? APSMenu::Cyan : APSMenu::CyanDim;
+					})
+				]
+			]);
+		return Button;
+	};
+
+	TSharedPtr<SButton> ContinueButton;
+	const TSharedRef<SHorizontalBox> Chips = SNew(SHorizontalBox);
+	const auto AddChip = [&Chips](const TSharedRef<SWidget>& ChipWidget)
+	{
+		Chips->AddSlot().AutoWidth().Padding(5.0f, 0.0f)[ChipWidget];
+	};
+	if (bHasWorld)
+	{
+		AddChip(MenuChip(LOCTEXT("LandingContinueKey", "C"), LOCTEXT("LandingContinue", "CONTINUE"),
+			FOnClicked::CreateSP(this, &SAPSMainMenuRoot::ContinueLatestWorld), true, true,
+			LOCTEXT("LandingContinueHint", "Open your newest world"), &ContinueButton));
+	}
+	// Without a world NEW WORLD is the one obvious action.
+	AddChip(MenuChip(LOCTEXT("LandingNewWorldKey", "N"), LOCTEXT("LandingNewWorld", "NEW WORLD"),
+		FOnClicked::CreateSP(this, &SAPSMainMenuRoot::OpenChoosePath), !bHasWorld, true,
+		LOCTEXT("LandingNewWorldHint", "Start a new world: a civilization, open space or an authored map"), nullptr));
+	// Rio 06.10: MULTIPLAYER stays in the row, inactive.
+	AddChip(MenuChip(LOCTEXT("LandingMultiplayerKey", "M"), LOCTEXT("LandingMultiplayer", "MULTIPLAYER"), FOnClicked(),
+		false, false, LOCTEXT("LandingMultiplayerHint", "Multiplayer is coming later"), nullptr));
+	AddChip(MenuChip(LOCTEXT("LandingWorldsKey", "W"), LOCTEXT("LandingWorlds", "WORLDS"),
+		FOnClicked::CreateSP(this, &SAPSMainMenuRoot::OpenExistingWorlds), false, true,
+		LOCTEXT("LandingWorldsHint", "Your saved worlds"), nullptr));
+	AddChip(MenuChip(LOCTEXT("LandingProfileKey", "P"), LOCTEXT("LandingProfile", "PROFILE"),
+		FOnClicked::CreateSP(this, &SAPSMainMenuRoot::OpenProfile), false, true,
+		LOCTEXT("LandingProfileHint", "The pilot's profile"), nullptr));
+	AddChip(MenuChip(LOCTEXT("LandingSettingsKey", "S"), LOCTEXT("LandingSettings", "SETTINGS"),
+		FOnClicked::CreateSP(this, &SAPSMainMenuRoot::OpenSettings), false, true,
+		LOCTEXT("LandingSettingsHint", "Graphics, sound and controls"), nullptr));
+	AddChip(MenuChip(LOCTEXT("LandingQuitKey", "Q"), LOCTEXT("LandingQuit", "QUIT"),
+		FOnClicked::CreateSP(this, &SAPSMainMenuRoot::QuitGame), false, true,
+		LOCTEXT("LandingQuitHint", "Leave the game (the Q key twice)"), nullptr));
+
+	// LAST SESSION: the newest world's name and, from a version 2 sidecar, its home planet and star. Its frame lights
+	// with CONTINUE's hover, so it reads as that button's caption.
+	FText Where = FText::GetEmpty();
+	FText WorldName = FText::GetEmpty();
+	if (bHasWorld)
+	{
+		const FAPSExistingWorldEntry& Latest = *LatestWorld;
+		WorldName = FText::FromString(Latest.DisplayName.ToUpper());
+		if (Latest.bSystemRecorded && !Latest.System.HomePlanetName.IsEmpty())
+		{
+			Where = Latest.System.HomeStarName.IsEmpty() ? FText::FromString(Latest.System.HomePlanetName)
+				: FText::Format(LOCTEXT("LandingWhere", "{0}, {1} system"), FText::FromString(Latest.System.HomePlanetName),
+					FText::FromString(Latest.System.HomeStarName));
+		}
+	}
+	const TWeakPtr<SButton> WeakContinue = ContinueButton;
+	const TSharedRef<SWidget> Plate =
+		SNew(SBox).HeightOverride(40.0f).Visibility(bHasWorld ? EVisibility::Visible : EVisibility::Collapsed)
+		[
+			SNew(SOverlay)
+			+ SOverlay::Slot()
+			[
+				SNew(SChamferedSurface).Brush(FAppStyle::GetBrush("WhiteBrush")).Tint(APSMenu::PlateTint)
+				.ChamferTop(true).ChamferBottom(true)
+			]
+			+ SOverlay::Slot().VAlign(VAlign_Center).Padding(FMargin(18.0f, 0.0f))
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+				[
+					SNew(STextBlock).Text(LOCTEXT("LandingLastSession", "LAST SESSION")).Font(APSMenu::Font("Bold", 11))
+					.ColorAndOpacity(APSMenu::Amber).RenderTransform(APSMenu::CapsShift("Bold", 11))
+				]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(14.0f, 0.0f)
+				[
+					SNew(SBox).WidthOverride(1.0f).HeightOverride(16.0f)
+					[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(APSMenu::CyanDim)]
+				]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+				[
+					SNew(STextBlock).Text(WorldName).Font(APSMenu::Font("Bold", 13)).ColorAndOpacity(APSMenu::White)
+					.RenderTransform(APSMenu::CapsShift("Bold", 13))
+				]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(12.0f, 0.0f, 0.0f, 0.0f)
+				[
+					SNew(STextBlock).Text(Where).Font(APSMenu::Font("Regular", 14)).ColorAndOpacity(APSMenu::Readable)
+					.Visibility(Where.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible)
 				]
 			]
+			+ SOverlay::Slot()
+			[
+				SNew(SChamferedFrame).Thickness(1.0f)
+				.Color_Lambda([WeakContinue]()
+				{
+					const TSharedPtr<SButton> Pinned = WeakContinue.Pin();
+					return Pinned.IsValid() && Pinned->IsHovered() ? APSMenu::Amber : APSMenu::CyanDim;
+				})
+			]
 		];
-	};
 
 	return SNew(SOverlay)
 		+ SOverlay::Slot()
-		[SNew(SLandingAtmosphere)]
-		+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Center).Padding(96.0f, 40.0f)
+		[SNew(SObservatoryVeil)]
+		+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Top).Padding(0.0f, 52.0f, 0.0f, 0.0f)
 		[
 			SNew(SVerticalBox)
-			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 56.0f)
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)
 			[
-				SNew(SVerticalBox)
-				+ SVerticalBox::Slot().AutoHeight()
-				[SNew(STextBlock).Text(LOCTEXT("LandingTitle", "APOSFERA")).Font(APSMenu::Font("Bold", 50)).ColorAndOpacity(APSMenu::White)]
-				+ SVerticalBox::Slot().AutoHeight().Padding(2.0f, 2.0f, 0.0f, 0.0f)
-				[SNew(STextBlock).Text(LOCTEXT("LandingSubtitle", "S P A C E T R I P S")).Font(APSMenu::Font("Regular", 13)).ColorAndOpacity(APSMenu::Cyan)]
+				SNew(STextBlock).Text(LOCTEXT("LandingBrand", "A P O S F E R A")).Font(APSMenu::Font("Bold", 58)).ColorAndOpacity(APSMenu::White)
 			]
-			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 5.0f)
-			[MenuEntry(LOCTEXT("SingleGame", "SINGLE GAME"), FOnClicked::CreateSP(this, &SAPSMainMenuRoot::OpenChoosePath), true, true, 18)]
-			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 6.0f)
-			[MenuEntry(LOCTEXT("Multiplayer", "MULTIPLAYER GAME"), FOnClicked(), false)]
-			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 6.0f)
-			[MenuEntry(LOCTEXT("Profile", "PROFILE"), FOnClicked::CreateSP(this, &SAPSMainMenuRoot::OpenProfile))]
-			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 20.0f, 0.0f, 10.0f)
-			[SNew(SBox).WidthOverride(296.0f).HeightOverride(1.0f)[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(APSMenu::CyanDim)]]
-			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 5.0f)
-			[MenuEntry(LOCTEXT("Settings", "SETTINGS"), FOnClicked::CreateSP(this, &SAPSMainMenuRoot::OpenSettings), true, false, 14)]
-			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 6.0f)
-			[MenuEntry(LOCTEXT("Quit", "QUIT"), FOnClicked::CreateSP(this, &SAPSMainMenuRoot::QuitGame), true, false, 14)]
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0.0f, 10.0f, 0.0f, 0.0f)
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+				[SNew(SBox).WidthOverride(110.0f).HeightOverride(1.0f)[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(APSMenu::Cyan)]]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(18.0f, 0.0f)
+				[SNew(STextBlock).Text(LOCTEXT("LandingSubtitle", "S P A C E T R I P S")).Font(APSMenu::Font("Bold", 15)).ColorAndOpacity(APSMenu::Cyan)]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+				[SNew(SBox).WidthOverride(110.0f).HeightOverride(1.0f)[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(APSMenu::Cyan)]]
+			]
+		]
+		+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Top).Padding(40.0f, 48.0f)
+		[
+			SNew(STextBlock).Text(LOCTEXT("LandingLive", "+  LIVE GALAXY")).Font(APSMenu::Font("Bold", 10))
+			.ColorAndOpacity(APSUITheme::Current() == EAPSUITheme::Classic
+				? FLinearColor(0.20f, 0.90f, 0.55f, 0.82f) : APSUITheme::Fade(APSMenu::Readable, 0.82f))
+		]
+		+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Bottom).Padding(0.0f, 0.0f, 0.0f, 30.0f)
+		[
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0.0f, 0.0f, 0.0f, 18.0f)
+			[
+				Plate
+			]
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)
+			[
+				Chips
+			]
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0.0f, 16.0f, 0.0f, 0.0f)
+			[
+				// Rio 06.10: no key hint under the buttons; the line only answers the first Q.
+				SNew(STextBlock).Font(APSMenu::Font("Regular", 13)).ColorAndOpacity(APSMenu::Readable)
+				.Text(LOCTEXT("LandingQuitArmed", "Press Q again to quit"))
+				.Visibility_Lambda([this]() { return FPlatformTime::Seconds() < QuitArmedUntil ? EVisibility::HitTestInvisible : EVisibility::Hidden; })
+			]
 		];
+}
+
+FReply SAPSMainMenuRoot::ContinueLatestWorld()
+{
+	if (LatestWorld.IsValid())
+	{
+		if (AMainMenuController* PC = Controller.Get())
+		{
+			PC->LoadWorldSlot(LatestWorld->SaveFileName);
+		}
+	}
+	return FReply::Handled();
+}
+
+FReply SAPSMainMenuRoot::OnKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent)
+{
+	// Rio 06.10: Esc closes the civilization page's class grid.
+	if (bSpawnPickerOpen && CurrentPage == EAPSMenuPage::Civilization && InKeyEvent.GetKey() == EKeys::Escape)
+	{
+		CloseSpawnPicker();
+		return FReply::Handled();
+	}
+	// The Observatory's keys, on the landing page only and never under the splash or the authored-map dialog.
+	const UAPSAuthoredLevelLaunchSubsystem* Launch = GetAuthoredLaunch(Controller.Get());
+	if (CurrentPage == EAPSMenuPage::Landing && !InKeyEvent.IsRepeat() && !IsSplashVisible()
+		&& !(Launch && Launch->IsDialogVisible()))
+	{
+		const FKey Key = InKeyEvent.GetKey();
+		if (Key == EKeys::C && LatestWorld.IsValid())
+		{
+			return ContinueLatestWorld();
+		}
+		if (Key == EKeys::Enter)
+		{
+			return LatestWorld.IsValid() ? ContinueLatestWorld() : OpenChoosePath();
+		}
+		if (Key == EKeys::N)
+		{
+			return OpenChoosePath();
+		}
+		if (Key == EKeys::W)
+		{
+			return OpenExistingWorlds();
+		}
+		if (Key == EKeys::P)
+		{
+			return OpenProfile();
+		}
+		if (Key == EKeys::S)
+		{
+			return OpenSettings();
+		}
+		if (Key == EKeys::Q)
+		{
+			// A stray Q never quits: the second one within two seconds does (the hint line says so meanwhile).
+			const double Now = FPlatformTime::Seconds();
+			if (Now < QuitArmedUntil)
+			{
+				return QuitGame();
+			}
+			QuitArmedUntil = Now + 2.0;
+			return FReply::Handled();
+		}
+	}
+	if (CurrentPage == EAPSMenuPage::ChoosePath && !InKeyEvent.IsRepeat() && !(Launch && Launch->IsDialogVisible()))
+	{
+		const FKey Key = InKeyEvent.GetKey();
+		if (Key == EKeys::G)
+		{
+			return PickNewWorldPath(EAPSNewWorldPath::SingleGame);
+		}
+		if (Key == EKeys::C)
+		{
+			return PickNewWorldPath(EAPSNewWorldPath::Civilization);
+		}
+		if (Key == EKeys::S)
+		{
+			return PickNewWorldPath(EAPSNewWorldPath::Space);
+		}
+		if (Key == EKeys::Enter)
+		{
+			return RunNewWorldPath();
+		}
+		if (Key == EKeys::Escape || Key == EKeys::B)
+		{
+			return Back();
+		}
+	}
+	return SCompoundWidget::OnKeyDown(MyGeometry, InKeyEvent);
+}
+
+bool SAPSMainMenuRoot::IsSplashVisible() const
+{
+	return Splash.IsValid() && Splash->GetVisibility() != EVisibility::Collapsed;
+}
+
+EActiveTimerReturnType SAPSMainMenuRoot::TickSplash(const double InCurrentTime, const float InDeltaTime)
+{
+	if (!IsSplashVisible())
+	{
+		return EActiveTimerReturnType::Stop;
+	}
+	if (SplashShownAt < 0.0)
+	{
+		SplashShownAt = InCurrentTime;
+	}
+	const double Shown = InCurrentTime - SplashShownAt;
+	if (SplashLiftStarted < 0.0)
+	{
+		// Rio 06.10: a still title screen while the start-up loads; the menu opens once that is over, in one fade. Over
+		// means ten calm frames in a row after a second (the start-up hitches are behind), or the timeout in any case.
+		SplashCalmFrames = InDeltaTime < 0.05f ? SplashCalmFrames + 1 : 0;
+		if ((Shown >= 1.0 && SplashCalmFrames >= 10) || Shown >= APSMenu::CVarSplashTimeout.GetValueOnGameThread())
+		{
+			SplashLiftStarted = InCurrentTime;
+			UE_LOG(LogTemp, Log, TEXT("[APS.Menu] Splash lifts after %.2f s (calm frames %d)"), Shown, SplashCalmFrames);
+		}
+		return EActiveTimerReturnType::Continue;
+	}
+	const float Opacity = 1.0f - FMath::Clamp(static_cast<float>((InCurrentTime - SplashLiftStarted) / 0.5), 0.0f, 1.0f);
+	Splash->SetRenderOpacity(Opacity);
+	if (Opacity <= 0.0f)
+	{
+		Splash->SetVisibility(EVisibility::Collapsed);
+		return EActiveTimerReturnType::Stop;
+	}
+	return EActiveTimerReturnType::Continue;
 }
 
 TSharedRef<SWidget> SAPSMainMenuRoot::BuildAuxiliaryPage(const FText& SectionTitle,
@@ -1443,9 +2365,9 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildAuxiliaryPage(const FText& SectionTit
 
 	return SNew(SOverlay)
 		+ SOverlay::Slot()
-		[SNew(SScaleBox).Stretch(EStretch::ScaleToFill)[SNew(SImage).Image(&BackgroundImage).ColorAndOpacity(FLinearColor(0.10f, 0.20f, 0.30f, 0.36f))]]
+		[SNew(SScaleBox).Stretch(EStretch::ScaleToFill)[SNew(SImage).Image(&BackgroundImage).ColorAndOpacity(APSMenu::Retint(FLinearColor(0.10f, 0.20f, 0.30f, 0.36f)))]]
 		+ SOverlay::Slot()
-		[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(FLinearColor(0.0f, 0.008f, 0.016f, 0.78f))]
+		[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(APSMenu::Retint(FLinearColor(0.0f, 0.008f, 0.016f, 0.78f)))]
 		+ SOverlay::Slot().Padding(24.0f)
 		[
 			SNew(SVerticalBox)
@@ -1466,231 +2388,60 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildProfilePage()
 
 TSharedRef<SWidget> SAPSMainMenuRoot::BuildSettingsPage()
 {
-	return BuildAuxiliaryPage(LOCTEXT("SettingsTitle", "SETTINGS"),
-		SettingsPanelClass, SettingsPanelInstance,
-		LOCTEXT("SettingsLoading", "LOADING SETTINGS..."));
+	// Rio 06.10: one native page in the interface theme instead of the MBLS template panel with our audio block
+	// under it (the two overlapped, and the template's sliders drove its own sound classes, not the game's).
+	return SNew(SOverlay)
+		+ SOverlay::Slot()
+		[SNew(SScaleBox).Stretch(EStretch::ScaleToFill)[SNew(SImage).Image(&BackgroundImage).ColorAndOpacity(APSMenu::Retint(FLinearColor(0.10f, 0.20f, 0.30f, 0.36f)))]]
+		+ SOverlay::Slot()
+		[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(APSMenu::Retint(FLinearColor(0.0f, 0.008f, 0.016f, 0.78f)))]
+		+ SOverlay::Slot().Padding(24.0f)
+		[
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight()[BuildHeader(LOCTEXT("SettingsTitle", "SETTINGS"))]
+			+ SVerticalBox::Slot().FillHeight(1.0f).Padding(0.0f, 18.0f, 0.0f, 0.0f)
+			[
+				SNew(SAPSSettingsPage)
+				.World(Controller.IsValid() ? Controller->GetWorld() : nullptr)
+				.InitialTab(SettingsTab)
+				.OnTabChanged_Lambda([this](const EAPSSettingsTab Tab) { SettingsTab = Tab; })
+			]
+		];
 }
 
-TSharedRef<SWidget> SAPSMainMenuRoot::BuildPathCard(const FText& Title, const FText& Description,
-	EAPSPathVisual Visual, const FLinearColor& Accent, FSimpleDelegate Action, bool bLarge, bool bEnabled)
+namespace
 {
-	EAPSMenuGlyph Glyph = EAPSMenuGlyph::Compass;
-	FText RouteCode;
-	FText StateLabel;
-	switch (Visual)
+	/** NEW WORLD's left block for each path. */
+	struct FNewWorldCopy
 	{
-	case EAPSPathVisual::LiveSystem:
-		Glyph = EAPSMenuGlyph::Compass;
-		RouteCode = LOCTEXT("PathRouteLive", "01 / LIVE SYSTEM");
-		StateLabel = LOCTEXT("PathStateLaunch", "LAUNCH READY");
-		break;
-	case EAPSPathVisual::WorldArchive:
-		Glyph = EAPSMenuGlyph::World;
-		RouteCode = LOCTEXT("PathRouteArchive", "02 / WORLD ARCHIVE");
-		StateLabel = LOCTEXT("PathStateBrowse", "BROWSE SAVES");
-		break;
-	case EAPSPathVisual::CivilizationNetwork:
-		Glyph = EAPSMenuGlyph::Civilization;
-		RouteCode = LOCTEXT("PathRouteCivilization", "03 / CIVILIZATION LAB");
-		StateLabel = LOCTEXT("PathStateSynthesis", "SYNTHESIS READY");
-		break;
-	case EAPSPathVisual::GalaxySynthesis:
-		Glyph = EAPSMenuGlyph::Space;
-		RouteCode = LOCTEXT("PathRouteGalaxy", "04 / DEEP SPACE");
-		StateLabel = LOCTEXT("PathStateGenerate", "GENERATOR READY");
-		break;
-	case EAPSPathVisual::PlanetLaboratory:
-		Glyph = EAPSMenuGlyph::Planet;
-		RouteCode = LOCTEXT("PathRoutePlanet", "05 / PLANET LAB");
-		StateLabel = LOCTEXT("PathStateDesign", "DESIGN READY");
-		break;
-	case EAPSPathVisual::StoryArchive:
-		Glyph = EAPSMenuGlyph::Lock;
-		RouteCode = LOCTEXT("PathRouteStory", "06 / STORY ARCHIVE");
-		StateLabel = LOCTEXT("PathStateLocked", "LOCKED");
-		break;
+		FText Kicker;
+		FText Title;
+		FText Description;
+		/** The amber button's label; empty: no button (SINGLE GAME plays from its list, PLANET is not ready). */
+		FText Action;
+	};
+
+	FNewWorldCopy NewWorldCopy(const EAPSNewWorldPath Path)
+	{
+		switch (Path)
+		{
+		case EAPSNewWorldPath::SingleGame:
+			return {LOCTEXT("NewWorldSingleKicker", "AUTHORED"), LOCTEXT("NewWorldSingleTitle", "SINGLE GAME"),
+				LOCTEXT("NewWorldSingleDesc", "Authored maps with a set start. Pick one from the list to play it."), FText::GetEmpty()};
+		case EAPSNewWorldPath::Space:
+			return {LOCTEXT("NewWorldSpaceKicker", "EXPLORATION"), LOCTEXT("NewWorldSpaceTitle", "DEEP SPACE"),
+				LOCTEXT("NewWorldSpaceDesc", "Roll stellar systems and clusters, then spawn among them and fly."),
+				LOCTEXT("NewWorldSpaceAction", "GENERATE SPACE")};
+		case EAPSNewWorldPath::Planet:
+			return {LOCTEXT("NewWorldPlanetKicker", "LABORATORY"), LOCTEXT("NewWorldPlanetTitle", "CREATE PLANET"),
+				LOCTEXT("NewWorldPlanetDesc", "Design a planet with atmosphere, terrain and moons. Planet Lab is coming later."),
+				FText::GetEmpty()};
+		default:
+			return {LOCTEXT("NewWorldCivKicker", "CREATION"), LOCTEXT("NewWorldCivTitle", "CREATE YOUR CIVILIZATION"),
+				LOCTEXT("NewWorldCivDesc", "Set up a civilization and shape its astronomical home."),
+				LOCTEXT("NewWorldCivAction", "SET UP CIVILIZATION")};
+		}
 	}
-	TSharedRef<SButton> CardButton = SNew(SButton)
-		.IsEnabled(bEnabled)
-		.IsFocusable(bEnabled)
-		.ButtonStyle(&FAppStyle::Get().GetWidgetStyle<FButtonStyle>("NoBorder"))
-		.OnClicked_Lambda([Action]() mutable { Action.ExecuteIfBound(); return FReply::Handled(); })
-		.ContentPadding(0.0f);
-	const TWeakPtr<SButton> WeakCardButton = CardButton;
-#if WITH_DEV_AUTOMATION_TESTS
-	ChoosePathCardButtons.Add(CardButton);
-	++ChoosePathProceduralVisualCount;
-#endif
-	CardButton->SetContent(
-			SNew(SOverlay)
-			+ SOverlay::Slot()
-			[
-				SNew(SChamferedSurface)
-				.Brush(FAppStyle::GetBrush("WhiteBrush"))
-				.Tint_Lambda([WeakCardButton, Accent, bEnabled]()
-				{
-					if (!bEnabled)
-					{
-						return FLinearColor(0.003f, 0.009f, 0.014f, 0.96f);
-					}
-					const TSharedPtr<SButton> Button = WeakCardButton.Pin();
-					const bool bActive = Button.IsValid()
-						&& (Button->IsHovered() || Button->HasKeyboardFocus());
-					return bActive
-						? FLinearColor(Accent.R * 0.055f, Accent.G * 0.055f, Accent.B * 0.055f, 0.98f)
-						: FLinearColor(0.001f, 0.007f, 0.014f, 0.97f);
-				})
-				.ChamferTop(true)
-				.ChamferBottom(true)
-			]
-			+ SOverlay::Slot()
-			[
-				SNew(SPathCardVisual)
-				.Visual(Visual)
-				.Accent(Accent)
-				.Hovered_Lambda([WeakCardButton]()
-				{
-					const TSharedPtr<SButton> Button = WeakCardButton.Pin();
-					return Button.IsValid() && (Button->IsHovered() || Button->HasKeyboardFocus());
-				})
-				.Enabled(bEnabled)
-			]
-			+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Top)
-				.Padding(FMargin(bLarge ? 25.0f : 18.0f, bLarge ? 23.0f : 17.0f))
-			[
-				SNew(SBorder)
-				.BorderImage(&APSMenu::InsetBrush)
-				.Padding(FMargin(10.0f, 5.0f))
-				[
-					SNew(STextBlock)
-					.Text(RouteCode)
-					.Font(APSMenu::Font("Bold", bLarge ? 10 : 9))
-					.ColorAndOpacity(bEnabled ? Accent : APSMenu::Muted)
-				]
-			]
-			+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Top)
-				.Padding(FMargin(bLarge ? 25.0f : 18.0f, bLarge ? 23.0f : 17.0f))
-			[
-				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.0f, 0.0f, 7.0f, 0.0f)
-				[
-					SNew(SBox).WidthOverride(5.0f).HeightOverride(5.0f)
-					[
-						SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush"))
-						.BorderBackgroundColor(bEnabled ? Accent : APSMenu::Muted)
-					]
-				]
-				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
-				[
-					SNew(STextBlock)
-					.Text(StateLabel)
-					.Font(APSMenu::Font("Bold", bLarge ? 9 : 8))
-					.ColorAndOpacity(bEnabled ? APSMenu::White : APSMenu::Muted)
-				]
-			]
-			+ SOverlay::Slot().VAlign(VAlign_Bottom)
-			[
-				// Every compact card owns the same full-width information rail. Keeping
-				// this geometry identical prevents Story/Generate cards from looking
-				// like unrelated debug panels when their descriptions differ.
-				SNew(SBox).HeightOverride(bLarge ? 210.0f : 146.0f)
-				[
-				SNew(SOverlay)
-				+ SOverlay::Slot()
-				[
-					SNew(SChamferedSurface)
-					.Brush(FAppStyle::GetBrush("WhiteBrush"))
-					.Tint(FLinearColor(0.001f, 0.010f, 0.018f, 0.975f))
-					.ChamferTop(false)
-					.ChamferBottom(true)
-				]
-				+ SOverlay::Slot().VAlign(VAlign_Top)
-					.Padding(FMargin(APSMenu::CardPerimeterThickness, 0.0f))
-				[
-					SNew(SBox).HeightOverride(2.0f)
-					[
-						SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush"))
-						.BorderBackgroundColor(bEnabled ? Accent : APSMenu::Muted)
-					]
-				]
-				+ SOverlay::Slot().Padding(FMargin(bLarge ? 30.0f : 19.0f, bLarge ? 21.0f : 13.0f))
-				[
-					SNew(SVerticalBox)
-					+ SVerticalBox::Slot().AutoHeight()
-					[
-						SNew(SBox).HeightOverride(bLarge ? 48.0f : 38.0f)
-						[
-							SNew(SOverlay)
-							+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Center)
-							[
-								SNew(SHorizontalBox)
-								+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
-								[APSMenu::IconBadge(Glyph, bEnabled ? Accent : APSMenu::Muted, bLarge ? 44.0f : 34.0f)]
-								+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(12.0f, 0.0f)
-								[
-									SNew(STextBlock).Text(Title).Justification(ETextJustify::Left)
-									.Font(APSMenu::Font("Bold", bLarge ? 28 : 19))
-									.ColorAndOpacity_Lambda([WeakCardButton, bEnabled, Accent]()
-									{
-										if (!bEnabled) return APSMenu::Muted;
-										const TSharedPtr<SButton> Button = WeakCardButton.Pin();
-										return Button.IsValid() && (Button->IsHovered() || Button->HasKeyboardFocus())
-											? Accent : APSMenu::White;
-									})
-								]
-							]
-							+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Center)
-							[
-								SNew(STextBlock).Text(FText::FromString(bEnabled ? TEXT(">") : TEXT("LOCK")))
-								.Font(APSMenu::Font("Bold", bEnabled ? 22 : 9))
-								.ColorAndOpacity(bEnabled ? Accent : APSMenu::Muted)
-							]
-						]
-					]
-					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 7.0f, 0.0f, 0.0f)
-					[
-						SNew(SBox).HeightOverride(bLarge ? 42.0f : 34.0f)
-						[
-							SNew(STextBlock).Text(Description).AutoWrapText(true)
-							.Justification(ETextJustify::Left)
-							.Font(APSMenu::Font("Regular", bLarge ? 15 : 14))
-							.ColorAndOpacity(bEnabled
-								? FLinearColor(0.68f, 0.79f, 0.85f, 1.0f) : APSMenu::Muted)
-						]
-					]
-					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, bLarge ? 18.0f : 0.0f, 0.0f, 0.0f)
-					[
-						SNew(SBorder).Visibility(bLarge ? EVisibility::Visible : EVisibility::Collapsed)
-						.BorderImage(&APSMenu::AmberPanelBrush).Padding(FMargin(18.0f, 11.0f))
-						[
-							SNew(SHorizontalBox)
-							+ SHorizontalBox::Slot().FillWidth(1.0f)
-							[SNew(STextBlock).Text(LOCTEXT("LaunchGame", "LAUNCH GAME")).Font(APSMenu::Font("Bold", 15)).ColorAndOpacity(APSMenu::White)]
-							+ SHorizontalBox::Slot().AutoWidth()
-							[SNew(STextBlock).Text(FText::FromString(TEXT(">"))).Font(APSMenu::Font("Bold", 18)).ColorAndOpacity(APSMenu::Amber)]
-						]
-					]
-				]
-				]
-			]
-			+ SOverlay::Slot()
-			[
-				SNew(SChamferedFrame)
-				.Color_Lambda([WeakCardButton, Accent, bEnabled]()
-				{
-					if (!bEnabled)
-					{
-						return APSMenu::Muted;
-					}
-					const TSharedPtr<SButton> Button = WeakCardButton.Pin();
-					return Button.IsValid() && (Button->IsHovered() || Button->HasKeyboardFocus())
-						? FLinearColor::White
-						: Accent;
-				})
-				.Thickness(APSMenu::CardPerimeterThickness)
-			]
-		);
-	return SNew(SAPSChamferedOverlay) + SOverlay::Slot()[CardButton];
 }
 
 TSharedRef<SWidget> SAPSMainMenuRoot::BuildChoosePathPage()
@@ -1700,85 +2451,439 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildChoosePathPage()
 	ChoosePathProceduralVisualCount = 0;
 	ChoosePathStaticTextureResourceCount = 0;
 #endif
-	TSharedRef<SWidget> Foreground = SNew(SVerticalBox)
-		+ SVerticalBox::Slot().AutoHeight().Padding(28.0f, 16.0f, 28.0f, 8.0f)[BuildHeader(LOCTEXT("ChoosePath", "CHOOSE YOUR PATH"))]
-		+ SVerticalBox::Slot().FillHeight(1.0f).Padding(48.0f, 14.0f, 48.0f, 36.0f)
+	// Rio 06.10, NEW WORLD (Docs/Design/MAIN_MENU_OBSERVATORY.md §3.4; layout from Codex's concept, look from the
+	// Observatory): the picked path on the left with its action, its picture on the right, the four paths as chamfered
+	// cards with their keys along the bottom. MY WORLDS lives on the landing page (WORLDS); PLANET waits for Planet Lab;
+	// SINGLE GAME is a plain list of the authored maps, one for now.
+	if (NewWorldPath == EAPSNewWorldPath::Planet)
+	{
+		NewWorldPath = EAPSNewWorldPath::Civilization;
+	}
+
+	const auto Card = [this](const EAPSNewWorldPath Path, const EAPSMenuGlyph Glyph, const FText& Code, const FText& Label,
+		const FText& Sub, const bool bEnabled, const FText& Tip) -> TSharedRef<SWidget>
+	{
+		const TSharedRef<SButton> Button = SNew(SButton)
+			.ButtonStyle(FAppStyle::Get(), "NoBorder")
+			.ContentPadding(0.0f)
+			.IsEnabled(bEnabled)
+			.IsFocusable(bEnabled)
+			.ToolTipText(Tip)
+			.OnClicked(FOnClicked::CreateSP(this, &SAPSMainMenuRoot::PickNewWorldPath, Path));
+#if WITH_DEV_AUTOMATION_TESTS
+		ChoosePathCardButtons.Add(Button);
+		++ChoosePathProceduralVisualCount;
+#endif
+		const TWeakPtr<SButton> WeakButton = Button;
+		const auto Lit = [WeakButton]()
+		{
+			const TSharedPtr<SButton> Pinned = WeakButton.Pin();
+			return Pinned.IsValid() && (Pinned->IsHovered() || Pinned->HasKeyboardFocus());
+		};
+		const auto Picked = [this, Path]() { return NewWorldPath == Path; };
+		const FLinearColor Accent = bEnabled ? APSMenu::Cyan : APSMenu::Quiet;
+		Button->SetContent(
+			SNew(SBox).HeightOverride(112.0f)
+			[
+				SNew(SOverlay)
+				+ SOverlay::Slot()
+				[
+					SNew(SChamferedSurface)
+					.Brush(FAppStyle::GetBrush("WhiteBrush"))
+					.Tint_Lambda([Lit, Picked, bEnabled]()
+					{
+						if (!bEnabled)
+						{
+							return APSMenu::ChipDisabled;
+						}
+						if (Picked())
+						{
+							return APSMenu::CardSelectedFill;
+						}
+						return Lit() ? APSMenu::ChipLit : APSMenu::ChipRest;
+					})
+					.ChamferTop(true)
+					.ChamferBottom(true)
+				]
+				+ SOverlay::Slot().Padding(FMargin(20.0f, 16.0f))
+				[
+					SNew(SVerticalBox)
+					+ SVerticalBox::Slot().AutoHeight()
+					[
+						SNew(SHorizontalBox)
+						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+						[
+							SNew(SBox).WidthOverride(28.0f).HeightOverride(28.0f)
+							[SNew(SVectorMenuGlyph).Glyph(Glyph).Color(Accent).StrokeWidth(1.6f)]
+						]
+						+ SHorizontalBox::Slot().FillWidth(1.0f)
+						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+						[
+							SNew(SBorder).BorderImage(&APSMenu::InsetBrush).Padding(FMargin(8.0f, 3.0f))
+							[
+								SNew(STextBlock).Text(Code).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(Accent)
+								.RenderTransform(APSMenu::CapsShift("Bold", 11))
+							]
+						]
+					]
+					+ SVerticalBox::Slot().FillHeight(1.0f)
+					+ SVerticalBox::Slot().AutoHeight()
+					[
+						SNew(STextBlock).Text(Label).Font(APSMenu::Font("Bold", 17))
+						.ColorAndOpacity(bEnabled ? APSMenu::White : APSMenu::Readable)
+					]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 3.0f, 0.0f, 0.0f)
+					[
+						SNew(STextBlock).Text(Sub).Font(APSMenu::Font("Regular", 16)).ColorAndOpacity(APSMenu::Readable)
+					]
+				]
+				+ SOverlay::Slot()
+				[
+					SNew(SChamferedFrame).Thickness(1.0f)
+					.Color_Lambda([Lit, Picked, bEnabled]()
+					{
+						if (!bEnabled)
+						{
+							return APSMenu::DisabledFrame;
+						}
+						if (Picked())
+						{
+							return APSMenu::Amber;
+						}
+						return Lit() ? APSMenu::Cyan : APSMenu::CyanDim;
+					})
+				]
+			]);
+		return Button;
+	};
+
+	// The picked path: kicker, title, description and the amber action.
+	FSlateFontInfo KickerFont = APSMenu::Font("Bold", 13);
+	KickerFont.LetterSpacing = 300;
+	const TSharedRef<SButton> ActionButton = SNew(SButton)
+		.ButtonStyle(FAppStyle::Get(), "NoBorder")
+		.ContentPadding(0.0f)
+		.OnClicked(this, &SAPSMainMenuRoot::RunNewWorldPath)
+		.Visibility_Lambda([this]() { return NewWorldCopy(NewWorldPath).Action.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible; });
+	const TWeakPtr<SButton> WeakAction = ActionButton;
+	ActionButton->SetContent(
+		SNew(SBox).HeightOverride(60.0f)
 		[
-			SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot().FillWidth(0.31f).Padding(7.0f)
+			SNew(SOverlay)
+			+ SOverlay::Slot()
 			[
-				BuildPathCard(LOCTEXT("StartGame", "START SINGLE GAME"),
-					LOCTEXT("StartGameDesc", "Begin a new journey through the live full-scale world."), EAPSPathVisual::LiveSystem,
-					APSMenu::Amber, FSimpleDelegate::CreateLambda([this]() { StartSingleGame(); }), true)
+				SNew(SChamferedSurface).Brush(FAppStyle::GetBrush("WhiteBrush"))
+				.Tint_Lambda([WeakAction]()
+				{
+					const TSharedPtr<SButton> Pinned = WeakAction.Pin();
+					return Pinned.IsValid() && Pinned->IsHovered() ? APSMenu::ActionBright : APSMenu::Amber;
+				})
+				.ChamferTop(true).ChamferBottom(true)
 			]
-			+ SHorizontalBox::Slot().FillWidth(0.69f).Padding(7.0f)
+			+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center).Padding(FMargin(30.0f, 0.0f))
 			[
-				SNew(SVerticalBox)
-				+ SVerticalBox::Slot().FillHeight(0.5f).Padding(0.0f, 0.0f, 0.0f, 6.0f)
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 				[
-					SNew(SHorizontalBox)
-					+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(6.0f, 0.0f)
-					[BuildPathCard(LOCTEXT("VisitWorld", "VISIT EXISTING WORLD"), LOCTEXT("VisitDesc", "Explore worlds you have already created."), EAPSPathVisual::WorldArchive, APSMenu::Cyan, FSimpleDelegate::CreateLambda([this]() { OpenExistingWorlds(); }))]
-					+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(6.0f, 0.0f)
-					[BuildPathCard(LOCTEXT("GenCiv", "GENERATE CIVILIZATION"), LOCTEXT("GenCivDesc", "Create a civilization and shape its astronomical home."), EAPSPathVisual::CivilizationNetwork, APSMenu::Cyan, FSimpleDelegate::CreateLambda([this]() { OpenAstronomicalGeneration(EAstroPreviewFocus::HomePlanet, EAPSGenerationRoute::Civilization); }))]
-					+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(6.0f, 0.0f)
-					[BuildPathCard(LOCTEXT("GenSpace", "GENERATE SPACE"), LOCTEXT("GenSpaceDesc", "Procedurally generate stellar systems and clusters."), EAPSPathVisual::GalaxySynthesis, APSMenu::Cyan, FSimpleDelegate::CreateLambda([this]() { OpenAstronomicalGeneration(EAstroPreviewFocus::StarCluster, EAPSGenerationRoute::Space); }))]
+					SNew(STextBlock).Font(APSMenu::Font("Bold", 16)).ColorAndOpacity(APSMenu::OnAction)
+					.RenderTransform(APSMenu::CapsShift("Bold", 16))
+					.Text_Lambda([this]() { return NewWorldCopy(NewWorldPath).Action; })
 				]
-				+ SVerticalBox::Slot().FillHeight(0.5f).Padding(0.0f, 6.0f, 0.0f, 0.0f)
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(22.0f, 0.0f, 0.0f, 0.0f)
 				[
-					SNew(SHorizontalBox)
-					+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(6.0f, 0.0f)
-					[BuildPathCard(LOCTEXT("CreatePlanet", "CREATE PLANET"), LOCTEXT("PlanetDesc", "Design a planet with atmosphere, terrain and moons."), EAPSPathVisual::PlanetLaboratory, APSMenu::Cyan, FSimpleDelegate::CreateLambda([this]() { OpenAstronomicalGeneration(EAstroPreviewFocus::HomePlanet, EAPSGenerationRoute::Planet); }))]
-					+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(6.0f, 0.0f)
-					[BuildPathCard(LOCTEXT("Story", "STORY MODE"), LOCTEXT("StoryDesc", "Unravel the deeper story of Aposfera.  COMING SOON"), EAPSPathVisual::StoryArchive, APSMenu::Muted, FSimpleDelegate(), false, false)]
+					SNew(STextBlock).Text(FText::FromString(TEXT(">"))).Font(APSMenu::Font("Bold", 18))
+					.ColorAndOpacity(APSMenu::OnAction).RenderTransform(APSMenu::SymbolShift("Bold", 18))
 				]
+			]
+			+ SOverlay::Slot()
+			[
+				SNew(SChamferedFrame).Thickness(1.0f).Color(APSMenu::ActionBright)
+			]
+		]);
+	const TSharedRef<SWidget> Left =
+		SNew(SBox).WidthOverride(600.0f)
+		[
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight()
+			[
+				SNew(STextBlock).Font(KickerFont).ColorAndOpacity(APSMenu::Cyan)
+				.Text_Lambda([this]() { return NewWorldCopy(NewWorldPath).Kicker; })
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 14.0f, 0.0f, 0.0f)
+			[
+				SNew(STextBlock).Font(APSMenu::Font("Bold", 44)).ColorAndOpacity(APSMenu::White).AutoWrapText(true)
+				.Text_Lambda([this]() { return NewWorldCopy(NewWorldPath).Title; })
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 16.0f, 0.0f, 0.0f)
+			[
+				SNew(STextBlock).Font(APSMenu::Font("Regular", 18)).ColorAndOpacity(APSMenu::Readable).AutoWrapText(true)
+				.Text_Lambda([this]() { return NewWorldCopy(NewWorldPath).Description; })
+			]
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Left).Padding(0.0f, 30.0f, 0.0f, 0.0f)
+			[
+				ActionButton
 			]
 		];
 
+	// The picture of the path, or SINGLE GAME's list of authored maps.
+	// Rio 06.10: no home-system diagram for CIVILIZATION ("flat; its stars merge with the galaxy; the caption stands still
+	// while the system turns"): the live galaxy behind the page is the picture until the menu's new galaxy (APS DEV).
+	const auto IsPicture = [this]() { return NewWorldPath == EAPSNewWorldPath::Space; };
+	const TSharedRef<SWidget> Right =
+		SNew(SOverlay)
+		+ SOverlay::Slot()
+		[
+			SNew(SBox).Visibility_Lambda([IsPicture]() { return IsPicture() ? EVisibility::HitTestInvisible : EVisibility::Collapsed; })
+			[
+				SNew(SNewWorldVisual).Path_Lambda([this]() { return NewWorldPath; })
+			]
+		]
+		+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Top).Padding(FMargin(0.0f, 24.0f, 0.0f, 0.0f))
+		[
+			SNew(SVerticalBox).Visibility_Lambda([IsPicture]() { return IsPicture() ? EVisibility::HitTestInvisible : EVisibility::Collapsed; })
+			+ SVerticalBox::Slot().AutoHeight()
+			[
+				SNew(STextBlock).Font(APSMenu::Font("Bold", 14)).ColorAndOpacity(APSMenu::Amber)
+				.Text_Lambda([this]()
+				{
+					return NewWorldPath == EAPSNewWorldPath::Space ? LOCTEXT("NewWorldSpaceCaption", "STAR CLUSTER")
+						: LOCTEXT("NewWorldCivCaption", "YOUR HOME WORLD");
+				})
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 4.0f, 0.0f, 0.0f)
+			[
+				SNew(STextBlock).Font(APSMenu::Font("Regular", 14)).ColorAndOpacity(APSMenu::Readable)
+				.Text_Lambda([this]()
+				{
+					return NewWorldPath == EAPSNewWorldPath::Space ? LOCTEXT("NewWorldSpaceCaptionSub", "Your start is rolled among these stars")
+						: LOCTEXT("NewWorldCivCaptionSub", "Its star, planets and moons are yours to shape");
+				})
+			]
+		]
+		+ SOverlay::Slot().VAlign(VAlign_Center).Padding(FMargin(20.0f, 0.0f))
+		[
+			SNew(SBox)
+			.Visibility_Lambda([this]() { return NewWorldPath == EAPSNewWorldPath::SingleGame ? EVisibility::Visible : EVisibility::Collapsed; })
+			[
+				BuildAuthoredMapGrid()
+			]
+		];
+
+	const TSharedRef<SHorizontalBox> Cards = SNew(SHorizontalBox);
+	Cards->AddSlot().FillWidth(1.0f).Padding(8.0f, 0.0f)
+	[Card(EAPSNewWorldPath::SingleGame, EAPSMenuGlyph::Ship, LOCTEXT("NewWorldSingleKey", "G"), LOCTEXT("NewWorldSingleCard", "SINGLE GAME"),
+		LOCTEXT("NewWorldSingleSub", "Authored maps"), true, LOCTEXT("NewWorldSingleTip", "Play a hand-made map"))];
+	Cards->AddSlot().FillWidth(1.0f).Padding(8.0f, 0.0f)
+	[Card(EAPSNewWorldPath::Civilization, EAPSMenuGlyph::Civilization, LOCTEXT("NewWorldCivKey", "C"), LOCTEXT("NewWorldCivCard", "CIVILIZATION"),
+		LOCTEXT("NewWorldCivSub", "Create civilization"), true, LOCTEXT("NewWorldCivTip", "Generate a civilization"))];
+	Cards->AddSlot().FillWidth(1.0f).Padding(8.0f, 0.0f)
+	[Card(EAPSNewWorldPath::Space, EAPSMenuGlyph::Space, LOCTEXT("NewWorldSpaceKey", "S"), LOCTEXT("NewWorldSpaceCard", "SPACE"),
+		LOCTEXT("NewWorldSpaceSub", "Fly the deep space"), true, LOCTEXT("NewWorldSpaceTip", "Generate space"))];
+	Cards->AddSlot().FillWidth(1.0f).Padding(8.0f, 0.0f)
+	[Card(EAPSNewWorldPath::Planet, EAPSMenuGlyph::Planet, LOCTEXT("NewWorldPlanetKey", "P"), LOCTEXT("NewWorldPlanetCard", "PLANET"),
+		LOCTEXT("NewWorldPlanetSub", "Coming soon"), false, LOCTEXT("PlanetLabSoon", "Planet Lab is coming later"))];
+
 	return SNew(SOverlay)
 		+ SOverlay::Slot()
-		[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(FLinearColor(0.0f, 0.004f, 0.010f, 0.16f))]
-		+ SOverlay::Slot()[Foreground];
+		[SNew(SObservatoryVeil).LeftShade(true)]
+		+ SOverlay::Slot()
+		[
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight().Padding(28.0f, 16.0f, 28.0f, 8.0f)
+			[
+				BuildHeader(LOCTEXT("NewWorldSection", "NEW WORLD"))
+			]
+			+ SVerticalBox::Slot().FillHeight(1.0f).Padding(90.0f, 10.0f, 60.0f, 10.0f)
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().FillWidth(0.46f).VAlign(VAlign_Center)
+				[
+					Left
+				]
+				+ SHorizontalBox::Slot().FillWidth(0.54f).Padding(30.0f, 0.0f, 0.0f, 0.0f)
+				[
+					Right
+				]
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(82.0f, 0.0f, 82.0f, 0.0f)
+			[
+				Cards
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(90.0f, 18.0f, 90.0f, 28.0f)
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
+				[
+					SNew(STextBlock).Text(LOCTEXT("NewWorldHint", "Choose your path   /   G, C or S picks a card, Enter starts, Esc goes back"))
+					.Font(APSMenu::Font("Regular", 14)).ColorAndOpacity(APSMenu::Cyan)
+				]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+				[
+					SNew(SBox).WidthOverride(16.0f).HeightOverride(16.0f)
+					[SNew(SVectorMenuGlyph).Glyph(EAPSMenuGlyph::Lock).Color(APSMenu::Readable).StrokeWidth(1.4f)]
+				]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(9.0f, 0.0f, 0.0f, 0.0f)
+				[
+					SNew(STextBlock).Text(LOCTEXT("NewWorldStory", "STORY MODE   ·   IN DEVELOPMENT")).Font(APSMenu::Font("Bold", 11))
+					.ColorAndOpacity(APSMenu::Readable).RenderTransform(APSMenu::CapsShift("Bold", 11))
+				]
+			]
+		];
+}
+
+FReply SAPSMainMenuRoot::PickNewWorldPath(const EAPSNewWorldPath Path)
+{
+	if (Path != EAPSNewWorldPath::Planet)
+	{
+		NewWorldPath = Path;
+	}
+	return FReply::Handled();
+}
+
+FReply SAPSMainMenuRoot::RunNewWorldPath()
+{
+	switch (NewWorldPath)
+	{
+	case EAPSNewWorldPath::SingleGame:
+		return StartSingleGame();
+	case EAPSNewWorldPath::Space:
+		return OpenAstronomicalGeneration(EAstroPreviewFocus::StarCluster, EAPSGenerationRoute::Space);
+	case EAPSNewWorldPath::Civilization:
+		return OpenAstronomicalGeneration(EAstroPreviewFocus::HomePlanet, EAPSGenerationRoute::Civilization);
+	default:
+		return FReply::Handled();
+	}
 }
 
 TSharedRef<SWidget> SAPSMainMenuRoot::BuildExistingWorldsPage()
 {
-	LoadExistingWorlds();
+	// A new page starts with an empty search box, so with no search; collection, sort and filters persist.
+	WorldSearch.Reset();
 	ExistingWorldPage = 0;
+	PendingDeleteWorld.Reset();
+	PendingBulkDelete.Reset();
+	WorldBrowserNotice = FText::GetEmpty();
+	WorldFilterAnchors.Reset();
+	LoadExistingWorlds();
+	const FButtonStyle* NoBorderStyle = &FAppStyle::Get().GetWidgetStyle<FButtonStyle>("NoBorder");
 
-	const auto NavRow = [this](const FText& Label, EAPSWorldCollection Collection, TFunction<int32()> CountGetter)
+	const auto NavRow = [this](const FText& Label, EAPSWorldCollection Collection, TFunction<int32()> CountGetter,
+		const FText& ToolTip)
 	{
 		const FText Glyph = FText::FromString(Label.ToString().Left(1));
 		return SNew(SButton)
 			.ButtonStyle(&SecondaryButtonStyle)
+			.ToolTipText(ToolTip)
 			.ButtonColorAndOpacity_Lambda([this, Collection]()
 			{
 				return WorldCollection == Collection
-					? FLinearColor(0.72f, 0.32f, 0.03f, 1.0f) : FLinearColor::White;
+					? APSMenu::RetintAction(FLinearColor(0.72f, 0.32f, 0.03f, 1.0f)) : FLinearColor::White;
 			})
-			.ContentPadding(FMargin(14.0f, 11.0f))
+			.ContentPadding(APSMenu::ButtonPadding("Bold", 13, 14.0f))
 			.OnClicked(this, &SAPSMainMenuRoot::SetWorldCollection, Collection)
 			[
 				SNew(SHorizontalBox)
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.0f, 0.0f, 10.0f, 0.0f)
-				[APSMenu::Badge(Glyph, WorldCollection == Collection ? APSMenu::Amber : APSMenu::Cyan, 26.0f)]
+				[APSMenu::Badge(Glyph, APSMenu::Cyan, 26.0f)]
 				+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
-				[SNew(STextBlock).Text(Label).Font(APSMenu::Font("Bold", 13)).ColorAndOpacity_Lambda([this, Collection](){ return WorldCollection == Collection ? APSMenu::Amber : APSMenu::White; })]
+				[
+					SNew(STextBlock).Text(Label).Font(APSMenu::Font("Bold", 13)).RenderTransform(APSMenu::CapsShift("Bold", 13))
+					.ColorAndOpacity_Lambda([this, Collection](){ return WorldCollection == Collection ? APSMenu::Amber : APSMenu::White; })
+				]
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
-				[SNew(STextBlock).Text_Lambda([CountGetter](){ return FText::AsNumber(CountGetter()); }).Font(APSMenu::Font("Bold", 12)).ColorAndOpacity(APSMenu::Muted)]
+				[
+					SNew(STextBlock).Text_Lambda([CountGetter](){ return APSUINumber::Number(CountGetter()); })
+					.Font(APSMenu::Font("Bold", 12)).ColorAndOpacity(APSMenu::Readable).RenderTransform(APSMenu::CapsShift("Bold", 12))
+				]
 			];
 	};
 
+	// Rio 03.10 ("the filters are broken"): a label over a dropdown whose options come from the scanned worlds.
 	const auto FilterRow = [this](const FText& Label, EAPSWorldFilterKind Kind)
 	{
-		return SNew(SButton).ButtonStyle(&FAppStyle::Get().GetWidgetStyle<FButtonStyle>("NoBorder"))
-			.ContentPadding(FMargin(2.0f, 5.0f)).OnClicked(this, &SAPSMainMenuRoot::CycleWorldFilter, Kind)
+		const TSharedRef<SMenuAnchor> Anchor = SNew(SMenuAnchor)
+			.Placement(MenuPlacement_ComboBox)
+			.Method(EPopupMethod::UseCurrentWindow)
+			.OnGetMenuContent(FOnGetContent::CreateSP(this, &SAPSMainMenuRoot::BuildWorldFilterMenu, Kind));
+		Anchor->SetContent(
+			SNew(SButton).ButtonStyle(&SecondaryButtonStyle)
+			.ContentPadding(APSMenu::ButtonPadding("Bold", 11, 12.0f))
+			.OnClicked(this, &SAPSMainMenuRoot::ToggleWorldFilterMenu, Kind)
 			[
 				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot().FillWidth(1.0f)[SNew(STextBlock).Text(Label).Font(APSMenu::Font("Regular", 10)).ColorAndOpacity(APSMenu::Muted)]
-				+ SHorizontalBox::Slot().AutoWidth()[SNew(STextBlock).Text_Lambda([this, Kind](){ return GetWorldFilterLabel(Kind); }).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::Cyan)]
+				+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
+				[
+					SNew(STextBlock).Text_Lambda([this, Kind]() { return GetWorldFilterLabel(Kind); })
+					.Font(APSMenu::Font("Bold", 11)).OverflowPolicy(ETextOverflowPolicy::Ellipsis)
+					.RenderTransform(APSMenu::CapsShift("Bold", 11))
+					.ColorAndOpacity_Lambda([this, Kind]() { return WorldFilterChoices.Contains(Kind) ? APSMenu::Amber : APSMenu::White; })
+				]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(8.0f, 0.0f, 0.0f, 0.0f)
+				[
+					SNew(STextBlock).Text(FText::FromString(TEXT("v"))).Font(APSMenu::Font("Bold", 11))
+					.ColorAndOpacity(APSMenu::Cyan).RenderTransform(APSMenu::SymbolShift("Bold", 11))
+				]
+			]);
+		WorldFilterAnchors.Add(Kind, Anchor);
+		return SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight().Padding(2.0f, 0.0f, 0.0f, 5.0f)
+			[SNew(STextBlock).Text(Label).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::Readable)]
+			+ SVerticalBox::Slot().AutoHeight()[Anchor];
+	};
+
+	const auto TopBarButton = [this](const TAttribute<FText>& Label, const FOnClicked& Action, const FLinearColor& Color)
+	{
+		return SNew(SButton).ButtonStyle(&SecondaryButtonStyle)
+			.ContentPadding(APSMenu::ButtonPadding("Bold", 10))
+			.HAlign(HAlign_Center).VAlign(VAlign_Center)
+			.OnClicked(Action)
+			[
+				SNew(STextBlock).Text(Label).Justification(ETextJustify::Center)
+				.Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(Color).RenderTransform(APSMenu::CapsShift("Bold", 10))
 			];
 	};
+	const auto PageButton = [this](const FText& Label, const int32 Delta)
+	{
+		return SNew(SBox).MinDesiredWidth(128.0f)
+		[
+			SNew(SButton).ButtonStyle(&SecondaryButtonStyle)
+			.ContentPadding(APSMenu::ButtonPadding("Bold", 10))
+			.HAlign(HAlign_Center).VAlign(VAlign_Center)
+			.OnClicked(this, &SAPSMainMenuRoot::ChangeExistingWorldPage, Delta)
+			[
+				SNew(STextBlock).Text(Label).Justification(ETextJustify::Center)
+				.Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::Cyan).RenderTransform(APSMenu::CapsShift("Bold", 10))
+			]
+		];
+	};
+
+	// DELETE ALL: whatever the list shows now (Rio 03.10), behind a confirmation that arms after a countdown.
+	TSharedRef<SButton> DeleteAllButton = SNew(SButton).ButtonStyle(&DangerButtonStyle)
+		.ContentPadding(APSMenu::ButtonPadding("Bold", 11))
+		.HAlign(HAlign_Center).VAlign(VAlign_Center)
+		.IsEnabled_Lambda([this]() { return ListedWorlds.Num() > 0; })
+		.ToolTipText(LOCTEXT("DeleteAllTip", "Delete every world the list shows now: the collection, the search and the filters decide which."))
+		.OnClicked(this, &SAPSMainMenuRoot::RequestDeleteListedWorlds);
+	const TWeakPtr<SButton> WeakDeleteAll = DeleteAllButton;
+	DeleteAllButton->SetContent(
+		SNew(STextBlock).Justification(ETextJustify::Center)
+		.Font(APSMenu::Font("Bold", 11)).RenderTransform(APSMenu::CapsShift("Bold", 11))
+		.Text_Lambda([this]()
+		{
+			if (ListedWorlds.IsEmpty())
+			{
+				return LOCTEXT("DeleteAllNone", "DELETE ALL");
+			}
+			return HasWorldNarrowing()
+				? FText::Format(LOCTEXT("DeleteShown", "DELETE {0} SHOWN"), APSUINumber::Number(ListedWorlds.Num()))
+				: FText::Format(LOCTEXT("DeleteAllCount", "DELETE ALL {0}"), APSUINumber::Number(ListedWorlds.Num()));
+		})
+		.ColorAndOpacity_Lambda([this, WeakDeleteAll]()
+		{
+			const TSharedPtr<SButton> Button = WeakDeleteAll.Pin();
+			return ListedWorlds.IsEmpty() ? APSMenu::Muted
+				: Button.IsValid() && Button->IsHovered() ? APSMenu::DangerBright : APSMenu::Danger;
+		}));
 
 	TSharedRef<SWidget> Page = SNew(SVerticalBox)
 		+ SVerticalBox::Slot().AutoHeight().Padding(30.0f, 18.0f, 30.0f, 8.0f)[BuildHeader(LOCTEXT("VisitExisting", "VISIT EXISTING WORLD"))]
@@ -1793,17 +2898,57 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildExistingWorldsPage()
 					SNew(SBorder).BorderImage(&APSMenu::PanelBrush).Padding(14.0f)
 					[
 					SNew(SVerticalBox)
-					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 5.0f)[NavRow(LOCTEXT("AllWorlds", "ALL WORLDS"), EAPSWorldCollection::All, [this](){ return ExistingWorlds.Num(); })]
-					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 5.0f)[NavRow(LOCTEXT("MyWorlds", "MY WORLDS"), EAPSWorldCollection::MyWorlds, [this](){ return ExistingWorlds.Num(); })]
-					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 5.0f)[NavRow(LOCTEXT("Favorites", "FAVORITES"), EAPSWorldCollection::Favorites, [this](){ int32 Count=0; for(const TSharedPtr<FAPSExistingWorldEntry>& E:ExistingWorlds){ if(E.IsValid()&&E->bFavorite){++Count;} } return Count; })]
-					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 5.0f)[NavRow(LOCTEXT("Recent", "RECENT"), EAPSWorldCollection::Recent, [this](){ return FMath::Min(6, ExistingWorlds.Num()); })]
-					+ SVerticalBox::Slot().AutoHeight().Padding(4.0f, 20.0f, 4.0f, 10.0f)[SNew(STextBlock).Text(LOCTEXT("Filters", "FILTERS")).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::Muted)]
-					+ SVerticalBox::Slot().AutoHeight().Padding(4.0f, 5.0f)[FilterRow(LOCTEXT("StarTypeFilter", "STAR TYPE"), EAPSWorldFilterKind::StarType)]
-					+ SVerticalBox::Slot().AutoHeight().Padding(4.0f, 5.0f)[FilterRow(LOCTEXT("WorldTypeFilter", "WORLD TYPE"), EAPSWorldFilterKind::WorldType)]
-					+ SVerticalBox::Slot().AutoHeight().Padding(4.0f, 5.0f)[FilterRow(LOCTEXT("InhabitedFilter", "INHABITED"), EAPSWorldFilterKind::Inhabited)]
-					+ SVerticalBox::Slot().AutoHeight().Padding(4.0f, 5.0f)[FilterRow(LOCTEXT("EnvironmentFilter", "ENVIRONMENT"), EAPSWorldFilterKind::Environment)]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 5.0f)
+					[NavRow(LOCTEXT("AllWorlds", "ALL WORLDS"), EAPSWorldCollection::All, [this](){ return ExistingWorlds.Num(); },
+						LOCTEXT("AllWorldsTip", "Every world save."))]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 5.0f)
+					[NavRow(LOCTEXT("Favorites", "FAVORITES"), EAPSWorldCollection::Favorites,
+						[this](){ int32 Count=0; for(const TSharedPtr<FAPSExistingWorldEntry>& E:ExistingWorlds){ if(E.IsValid()&&E->bFavorite){++Count;} } return Count; },
+						LOCTEXT("FavoritesTip", "Worlds marked with the star on their card."))]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 5.0f)
+					[NavRow(LOCTEXT("Recent", "RECENT"), EAPSWorldCollection::Recent, [this](){ return FMath::Min(APSMenu::RecentWorldCount, ExistingWorlds.Num()); },
+						LOCTEXT("RecentTip", "The six worlds saved last."))]
+					+ SVerticalBox::Slot().AutoHeight().Padding(2.0f, 18.0f, 0.0f, 8.0f)
+					[
+						SNew(SHorizontalBox)
+						+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
+						[SNew(STextBlock).Text(LOCTEXT("Filters", "FILTERS")).Font(APSMenu::Font("Bold", 12)).ColorAndOpacity(APSMenu::Cyan).RenderTransform(APSMenu::CapsShift("Bold", 12))]
+						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+						[
+							SNew(SButton).ButtonStyle(NoBorderStyle).ContentPadding(FMargin(8.0f, 4.0f))
+							.Visibility_Lambda([this]() { return WorldFilterChoices.Num() > 0 ? EVisibility::Visible : EVisibility::Hidden; })
+							.ToolTipText(LOCTEXT("ClearFiltersTip", "Show every star, world type and environment again."))
+							.OnClicked(this, &SAPSMainMenuRoot::ClearWorldFilters)
+							[SNew(STextBlock).Text(LOCTEXT("ClearFilters", "CLEAR")).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::Amber).RenderTransform(APSMenu::CapsShift("Bold", 10))]
+						]
+					]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 10.0f)[FilterRow(LOCTEXT("StarTypeFilter", "STAR TYPE"), EAPSWorldFilterKind::StarType)]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 10.0f)[FilterRow(LOCTEXT("WorldTypeFilter", "WORLD TYPE"), EAPSWorldFilterKind::WorldType)]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 10.0f)[FilterRow(LOCTEXT("InhabitedFilter", "INHABITED"), EAPSWorldFilterKind::Inhabited)]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 10.0f)[FilterRow(LOCTEXT("EnvironmentFilter", "ENVIRONMENT"), EAPSWorldFilterKind::Environment)]
+					+ SVerticalBox::Slot().AutoHeight().Padding(2.0f, 4.0f, 0.0f, 0.0f)
+					[
+						SNew(STextBlock)
+						.Text_Lambda([this]()
+						{
+							const int32 Total = ExistingWorlds.Num();
+							const FText TotalText = Total == 1 ? LOCTEXT("OneWorldCount", "1 WORLD")
+								: FText::Format(LOCTEXT("WorldsCount", "{0} WORLDS"), APSUINumber::Number(Total));
+							return HasWorldNarrowing()
+								? FText::Format(LOCTEXT("WorldsShownCount", "{0} OF {1}"), APSUINumber::Number(ListedWorlds.Num()), TotalText)
+								: TotalText;
+						})
+						.Font(APSMenu::Font("Bold", 12))
+						.ColorAndOpacity_Lambda([this]() { return HasWorldNarrowing() ? APSMenu::Amber : APSMenu::Readable; })
+					]
 					+ SVerticalBox::Slot().FillHeight(1.0f)
-					+ SVerticalBox::Slot().AutoHeight()[SNew(SButton).IsEnabled(false).ToolTipText(LOCTEXT("ImportSaveHint", "Place .sav files in Saved/SaveGames; the browser discovers them without blocking.")).ButtonStyle(&SecondaryButtonStyle).ContentPadding(FMargin(15.0f, 12.0f))[SNew(STextBlock).Text(LOCTEXT("ImportSave", "IMPORT SAVE")).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 12)).ColorAndOpacity(APSMenu::Muted)]]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 8.0f)[DeleteAllButton]
+					+ SVerticalBox::Slot().AutoHeight()
+					[
+						SNew(SButton).IsEnabled(false).ToolTipText(LOCTEXT("ImportSaveHint", "Place .sav files in Saved/SaveGames; the browser discovers them without blocking."))
+						.ButtonStyle(&SecondaryButtonStyle).ContentPadding(APSMenu::ButtonPadding("Bold", 11)).HAlign(HAlign_Center).VAlign(VAlign_Center)
+						[SNew(STextBlock).Text(LOCTEXT("ImportSave", "IMPORT SAVE")).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::Muted).RenderTransform(APSMenu::CapsShift("Bold", 11))]
+					]
 					]
 				]
 				+ SOverlay::Slot()
@@ -1817,10 +2962,14 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildExistingWorldsPage()
 				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 8.0f)
 				[
 					SNew(SHorizontalBox)
-					+ SHorizontalBox::Slot().FillWidth(1.0f)[SNew(SSearchBox).HintText(LOCTEXT("SearchWorlds", "Search worlds...")).OnTextChanged(this, &SAPSMainMenuRoot::OnWorldSearchChanged)]
-					+ SHorizontalBox::Slot().AutoWidth().Padding(8.0f, 0.0f, 2.0f, 0.0f)[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).OnClicked_Lambda([this](){ RefreshExistingWorlds(); return FReply::Handled(); })[SNew(STextBlock).Text(LOCTEXT("RefreshWorlds", "REFRESH")).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::Cyan)]]
-					+ SHorizontalBox::Slot().AutoWidth().Padding(8.0f, 0.0f)[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).OnClicked(this, &SAPSMainMenuRoot::CycleWorldSort)[SNew(STextBlock).Text_Lambda([this](){ return GetWorldSortLabel(); }).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::White)]]
-					+ SHorizontalBox::Slot().AutoWidth().Padding(2.0f, 0.0f)[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).OnClicked(this, &SAPSMainMenuRoot::ToggleWorldView)[SNew(STextBlock).Text_Lambda([this](){ return FText::FromString(bCompactWorldList ? TEXT("LIST") : TEXT("GRID")); }).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::Cyan)]]
+					+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
+					[SNew(SSearchBox).HintText(LOCTEXT("SearchWorlds", "Search worlds...")).OnTextChanged(this, &SAPSMainMenuRoot::OnWorldSearchChanged)]
+					+ SHorizontalBox::Slot().AutoWidth().Padding(8.0f, 0.0f, 0.0f, 0.0f)
+					[TopBarButton(LOCTEXT("RefreshWorlds", "REFRESH"), FOnClicked::CreateLambda([this](){ RefreshExistingWorlds(); return FReply::Handled(); }), APSMenu::Cyan)]
+					+ SHorizontalBox::Slot().AutoWidth().Padding(8.0f, 0.0f, 0.0f, 0.0f)
+					[TopBarButton(TAttribute<FText>::CreateLambda([this](){ return GetWorldSortLabel(); }), FOnClicked::CreateSP(this, &SAPSMainMenuRoot::CycleWorldSort), APSMenu::White)]
+					+ SHorizontalBox::Slot().AutoWidth().Padding(8.0f, 0.0f, 0.0f, 0.0f)
+					[TopBarButton(TAttribute<FText>::CreateLambda([this](){ return FText::FromString(bCompactWorldList ? TEXT("LIST") : TEXT("GRID")); }), FOnClicked::CreateSP(this, &SAPSMainMenuRoot::ToggleWorldView), APSMenu::Cyan)]
 				]
 				+ SVerticalBox::Slot().FillHeight(1.0f)
 				[
@@ -1829,9 +2978,18 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildExistingWorldsPage()
 				+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0.0f, 8.0f, 0.0f, 0.0f)
 				[
 					SNew(SHorizontalBox)
-					+ SHorizontalBox::Slot().AutoWidth().Padding(3.0f)[SNew(SBox).MinDesiredWidth(118.0f)[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(FMargin(12.0f, 7.0f)).OnClicked(this, &SAPSMainMenuRoot::ChangeExistingWorldPage, -1)[SNew(STextBlock).Text(LOCTEXT("PreviousPage", "<<  PREVIOUS")).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::Cyan)]]]
-					+ SHorizontalBox::Slot().AutoWidth().Padding(12.0f, 7.0f)[SNew(STextBlock).Text_Lambda([this](){ return FText::AsNumber(ExistingWorldPage + 1); }).Font(APSMenu::Font("Bold", 12)).ColorAndOpacity(APSMenu::White)]
-					+ SHorizontalBox::Slot().AutoWidth().Padding(3.0f)[SNew(SBox).MinDesiredWidth(118.0f)[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(FMargin(12.0f, 7.0f)).OnClicked(this, &SAPSMainMenuRoot::ChangeExistingWorldPage, 1)[SNew(STextBlock).Text(LOCTEXT("NextPage", "NEXT  >>")).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::Cyan)]]]
+					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(3.0f)[PageButton(LOCTEXT("PreviousPage", "<<  PREVIOUS"), -1)]
+					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(14.0f, 0.0f)
+					[
+						SNew(STextBlock)
+						.Text_Lambda([this]()
+						{
+							const int32 Pages = FMath::Max(1, FMath::DivideAndRoundUp(ListedWorlds.Num(), 6));
+							return FText::Format(LOCTEXT("PageOfPages", "{0} / {1}"), APSUINumber::Number(ExistingWorldPage + 1), APSUINumber::Number(Pages));
+						})
+						.Font(APSMenu::Font("Bold", 12)).ColorAndOpacity(APSMenu::White).RenderTransform(APSMenu::CapsShift("Bold", 12))
+					]
+					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(3.0f)[PageButton(LOCTEXT("NextPage", "NEXT  >>"), 1)]
 				]
 			]
 			+ SHorizontalBox::Slot().FillWidth(0.21f).Padding(5.0f)
@@ -1840,15 +2998,210 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildExistingWorldsPage()
 			]
 		];
 
-	RebuildExistingWorldGrid();
-	RebuildExistingWorldDetails();
+	ApplyExistingWorldView();
 	BeginExistingWorldMetadataLoad();
 	return SNew(SOverlay)
 		+ SOverlay::Slot()
-		[SNew(SScaleBox).Stretch(EStretch::ScaleToFill)[SNew(SImage).Image(&BackgroundImage).ColorAndOpacity(FLinearColor(0.16f, 0.26f, 0.35f, 0.24f))]]
+		[SNew(SScaleBox).Stretch(EStretch::ScaleToFill)[SNew(SImage).Image(&BackgroundImage).ColorAndOpacity(APSMenu::Retint(FLinearColor(0.16f, 0.26f, 0.35f, 0.24f)))]]
 		+ SOverlay::Slot()
-		[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(FLinearColor(0.0f, 0.010f, 0.020f, 0.52f))]
-		+ SOverlay::Slot()[Page];
+		[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(APSMenu::Retint(FLinearColor(0.0f, 0.010f, 0.020f, 0.52f)))]
+		+ SOverlay::Slot()[Page]
+		+ SOverlay::Slot()[BuildDeleteWorldDialog()]
+		+ SOverlay::Slot()[BuildDeleteAllDialog()];
+}
+
+TSharedRef<SWidget> SAPSMainMenuRoot::BuildDeleteWorldDialog()
+{
+	using APSMenu::DialogButton;
+	// A dimmed backdrop over the whole browser: a click beside the dialog cancels, one inside it does not.
+	return SNew(SBorder)
+		.BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+		.BorderBackgroundColor(APSMenu::Retint(FLinearColor(0.0f, 0.004f, 0.010f, 0.80f)))
+		.Visibility_Lambda([this]() { return PendingDeleteWorld.IsValid() ? EVisibility::Visible : EVisibility::Collapsed; })
+		.OnMouseButtonDown_Lambda([this](const FGeometry&, const FPointerEvent&)
+		{
+			PendingDeleteWorld.Reset();
+			return FReply::Handled();
+		})
+		.HAlign(HAlign_Center).VAlign(VAlign_Center).Padding(32.0f)
+		[
+			SNew(SBox).WidthOverride(640.0f)
+			[
+				SNew(SBorder).BorderImage(FStyleDefaults::GetNoBrush()).Padding(0.0f)
+				.OnMouseButtonDown_Lambda([](const FGeometry&, const FPointerEvent&) { return FReply::Handled(); })
+				[
+					APSMenu::ChamferPanel(
+						SNew(SVerticalBox)
+						+ SVerticalBox::Slot().AutoHeight()
+						[
+							SNew(STextBlock)
+							.Text_Lambda([this]()
+							{
+								return FText::Format(LOCTEXT("DeleteWorldQuestion", "DELETE WORLD “{0}”?"),
+									FText::FromString(PendingDeleteWorld.IsValid() ? PendingDeleteWorld->DisplayName : FString()));
+							})
+							.AutoWrapText(true).Font(APSMenu::Font("Bold", 18)).ColorAndOpacity(APSMenu::White)
+						]
+						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 12.0f, 0.0f, 0.0f)
+						[
+							SNew(STextBlock).AutoWrapText(true)
+							.Text(LOCTEXT("DeleteWorldWarning", "Its save files will be removed. This cannot be undone."))
+							.Font(APSMenu::Font("Regular", 14)).ColorAndOpacity(APSMenu::Readable)
+						]
+						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)
+						[
+							// Display names repeat ("Mevelex Cluster"); the slot names the exact files.
+							SNew(STextBlock).AutoWrapText(true)
+							.Text_Lambda([this]()
+							{
+								return PendingDeleteWorld.IsValid()
+									? FText::Format(LOCTEXT("DeleteWorldFiles", "{0}.sav  +  .apsmeta   •   {1}"),
+										FText::FromString(PendingDeleteWorld->SaveFileName),
+										APSMenu::SaveSizeText(PendingDeleteWorld->FileSizeBytes))
+									: FText::GetEmpty();
+							})
+							.Font(APSMenu::Font("Regular", 12)).ColorAndOpacity(APSMenu::Danger)
+						]
+						+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right).Padding(0.0f, 22.0f, 0.0f, 0.0f)
+						[
+							SNew(SHorizontalBox)
+							+ SHorizontalBox::Slot().AutoWidth().Padding(0.0f, 0.0f, 10.0f, 0.0f)
+							[DialogButton(&SecondaryButtonStyle, LOCTEXT("DeleteWorldCancel", "CANCEL"), APSMenu::White,
+								FOnClicked::CreateSP(this, &SAPSMainMenuRoot::CancelDeleteExistingWorld))]
+							+ SHorizontalBox::Slot().AutoWidth()
+							[DialogButton(&DangerConfirmButtonStyle, LOCTEXT("DeleteWorldConfirm", "DELETE"), APSMenu::DangerBright,
+								FOnClicked::CreateSP(this, &SAPSMainMenuRoot::ConfirmDeleteExistingWorld))]
+						]
+					, FMargin(28.0f, 24.0f), APSMenu::Danger, 1.2f)
+				]
+			]
+		];
+}
+
+TSharedRef<SWidget> SAPSMainMenuRoot::BuildDeleteAllDialog()
+{
+	using APSMenu::DialogButton;
+	// Rio 03.10: DELETE ALL removes every world the collection, search and filters list. The dialog names the count and
+	// the size, and its DELETE ALL arms only after a 3 s countdown, so wiping the list always takes a second, deliberate
+	// click.
+	const auto SecondsToArm = [this]()
+	{
+		return FMath::Max(0.0, BulkDeleteArmTime - FSlateApplication::Get().GetCurrentTime());
+	};
+	return SNew(SBorder)
+		.BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+		.BorderBackgroundColor(APSMenu::Retint(FLinearColor(0.0f, 0.004f, 0.010f, 0.80f)))
+		.Visibility_Lambda([this]() { return PendingBulkDelete.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible; })
+		.OnMouseButtonDown_Lambda([this](const FGeometry&, const FPointerEvent&)
+		{
+			PendingBulkDelete.Reset();
+			return FReply::Handled();
+		})
+		.HAlign(HAlign_Center).VAlign(VAlign_Center).Padding(32.0f)
+		[
+			SNew(SBox).WidthOverride(680.0f)
+			[
+				SNew(SBorder).BorderImage(FStyleDefaults::GetNoBrush()).Padding(0.0f)
+				.OnMouseButtonDown_Lambda([](const FGeometry&, const FPointerEvent&) { return FReply::Handled(); })
+				[
+					APSMenu::ChamferPanel(
+						SNew(SVerticalBox)
+						+ SVerticalBox::Slot().AutoHeight()
+						[
+							SNew(STextBlock)
+							.Text_Lambda([this]()
+							{
+								return PendingBulkDelete.Num() == 1
+									? LOCTEXT("DeleteAllQuestionOne", "DELETE 1 WORLD?")
+									: FText::Format(LOCTEXT("DeleteAllQuestion", "DELETE {0} WORLDS?"),
+										APSUINumber::Number(PendingBulkDelete.Num()));
+							})
+							.AutoWrapText(true).Font(APSMenu::Font("Bold", 18)).ColorAndOpacity(APSMenu::White)
+						]
+						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 12.0f, 0.0f, 0.0f)
+						[
+							SNew(STextBlock).AutoWrapText(true)
+							.Text_Lambda([this]()
+							{
+								int64 Bytes = 0;
+								for (const TSharedPtr<FAPSExistingWorldEntry>& Entry : PendingBulkDelete)
+								{
+									Bytes += Entry.IsValid() ? Entry->FileSizeBytes : 0;
+								}
+								return FText::Format(PendingBulkDelete.Num() == 1
+									? LOCTEXT("DeleteAllWarningOne", "Its save file and record will be removed (≈{0}). This cannot be undone.")
+									: LOCTEXT("DeleteAllWarning", "All their save files and records will be removed (≈{0}). This cannot be undone."),
+									APSMenu::SaveSizeText(Bytes));
+							})
+							.Font(APSMenu::Font("Regular", 14)).ColorAndOpacity(APSMenu::Readable)
+						]
+						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)
+						[
+							// The exact slots (display names repeat), and the worlds a running game keeps.
+							SNew(STextBlock).AutoWrapText(true)
+							.Text_Lambda([this]()
+							{
+								TArray<FString> Names;
+								int32 Kept = 0;
+								for (const TSharedPtr<FAPSExistingWorldEntry>& Entry : PendingBulkDelete)
+								{
+									if (!Entry.IsValid())
+									{
+										continue;
+									}
+									if (!CanDeleteExistingWorld(*Entry))
+									{
+										++Kept;
+									}
+									else if (Names.Num() < 3)
+									{
+										Names.Add(Entry->SaveFileName);
+									}
+								}
+								const int32 More = PendingBulkDelete.Num() - Kept - Names.Num();
+								FText Line = More > 0
+									? FText::Format(LOCTEXT("DeleteAllNamesMore", "{0} and {1} more"),
+										FText::FromString(FString::Join(Names, TEXT(", "))), APSUINumber::Number(More))
+									: FText::FromString(FString::Join(Names, TEXT(", ")));
+								if (Kept > 0)
+								{
+									Line = FText::Format(LOCTEXT("DeleteAllKept", "{0}   •   {1} open in a running game will be kept"),
+										Line, APSUINumber::Number(Kept));
+								}
+								return Line;
+							})
+							.Font(APSMenu::Font("Regular", 12)).ColorAndOpacity(APSMenu::Danger)
+						]
+						+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right).Padding(0.0f, 22.0f, 0.0f, 0.0f)
+						[
+							SNew(SHorizontalBox)
+							+ SHorizontalBox::Slot().AutoWidth().Padding(0.0f, 0.0f, 10.0f, 0.0f)
+							[DialogButton(&SecondaryButtonStyle, LOCTEXT("DeleteAllCancel", "CANCEL"), APSMenu::White,
+								FOnClicked::CreateSP(this, &SAPSMainMenuRoot::CancelDeleteListedWorlds))]
+							+ SHorizontalBox::Slot().AutoWidth()
+							[
+								DialogButton(&DangerConfirmButtonStyle,
+									TAttribute<FText>::CreateLambda([SecondsToArm]()
+									{
+										const int32 Seconds = FMath::CeilToInt32(SecondsToArm());
+										return Seconds > 0
+											? FText::Format(LOCTEXT("DeleteAllArming", "DELETE ALL ({0})"), APSUINumber::Number(Seconds))
+											: LOCTEXT("DeleteAllConfirm", "DELETE ALL");
+									}),
+									TAttribute<FSlateColor>::CreateLambda([SecondsToArm]()
+									{
+										return FSlateColor(SecondsToArm() > 0.0 ? APSMenu::SRGB(150, 112, 106) : APSMenu::DangerBright);
+									}),
+									FOnClicked::CreateSP(this, &SAPSMainMenuRoot::ConfirmDeleteListedWorlds),
+									TAttribute<bool>::CreateLambda([SecondsToArm]() { return SecondsToArm() <= 0.0; }),
+									// Wide enough for the countdown and the armed label alike: nothing shifts when it arms.
+									210.0f)
+							]
+						]
+					, FMargin(28.0f, 24.0f), APSMenu::Danger, 1.2f)
+				]
+			]
+		];
 }
 
 void SAPSMainMenuRoot::LoadExistingWorlds()
@@ -1869,9 +3222,15 @@ void SAPSMainMenuRoot::LoadExistingWorlds()
 	const FString SaveDirectory = FPaths::ProjectSavedDir() / TEXT("SaveGames");
 	IFileManager::Get().FindFiles(SaveFiles, *SaveDirectory, TEXT("*.sav"));
 	SaveFiles.Sort();
+	int32 SkippedSlots = 0;
 	for (const FString& SaveFile : SaveFiles)
 	{
 		const FString SlotName = FPaths::GetBaseFilename(SaveFile);
+		if (!APSMenu::IsWorldSaveSlot(SlotName))
+		{
+			++SkippedSlots;
+			continue;
+		}
 		const FFileStatData Stat = IFileManager::Get().GetStatData(*(SaveDirectory / SaveFile));
 		TSharedPtr<FAPSExistingWorldEntry> Entry = CachedEntries.FindRef(SlotName);
 		const bool bCacheIsCurrent = Entry.IsValid()
@@ -1893,6 +3252,8 @@ void SAPSMainMenuRoot::LoadExistingWorlds()
 			Entry->TotalPlanets = 0;
 			Entry->InhabitedPlanets = 0;
 			Entry->bMetadataLoaded = false;
+			Entry->bSystemRecorded = false;
+			Entry->System = FAPSWorldSystemRecord();
 		}
 		Entry->FileTimestamp = Stat.ModificationTime.ToUnixTimestamp();
 		Entry->FileSizeBytes = Stat.FileSize;
@@ -1908,10 +3269,13 @@ void SAPSMainMenuRoot::LoadExistingWorlds()
 		{
 			return Entry.IsValid() && Entry->SaveFileName == PreviouslySelectedSlot;
 		});
-	SelectedWorld = RestoredSelection ? *RestoredSelection : (ExistingWorlds.Num() > 0 ? ExistingWorlds[0] : nullptr);
+	// Otherwise the newest world the collection, search and filters let through.
+	const TSharedPtr<FAPSExistingWorldEntry>* FirstListed = RestoredSelection ? nullptr : ExistingWorlds.FindByPredicate(
+		[this](const TSharedPtr<FAPSExistingWorldEntry>& Entry) { return Entry.IsValid() && PassesExistingWorldFilters(*Entry); });
+	SelectedWorld = RestoredSelection ? *RestoredSelection : (FirstListed ? *FirstListed : nullptr);
 	ExistingWorldDirectoryFingerprint = ComputeExistingWorldDirectoryFingerprint();
-	UE_LOG(LogTemp, Log, TEXT("[APS.WorldBrowser] Scanned directory=%s saves=%d"),
-		*SaveDirectory, ExistingWorlds.Num());
+	UE_LOG(LogTemp, Log, TEXT("[APS.WorldBrowser] Scanned directory=%s saves=%d skippedNonWorld=%d"),
+		*SaveDirectory, ExistingWorlds.Num(), SkippedSlots);
 }
 
 uint32 SAPSMainMenuRoot::ComputeExistingWorldDirectoryFingerprint() const
@@ -1919,6 +3283,8 @@ uint32 SAPSMainMenuRoot::ComputeExistingWorldDirectoryFingerprint() const
 	const FString SaveDirectory = FPaths::ProjectSavedDir() / TEXT("SaveGames");
 	TArray<FString> SaveFiles;
 	IFileManager::Get().FindFiles(SaveFiles, *SaveDirectory, TEXT("*.sav"));
+	// Settings saves change with every volume slider; only world slots refresh the browser.
+	SaveFiles.RemoveAll([](const FString& SaveFile) { return !APSMenu::IsWorldSaveSlot(FPaths::GetBaseFilename(SaveFile)); });
 	SaveFiles.Sort();
 	uint32 Fingerprint = GetTypeHash(SaveFiles.Num());
 	for (const FString& SaveFile : SaveFiles)
@@ -1942,9 +3308,9 @@ void SAPSMainMenuRoot::RefreshExistingWorlds()
 	{
 		PC->CancelWorldMetadataLoad();
 	}
+	// Collection, search and filters survive the rescan; only what they list may stay selected.
 	LoadExistingWorlds();
-	RebuildExistingWorldGrid();
-	RebuildExistingWorldDetails();
+	ApplyExistingWorldView();
 	BeginExistingWorldMetadataLoad();
 }
 
@@ -1952,6 +3318,18 @@ void SAPSMainMenuRoot::Tick(const FGeometry& AllottedGeometry, const double InCu
 	const float InDeltaTime)
 {
 	SCompoundWidget::Tick(AllottedGeometry, InCurrentTime, InDeltaTime);
+	if (AMainMenuController* PC = Controller.Get())
+	{
+		if (UAPSAudioSubsystem* Audio = PC->GetWorld()->GetSubsystem<UAPSAudioSubsystem>())
+		{
+			Audio->ApplyButtonSounds(PrimaryButtonStyle);
+			Audio->ApplyButtonSounds(SecondaryButtonStyle);
+			Audio->ApplyButtonSounds(CardButtonStyle);
+			Audio->ApplyButtonSounds(DangerButtonStyle);
+			Audio->ApplyButtonSounds(DangerConfirmButtonStyle);
+			Audio->ApplyButtonSounds(DropdownOptionStyle);
+		}
+	}
 	if (CurrentPage != EAPSMenuPage::ExistingWorlds
 		|| InCurrentTime < NextExistingWorldRefreshTime)
 	{
@@ -2012,41 +3390,32 @@ void SAPSMainMenuRoot::ApplyExistingWorldMetadata(const FString& SlotName, const
 	}
 	APSMenu::WriteWorldMetadataSidecar(
 		FPaths::ProjectSavedDir() / TEXT("SaveGames") / (SlotName + TEXT(".apsmeta")), Entry);
-	RebuildExistingWorldGrid();
-	if (SelectedWorld == *Found) RebuildExistingWorldDetails();
-}
-
-const FSlateBrush* SAPSMainMenuRoot::GetExistingWorldImage(
-	const FAPSExistingWorldEntry& Entry) const
-{
-	const FString Type = Entry.SystemType.ToUpper();
-	if (Type.Contains(TEXT("HABITABLE"))) return &WorldHabitableZoneImage;
-	if (Type.Contains(TEXT("GAS GIANT"))) return &WorldGasGiantsImage;
-	if (Type.Contains(TEXT("NO PLANET"))) return &WorldNoPlanetsImage;
-	if (Type.Contains(TEXT("SINGLE"))) return &WorldSinglePlanetImage;
-	if (Type.Contains(TEXT("MULTI"))) return &WorldMultiPlanetImage;
-
-	// A legacy save without metadata still gets a stable, semantically neutral
-	// system illustration instead of a random planet/galaxy chosen by filename.
-	return &WorldMultiPlanetImage;
+	// The record can move the selected world out of the filters; the view then drops the selection.
+	if (SelectedWorld == *Found)
+	{
+		ApplyExistingWorldView();
+	}
+	else
+	{
+		RebuildExistingWorldGrid();
+	}
 }
 
 void SAPSMainMenuRoot::RebuildExistingWorldGrid()
 {
 	if (!ExistingWorldGridHost) return;
+	RebuildWorldFilterOptions();
 	TArray<TSharedPtr<FAPSExistingWorldEntry>> Filtered;
 	for (const TSharedPtr<FAPSExistingWorldEntry>& Entry : ExistingWorlds)
 	{
-		if (Entry.IsValid()
-			&& (WorldSearch.IsEmpty() || Entry->DisplayName.Contains(WorldSearch, ESearchCase::IgnoreCase))
-			&& PassesExistingWorldFilters(*Entry))
+		if (Entry.IsValid() && PassesExistingWorldFilters(*Entry))
 		{
 			Filtered.Add(Entry);
 		}
 	}
-	if (WorldCollection == EAPSWorldCollection::Recent && Filtered.Num() > 6)
+	if (WorldCollection == EAPSWorldCollection::Recent && Filtered.Num() > APSMenu::RecentWorldCount)
 	{
-		Filtered.SetNum(6, EAllowShrinking::No);
+		Filtered.SetNum(APSMenu::RecentWorldCount, EAllowShrinking::No);
 	}
 	if (WorldSortMode == EAPSWorldSortMode::Name)
 	{
@@ -2060,6 +3429,7 @@ void SAPSMainMenuRoot::RebuildExistingWorldGrid()
 	{
 		Filtered.Sort([](const auto& A, const auto& B){ return A->FileTimestamp > B->FileTimestamp; });
 	}
+	ListedWorlds = Filtered;
 	constexpr int32 ItemsPerPage = 6;
 	const int32 MaxPage = FMath::Max(0, FMath::DivideAndRoundUp(Filtered.Num(), ItemsPerPage) - 1);
 	ExistingWorldPage = FMath::Clamp(ExistingWorldPage, 0, MaxPage);
@@ -2067,75 +3437,123 @@ void SAPSMainMenuRoot::RebuildExistingWorldGrid()
 	TSharedRef<SUniformGridPanel> Grid = SNew(SUniformGridPanel).SlotPadding(FMargin(5.0f));
 	const int32 FirstIndex = ExistingWorldPage * ItemsPerPage;
 	const int32 LastIndex = FMath::Min(FirstIndex + ItemsPerPage, Filtered.Num());
+	const FButtonStyle* NoBorderStyle = &FAppStyle::Get().GetWidgetStyle<FButtonStyle>("NoBorder");
+	const FSlateBrush* WhiteBrush = FAppStyle::GetBrush("WhiteBrush");
 	for (int32 SourceIndex = FirstIndex; SourceIndex < LastIndex; ++SourceIndex)
 	{
 		const int32 VisibleIndex = SourceIndex - FirstIndex;
 		const TSharedPtr<FAPSExistingWorldEntry>& Entry = Filtered[SourceIndex];
-		const FSlateBrush* Image = GetExistingWorldImage(*Entry);
-		const bool bSelected = SelectedWorld == Entry;
-		const FString LastPlayed = FDateTime::FromUnixTimestamp(Entry->FileTimestamp).ToString(TEXT("%Y-%m-%d  %H:%M"));
 		const int32 ColumnCount = bCompactWorldList ? 1 : 3;
-		Grid->AddSlot(VisibleIndex % ColumnCount, VisibleIndex / ColumnCount)
-		[
-			SNew(SButton).ButtonStyle(&FAppStyle::Get().GetWidgetStyle<FButtonStyle>("NoBorder"))
-			.OnClicked(this, &SAPSMainMenuRoot::SelectExistingWorld, Entry).ContentPadding(0.0f)
+		// Rio 03.10: the world's own scheme instead of the stock picture, and captions that read.
+		const FText Chip = APSMenu::WorldChipText(*Entry);
+		const TSharedRef<SWidget> Scheme = SNew(SAPSWorldSchemePreview).Input(APSMenu::SchemeInput(*Entry));
+		const TSharedRef<SWidget> Caption = SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight()
 			[
-				SNew(SAPSChamferedOverlay)
-				+ SOverlay::Slot()
+				SNew(STextBlock).Text(FText::FromString(Entry->DisplayName)).OverflowPolicy(ETextOverflowPolicy::Ellipsis)
+				.Font(APSMenu::Font("Bold", 15)).ColorAndOpacity(APSMenu::White)
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 5.0f, 0.0f, 0.0f)
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
 				[
-					SNew(SBox).HeightOverride(bCompactWorldList ? 128.0f : 218.0f)
-					.Clipping(EWidgetClipping::ClipToBounds)
+					// An old record's note is a quiet footnote, not a caption (Rio 03.10).
+					SNew(STextBlock).Text(APSMenu::WorldCardLine(*Entry)).OverflowPolicy(ETextOverflowPolicy::Ellipsis)
+					.Font(Entry->bSystemRecorded ? APSMenu::Font("Bold", 10) : APSMenu::Font("Regular", 11))
+					.ColorAndOpacity(Entry->bSystemRecorded ? APSMenu::Cyan : APSMenu::Quiet)
+				]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(10.0f, 0.0f, 0.0f, 0.0f)
+				[
+					SNew(STextBlock).Text(APSMenu::LocalTimeText(Entry->FileTimestamp, TEXT("%d %b %Y")))
+					.Font(APSMenu::Font("Regular", 11)).ColorAndOpacity(APSMenu::Readable)
+				]
+			];
+		TSharedPtr<SWidget> Body;
+		if (bCompactWorldList)
+		{
+			Body = SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().AutoWidth()[SNew(SBox).WidthOverride(250.0f)[Scheme]]
+				+ SHorizontalBox::Slot().AutoWidth()
+				[SNew(SBox).WidthOverride(1.0f)[SNew(SBorder).BorderImage(WhiteBrush).BorderBackgroundColor(APSMenu::CyanDim)]]
+				+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center).Padding(18.0f, 8.0f, 54.0f, 8.0f)
+				[
+					SNew(SVerticalBox)
+					+ SVerticalBox::Slot().AutoHeight()[Caption]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 6.0f, 0.0f, 0.0f)
 					[
-						SNew(SScaleBox).Stretch(EStretch::ScaleToFitX)
-						.StretchDirection(EStretchDirection::Both)
-						[SNew(SImage).Image(Image)]
+						SNew(STextBlock).Text(Chip).Visibility(Chip.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible)
+						.Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::White)
 					]
-				]
-				+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Top).Padding(12.0f)
+				];
+		}
+		else
+		{
+			Body = SNew(SVerticalBox)
+				+ SVerticalBox::Slot().FillHeight(1.0f)[Scheme]
+				+ SVerticalBox::Slot().AutoHeight()
+				[SNew(SBox).HeightOverride(1.0f)[SNew(SBorder).BorderImage(WhiteBrush).BorderBackgroundColor(APSMenu::CyanDim)]]
+				+ SVerticalBox::Slot().AutoHeight()
 				[
-					SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush"))
-					.BorderBackgroundColor(FLinearColor(0.0f, 0.03f, 0.05f, 0.92f))
-					.Padding(FMargin(9.0f, 5.0f))
+					SNew(SBorder).BorderImage(WhiteBrush).BorderBackgroundColor(APSMenu::Retint(FLinearColor(0.001f, 0.008f, 0.016f, 0.97f)))
+					.Padding(FMargin(14.0f, 9.0f, 14.0f, 11.0f))
+					[Caption]
+				];
+		}
+
+		TSharedRef<SButton> Card = SNew(SButton).ButtonStyle(NoBorderStyle)
+			.OnClicked(this, &SAPSMainMenuRoot::SelectExistingWorld, Entry).ContentPadding(0.0f);
+		const TWeakPtr<SButton> WeakCard = Card;
+		const TSharedPtr<FAPSExistingWorldEntry> CardEntry = Entry;
+		Card->SetContent(
+			SNew(SAPSChamferedOverlay)
+			+ SOverlay::Slot()
+			[SNew(SBox).HeightOverride(bCompactWorldList ? 112.0f : 218.0f)[Body.ToSharedRef()]]
+			+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Top).Padding(10.0f)
+			[
+				SNew(SBox).MaxDesiredWidth(300.0f)
+				.Visibility(bCompactWorldList || Chip.IsEmpty() ? EVisibility::Collapsed : EVisibility::HitTestInvisible)
+				[
+					SNew(SBorder).BorderImage(&APSMenu::InsetBrush).Padding(FMargin(10.0f, 6.0f))
+					.HAlign(HAlign_Center).VAlign(VAlign_Center)
 					[
-						SNew(STextBlock)
-						.Text(FText::FromString(FString::Printf(TEXT("%d PLANETS  /  %s"),
-							Entry->TotalPlanets, *Entry->StarType)))
-						.Font(APSMenu::Font("Bold", 9)).ColorAndOpacity(APSMenu::Cyan)
+						SNew(STextBlock).Text(Chip).OverflowPolicy(ETextOverflowPolicy::Ellipsis)
+						.Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::White)
+						.RenderTransform(APSMenu::CapsShift("Bold", 10))
 					]
-				]
-				+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Top).Padding(11.0f)
-				[
-					SNew(SButton).ButtonStyle(&FAppStyle::Get().GetWidgetStyle<FButtonStyle>("NoBorder"))
-					.OnClicked(this, &SAPSMainMenuRoot::ToggleWorldFavorite, Entry).ContentPadding(4.0f)
-					[SNew(STextBlock).Text(FText::FromString(Entry->bFavorite ? TEXT("★") : TEXT("☆")))
-					.Font(APSMenu::Font("Bold", 19)).ColorAndOpacity(Entry->bFavorite ? APSMenu::Amber : APSMenu::White)]
-				]
-				+ SOverlay::Slot().VAlign(VAlign_Bottom)
-				[
-					SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush"))
-					.BorderBackgroundColor(FLinearColor(0.001f, 0.008f, 0.016f, 0.96f))
-					.Padding(FMargin(14.0f, 10.0f))
-					[
-						SNew(SVerticalBox)
-						+ SVerticalBox::Slot().AutoHeight()
-						[SNew(STextBlock).Text(FText::FromString(Entry->DisplayName))
-						.Font(APSMenu::Font("Bold", 15)).ColorAndOpacity(APSMenu::White)]
-						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 3.0f)
-						[SNew(STextBlock).Text(FText::FromString(Entry->SystemType))
-						.Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::Cyan)]
-						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 5.0f, 0.0f, 0.0f)
-						[SNew(STextBlock).Text(FText::FromString(FString::Printf(TEXT("LAST PLAYED  %s"), *LastPlayed)))
-						.Font(APSMenu::Font("Regular", 9)).ColorAndOpacity(APSMenu::Muted)]
-					]
-				]
-				+ SOverlay::Slot()
-				[
-					SNew(SChamferedFrame)
-					.Color(bSelected ? APSMenu::Amber : APSMenu::CyanDim)
-					.Thickness(APSMenu::CardPerimeterThickness)
 				]
 			]
-		];
+			+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Top).Padding(6.0f)
+			[
+				// The code-native star: the font has no "★" glyph.
+				SNew(SButton).ButtonStyle(NoBorderStyle).ContentPadding(5.0f)
+				.OnClicked(this, &SAPSMainMenuRoot::ToggleWorldFavorite, Entry)
+				.ToolTipText(Entry->bFavorite ? LOCTEXT("UnfavoriteWorld", "Remove from favorites")
+					: LOCTEXT("FavoriteWorld", "Add to favorites"))
+				[
+					SNew(SBox).WidthOverride(20.0f).HeightOverride(20.0f)
+					[
+						SNew(SVectorMenuGlyph).Glyph(EAPSMenuGlyph::Favorite)
+						.Color(Entry->bFavorite ? APSMenu::Amber : APSMenu::Retint(FLinearColor(0.80f, 0.88f, 0.90f, 0.70f)))
+						.StrokeWidth(Entry->bFavorite ? 2.0f : 1.4f)
+					]
+				]
+			]
+			+ SOverlay::Slot()
+			[
+				SNew(SChamferedFrame)
+				.Color_Lambda([this, WeakCard, CardEntry]()
+				{
+					if (SelectedWorld == CardEntry)
+					{
+						return APSMenu::Amber;
+					}
+					const TSharedPtr<SButton> Button = WeakCard.Pin();
+					return Button.IsValid() && Button->IsHovered() ? APSMenu::Cyan : APSMenu::CyanDim;
+				})
+				.Thickness(APSMenu::CardPerimeterThickness)
+			]);
+		Grid->AddSlot(VisibleIndex % ColumnCount, VisibleIndex / ColumnCount)[Card];
 	}
 	ExistingWorldGridHost->SetContent(Grid);
 }
@@ -2143,87 +3561,447 @@ void SAPSMainMenuRoot::RebuildExistingWorldGrid()
 void SAPSMainMenuRoot::RebuildExistingWorldDetails()
 {
 	if (!ExistingWorldDetailsHost) return;
+	const FSlateBrush* WhiteBrush = FAppStyle::GetBrush("WhiteBrush");
 	if (!SelectedWorld)
 	{
-		ExistingWorldDetailsHost->SetContent(SNew(STextBlock).Text(LOCTEXT("NoWorlds", "NO SAVED WORLDS FOUND")).ColorAndOpacity(APSMenu::Muted));
+		const bool bAnyWorld = ExistingWorlds.Num() > 0;
+		ExistingWorldDetailsHost->SetContent(
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight()
+			[
+				APSMenu::IconSectionHeading(EAPSMenuGlyph::World,
+					bAnyWorld ? LOCTEXT("SelectWorldTitle", "SELECT A WORLD") : LOCTEXT("NoWorlds", "NO SAVED WORLDS FOUND"),
+					bAnyWorld ? LOCTEXT("SelectWorldHint", "Choose a card to see its system.")
+						: LOCTEXT("NoWorldsHint", "Generated worlds appear here once saved."))
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 14.0f, 0.0f, 0.0f)
+			[
+				SNew(STextBlock).Text(WorldBrowserNotice).AutoWrapText(true)
+				.Visibility(WorldBrowserNotice.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible)
+				.Font(APSMenu::Font("Bold", 12)).ColorAndOpacity(APSMenu::Amber)
+			]);
 		return;
 	}
 
-	const FSlateBrush* DetailsImage = GetExistingWorldImage(*SelectedWorld);
-	const auto DetailRow = [](const FText& Label, const FText& Value)
+	const FAPSExistingWorldEntry& Entry = *SelectedWorld;
+	const bool bRecorded = Entry.bSystemRecorded;
+	FText DeleteReason;
+	const bool bCanDelete = CanDeleteExistingWorld(Entry, &DeleteReason);
+
+	// Rio 03.10 ("tiny dim grey labels on a teal block"): short sections of tiles, a readable label over a large value,
+	// as in the deployment panel. Long values take the whole row.
+	struct FWorldTile
 	{
-		return SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush"))
-			.BorderBackgroundColor(FLinearColor(0.02f, 0.10f, 0.13f, 0.58f))
-			.Padding(FMargin(10.0f, 7.0f))
+		FText Label;
+		FText Value;
+		int32 Span;
+		FLinearColor Color;
+	};
+	const auto Section = [WhiteBrush](EAPSMenuGlyph Glyph, const FText& Title, const TArray<FWorldTile>& Tiles)
+	{
+		const TSharedRef<SGridPanel> Tiled = SNew(SGridPanel).FillColumn(0, 1.0f).FillColumn(1, 1.0f);
+		int32 Column = 0;
+		int32 Row = 0;
+		for (const FWorldTile& Tile : Tiles)
+		{
+			if (Column + Tile.Span > 2)
+			{
+				Column = 0;
+				++Row;
+			}
+			Tiled->AddSlot(Column, Row).ColumnSpan(Tile.Span).Padding(0.0f, 0.0f, 12.0f, 12.0f)
+			[
+				SNew(SVerticalBox)
+				+ SVerticalBox::Slot().AutoHeight()
+				[SNew(STextBlock).Text(Tile.Label).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::Readable)]
+				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 4.0f, 0.0f, 0.0f)
+				[SNew(STextBlock).Text(Tile.Value).AutoWrapText(true).Font(APSMenu::Font("Bold", 14)).ColorAndOpacity(Tile.Color)]
+			];
+			Column += Tile.Span;
+		}
+		return SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 10.0f)
 			[
 				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot().FillWidth(0.44f).VAlign(VAlign_Center)
-				[SNew(STextBlock).Text(Label).Font(APSMenu::Font("Regular", 9)).ColorAndOpacity(APSMenu::Muted)]
-				+ SHorizontalBox::Slot().FillWidth(0.56f).VAlign(VAlign_Center)
-				[SNew(STextBlock).Text(Value).AutoWrapText(true).Justification(ETextJustify::Right)
-				.Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::White)]
-			];
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+				[SNew(SBox).WidthOverride(18.0f).HeightOverride(18.0f)[SNew(SVectorMenuGlyph).Glyph(Glyph).Color(APSMenu::Cyan).StrokeWidth(1.3f)]]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(8.0f, 0.0f)
+				[SNew(STextBlock).Text(Title).Font(APSMenu::Font("Bold", 12)).ColorAndOpacity(APSMenu::Cyan)]
+				+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
+				[SNew(SBox).HeightOverride(1.0f)[SNew(SBorder).BorderImage(WhiteBrush).BorderBackgroundColor(APSMenu::CyanDim)]]
+			]
+			+ SVerticalBox::Slot().AutoHeight()[Tiled];
 	};
-	TSharedRef<SVerticalBox> DetailRows = SNew(SVerticalBox)
-		+ SVerticalBox::Slot().AutoHeight()[DetailRow(LOCTEXT("DetailSystemType", "SYSTEM TYPE"), FText::FromString(SelectedWorld->SystemType))]
-		+ SVerticalBox::Slot().AutoHeight()[DetailRow(LOCTEXT("DetailStarType", "STAR TYPE"), FText::FromString(SelectedWorld->StarType))]
-		+ SVerticalBox::Slot().AutoHeight()[DetailRow(LOCTEXT("DetailTotalPlanets", "TOTAL PLANETS"), FText::AsNumber(SelectedWorld->TotalPlanets))]
-		+ SVerticalBox::Slot().AutoHeight()[DetailRow(LOCTEXT("DetailInhabited", "INHABITED PLANETS"), FText::AsNumber(SelectedWorld->InhabitedPlanets))]
-		+ SVerticalBox::Slot().AutoHeight()[DetailRow(LOCTEXT("DetailHabitability", "HABITABILITY"), FText::FromString(SelectedWorld->Habitability))]
-		+ SVerticalBox::Slot().AutoHeight()[DetailRow(LOCTEXT("DetailEnvironment", "ENVIRONMENT"), FText::FromString(SelectedWorld->Environment))]
-		+ SVerticalBox::Slot().AutoHeight()[DetailRow(LOCTEXT("DetailSaveSize", "SAVE SIZE"), APSMenu::SaveSizeText(SelectedWorld->FileSizeBytes))];
+
+	TSharedRef<SVerticalBox> Sections = SNew(SVerticalBox);
+	if (bRecorded)
+	{
+		int32 Moons = 0;
+		for (const FAPSWorldPlanetRecord& Planet : Entry.System.Planets)
+		{
+			Moons += Planet.Moons;
+		}
+		const FLinearColor StarValueColor = FMath::Lerp(
+			APSWorldScheme::StarColor(APSMenu::StarClassOf(Entry)), FLinearColor::White, 0.35f);
+		TArray<FWorldTile> SystemTiles;
+		SystemTiles.Add({LOCTEXT("DetailStar", "STAR"), APSMenu::StarText(Entry), 2, StarValueColor});
+		SystemTiles.Add({LOCTEXT("DetailPlanets", "PLANETS"), APSUINumber::Number(Entry.TotalPlanets), 1, APSMenu::White});
+		SystemTiles.Add(Entry.System.StarCount > 1
+			? FWorldTile{LOCTEXT("DetailStars", "STARS"), APSUINumber::Number(Entry.System.StarCount), 1, APSMenu::White}
+			: FWorldTile{LOCTEXT("DetailMoons", "MOONS"), APSUINumber::Number(Moons), 1, APSMenu::White});
+		Sections->AddSlot().AutoHeight()[Section(EAPSMenuGlyph::System, LOCTEXT("DetailSystemSection", "SYSTEM"), SystemTiles)];
+
+		const FAPSWorldPlanetRecord* Home = APSMenu::HomeRecord(Entry);
+		const FText HomeType = APSMenu::UpperText(Home ? Home->Type : Entry.PlanetType);
+		TArray<FWorldTile> ColonyTiles;
+		ColonyTiles.Add({LOCTEXT("DetailHomeWorld", "HOME WORLD"), Entry.System.HomePlanetName.IsEmpty() ? HomeType
+			: FText::Format(LOCTEXT("DetailHomeNamed", "{0}  •  {1}"), APSMenu::UpperText(Entry.System.HomePlanetName), HomeType),
+			2, APSMenu::White});
+		ColonyTiles.Add({LOCTEXT("DetailRadius", "RADIUS"), Home && Home->RadiusKm > 0
+			? FText::Format(LOCTEXT("DetailRadiusKm", "{0} KM"), APSUINumber::Number(Home->RadiusKm))
+			: LOCTEXT("DetailRadiusUnknown", "--"), 1, APSMenu::White});
+		ColonyTiles.Add({LOCTEXT("DetailInhabited", "INHABITED"), APSUINumber::Number(Entry.InhabitedPlanets), 1,
+			Entry.InhabitedPlanets > 0 ? APSMenu::Amber : APSMenu::White});
+		ColonyTiles.Add({LOCTEXT("DetailHabitability", "HABITABILITY"), APSMenu::UpperText(Entry.Habitability), 2, APSMenu::White});
+		Sections->AddSlot().AutoHeight().Padding(0.0f, 6.0f, 0.0f, 0.0f)
+		[Section(EAPSMenuGlyph::Civilization, LOCTEXT("DetailColonySection", "COLONY"), ColonyTiles)];
+	}
+	else
+	{
+		// Rio 03.10 (save audit): an older record only echoes the menu's editor buffer; say so instead of showing it.
+		Sections->AddSlot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 16.0f)
+		[
+			SNew(SBorder).BorderImage(&APSMenu::CivStatusBrush).Padding(FMargin(14.0f, 12.0f))
+			[
+				SNew(SVerticalBox)
+				+ SVerticalBox::Slot().AutoHeight()
+				[
+					SNew(STextBlock).AutoWrapText(true)
+					.Text(Entry.bMetadataLoaded ? LOCTEXT("SystemUnrecordedTitle", "SYSTEM NOT RECORDED YET")
+						: LOCTEXT("SystemLegacyTitle", "NO WORLD RECORD YET"))
+					.Font(APSMenu::Font("Bold", 12)).ColorAndOpacity(APSMenu::Amber)
+				]
+				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 6.0f, 0.0f, 0.0f)
+				[
+					SNew(STextBlock).AutoWrapText(true)
+					.Text(LOCTEXT("SystemUnrecordedBody", "This save predates full system records. Continue the world: its star, planets and home world are recorded the next time it is saved."))
+					.Font(APSMenu::Font("Regular", 12)).ColorAndOpacity(APSMenu::Readable)
+				]
+			]
+		];
+	}
+	TArray<FWorldTile> SaveTiles;
+	SaveTiles.Add({LOCTEXT("DetailLastPlayed", "LAST PLAYED"),
+		APSMenu::LocalTimeText(Entry.FileTimestamp, TEXT("%d %b %Y  %H:%M")), 2, APSMenu::White});
+	SaveTiles.Add({LOCTEXT("DetailSaveSize", "SAVE SIZE"), APSMenu::SaveSizeText(Entry.FileSizeBytes), 1, APSMenu::White});
 	if (bShowTechnicalWorldDetails)
 	{
-		DetailRows->AddSlot().AutoHeight()[DetailRow(LOCTEXT("DetailSlot", "SAVE SLOT"), FText::FromString(SelectedWorld->SaveFileName))];
-		DetailRows->AddSlot().AutoHeight()[DetailRow(LOCTEXT("DetailMetadata", "METADATA"), FText::FromString(SelectedWorld->bMetadataLoaded ? TEXT("READY") : TEXT("DEFERRED UNTIL LAUNCH")))];
-		DetailRows->AddSlot().AutoHeight()[DetailRow(LOCTEXT("DetailLastPlayed", "LAST PLAYED"), FText::FromString(FDateTime::FromUnixTimestamp(SelectedWorld->FileTimestamp).ToString(TEXT("%Y-%m-%d  %H:%M"))))];
+		SaveTiles.Add({LOCTEXT("DetailRecord", "RECORD"), bRecorded ? LOCTEXT("DetailRecordSystem", "FULL SYSTEM")
+			: Entry.bMetadataLoaded ? LOCTEXT("DetailRecordBasic", "BASIC") : LOCTEXT("DetailRecordNone", "NONE"), 1, APSMenu::White});
+		SaveTiles.Add({LOCTEXT("DetailSlot", "SAVE SLOT"), FText::FromString(Entry.SaveFileName), 2, APSMenu::Readable});
 	}
+	Sections->AddSlot().AutoHeight().Padding(0.0f, 6.0f, 0.0f, 0.0f)
+	[Section(EAPSMenuGlyph::Recent, LOCTEXT("DetailSaveSection", "SAVE"), SaveTiles)];
 
+	// DELETE WORLD: secondary at rest, muted red under the pointer (Rio 03.10: "make it possible to delete the world").
+	TSharedRef<SButton> DeleteButton = SNew(SButton).ButtonStyle(&DangerButtonStyle)
+		.IsEnabled(bCanDelete)
+		.ToolTipText(bCanDelete ? LOCTEXT("DeleteWorldTip", "Delete this world's save files.") : DeleteReason)
+		.OnClicked(this, &SAPSMainMenuRoot::RequestDeleteExistingWorld)
+		.ContentPadding(APSMenu::ButtonPadding("Bold", 11, 14.0f))
+		.HAlign(HAlign_Center).VAlign(VAlign_Center);
+	const TWeakPtr<SButton> WeakDelete = DeleteButton;
+	DeleteButton->SetContent(
+		SNew(STextBlock).Text(LOCTEXT("DeleteWorld", "DELETE WORLD")).Justification(ETextJustify::Center)
+		.Font(APSMenu::Font("Bold", 11)).RenderTransform(APSMenu::CapsShift("Bold", 11))
+		.ColorAndOpacity_Lambda([WeakDelete, bCanDelete]()
+		{
+			const TSharedPtr<SButton> Button = WeakDelete.Pin();
+			return !bCanDelete ? APSMenu::Muted
+				: Button.IsValid() && Button->IsHovered() ? APSMenu::DangerBright : APSMenu::Danger;
+		}));
+
+	// Only a recorded system has a type to name; the notice below speaks for older records.
+	const FText Subtitle = bRecorded ? APSMenu::UpperText(Entry.SystemType) : FText::GetEmpty();
 	ExistingWorldDetailsHost->SetContent(
 		SNew(SVerticalBox)
 		+ SVerticalBox::Slot().AutoHeight()
 		[
-			SNew(SBox).HeightOverride(160.0f).Clipping(EWidgetClipping::ClipToBounds)
+			SNew(SBox).HeightOverride(176.0f)
 			[
-				SNew(SOverlay)
+				SNew(SAPSChamferedOverlay)
 				+ SOverlay::Slot()
-				[SNew(SScaleBox).Stretch(EStretch::ScaleToFitX).StretchDirection(EStretchDirection::Both)
-				[SNew(SImage).Image(DetailsImage)]]
-				+ SOverlay::Slot().HAlign(HAlign_Left).VAlign(VAlign_Bottom).Padding(10.0f)
 				[
-					SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush"))
-					.BorderBackgroundColor(FLinearColor(0.0f, 0.03f, 0.05f, 0.92f))
-					.Padding(FMargin(9.0f, 5.0f))
-					[SNew(STextBlock).Text(FText::FromString(FString::Printf(TEXT("%d PLANETS  /  %s"),
-						SelectedWorld->TotalPlanets, *SelectedWorld->StarType)))
-					.Font(APSMenu::Font("Bold", 9)).ColorAndOpacity(APSMenu::Cyan)]
+					// Rio 03.10: the picture alone, no caption or badges over it.
+					SNew(SAPSWorldSchemePreview).Input(APSMenu::SchemeInput(Entry)).Centred(true)
 				]
+				+ SOverlay::Slot()
+				[SNew(SChamferedFrame).Color(APSMenu::CyanDim).Thickness(APSMenu::CardPerimeterThickness)]
 			]
 		]
-		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 15.0f, 0.0f, 5.0f)
-		[SNew(STextBlock).Text(FText::FromString(SelectedWorld->DisplayName)).AutoWrapText(true).Font(APSMenu::Font("Bold", 20)).ColorAndOpacity(APSMenu::White)]
+		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 14.0f, 0.0f, 3.0f)
+		[SNew(STextBlock).Text(FText::FromString(Entry.DisplayName)).AutoWrapText(true).Font(APSMenu::Font("Bold", 20)).ColorAndOpacity(APSMenu::White)]
 		+ SVerticalBox::Slot().AutoHeight()
-		[SNew(STextBlock).Text(FText::FromString(SelectedWorld->SystemType)).AutoWrapText(true).Font(APSMenu::Font("Regular", 12)).ColorAndOpacity(APSMenu::Cyan)]
-		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 11.0f, 0.0f, 9.0f)
-		[SNew(SBox).HeightOverride(1.0f)[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(APSMenu::CyanDim)]]
+		[
+			SNew(STextBlock).Text(Subtitle).AutoWrapText(true).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::Cyan)
+			.Visibility(Subtitle.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible)
+		]
+		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 12.0f, 0.0f, 12.0f)
+		[SNew(SBox).HeightOverride(1.0f)[SNew(SBorder).BorderImage(WhiteBrush).BorderBackgroundColor(APSMenu::CyanDim)]]
 		+ SVerticalBox::Slot().FillHeight(1.0f)
 		[
 			SNew(SScrollBox).ScrollBarStyle(&ScrollBarStyle)
-			+ SScrollBox::Slot()[DetailRows]
+			+ SScrollBox::Slot()[Sections]
 		]
-		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 12.0f)
+		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 10.0f, 0.0f, 0.0f)
 		[
-			SNew(SButton).ButtonStyle(&PrimaryButtonStyle).OnClicked(this, &SAPSMainMenuRoot::ContinueExistingWorld).ContentPadding(FMargin(20.0f, 14.0f))
-			[SNew(STextBlock).Text(LOCTEXT("ContinueWorld", "CONTINUE  >")).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 17)).ColorAndOpacity(APSMenu::White)]
+			// A failed deletion explains itself here, beside the world that stayed.
+			SNew(STextBlock).Text(WorldBrowserNotice).AutoWrapText(true)
+			.Visibility(WorldBrowserNotice.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible)
+			.Font(APSMenu::Font("Regular", 12)).ColorAndOpacity(APSMenu::Danger)
+		]
+		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 12.0f, 0.0f, 8.0f)
+		[
+			SNew(SButton).ButtonStyle(&PrimaryButtonStyle).OnClicked(this, &SAPSMainMenuRoot::ContinueExistingWorld)
+			.ContentPadding(APSMenu::ButtonPadding("Bold", 17, 20.0f)).HAlign(HAlign_Center).VAlign(VAlign_Center)
+			[SNew(STextBlock).Text(LOCTEXT("ContinueWorld", "CONTINUE  >")).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 17)).ColorAndOpacity(APSMenu::White).RenderTransform(APSMenu::CapsShift("Bold", 17))]
 		]
 		+ SVerticalBox::Slot().AutoHeight()
 		[
 			SNew(SHorizontalBox)
 			+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(0.0f, 0.0f, 4.0f, 0.0f)
-			[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).OnClicked(this, &SAPSMainMenuRoot::ToggleWorldDetails).ContentPadding(FMargin(12.0f, 9.0f))[SNew(STextBlock).Text_Lambda([this](){ return FText::FromString(bShowTechnicalWorldDetails ? TEXT("HIDE DETAILS") : TEXT("WORLD DETAILS")); }).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::Cyan)]]
+			[
+				SNew(SButton).ButtonStyle(&SecondaryButtonStyle).OnClicked(this, &SAPSMainMenuRoot::ToggleWorldDetails)
+				.ContentPadding(APSMenu::ButtonPadding("Bold", 11, 14.0f)).HAlign(HAlign_Center).VAlign(VAlign_Center)
+				[
+					SNew(STextBlock).Text_Lambda([this]()
+					{
+						return bShowTechnicalWorldDetails ? LOCTEXT("HideWorldDetails", "HIDE DETAILS") : LOCTEXT("ShowWorldDetails", "WORLD DETAILS");
+					})
+					.Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::Cyan)
+					.RenderTransform(APSMenu::CapsShift("Bold", 11))
+				]
+			]
 			+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(4.0f, 0.0f, 0.0f, 0.0f)
-			[SNew(SButton).IsEnabled(false).ButtonStyle(&SecondaryButtonStyle).ContentPadding(FMargin(12.0f, 9.0f))[SNew(STextBlock).Text(LOCTEXT("DeleteWorld", "DELETE WORLD")).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(FLinearColor(0.88f, 0.19f, 0.14f, 1.0f))]]
+			[DeleteButton]
 		]);
+}
+
+bool SAPSMainMenuRoot::IsWorldSlotInUse(const FString& SlotName) const
+{
+	const AMainMenuController* PC = Controller.Get();
+	const UWorld* MenuWorld = PC ? PC->GetWorld() : nullptr;
+	const auto IsSlot = [&SlotName](const UMainGameplayInstance* Gameplay)
+	{
+		return Gameplay && FPaths::GetBaseFilename(Gameplay->SaveSlotName).Equals(SlotName, ESearchCase::IgnoreCase);
+	};
+	// This game: CONTINUE has handed the slot to a level that is opening now. The replay flag alone could be left over
+	// from a replay that failed, which must not lock that broken save out of deletion.
+	if (const UGameInstance* GameInstance = PC ? PC->GetGameInstance() : nullptr)
+	{
+		const UMainGameplayInstance* Gameplay = GameInstance->GetSubsystem<UMainGameplayInstance>();
+		const FWorldContext* MenuContext = GEngine && MenuWorld ? GEngine->GetWorldContextFromWorld(MenuWorld) : nullptr;
+		if (Gameplay && Gameplay->bPendingSavedWorldReplay && IsSlot(Gameplay)
+			&& MenuContext && !MenuContext->TravelURL.IsEmpty())
+		{
+			return true;
+		}
+	}
+	// Another game world of this process (a second PIE instance) playing the slot: it would save it again on exit.
+	if (GEngine)
+	{
+		for (const FWorldContext& Context : GEngine->GetWorldContexts())
+		{
+			const UWorld* OtherWorld = Context.World();
+			if (!OtherWorld || OtherWorld == MenuWorld || !OtherWorld->IsGameWorld())
+			{
+				continue;
+			}
+			const UGameInstance* OtherInstance = OtherWorld->GetGameInstance();
+			const APlayerController* Player = OtherWorld->GetFirstPlayerController();
+			if (OtherInstance && Player && !Player->IsA<AMainMenuController>()
+				&& IsSlot(OtherInstance->GetSubsystem<UMainGameplayInstance>()))
+			{
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+bool SAPSMainMenuRoot::CanDeleteExistingWorld(const FAPSExistingWorldEntry& Entry, FText* OutReason) const
+{
+	FText Reason;
+	if (!APSMenu::IsWorldSaveSlot(Entry.SaveFileName))
+	{
+		Reason = LOCTEXT("DeleteNotWorld", "This save is not a world.");
+	}
+	else if (IsWorldSlotInUse(Entry.SaveFileName))
+	{
+		Reason = LOCTEXT("DeleteWorldInUse", "This world is open in a running game.");
+	}
+	if (OutReason)
+	{
+		*OutReason = Reason;
+	}
+	return Reason.IsEmpty();
+}
+
+FReply SAPSMainMenuRoot::RequestDeleteExistingWorld()
+{
+	if (SelectedWorld.IsValid() && CanDeleteExistingWorld(*SelectedWorld))
+	{
+		PendingBulkDelete.Reset();
+		PendingDeleteWorld = SelectedWorld;
+	}
+	return FReply::Handled();
+}
+
+FReply SAPSMainMenuRoot::CancelDeleteExistingWorld()
+{
+	PendingDeleteWorld.Reset();
+	return FReply::Handled();
+}
+
+FReply SAPSMainMenuRoot::ConfirmDeleteExistingWorld()
+{
+	const TSharedPtr<FAPSExistingWorldEntry> Target = PendingDeleteWorld;
+	PendingDeleteWorld.Reset();
+	FText Reason;
+	if (!Target.IsValid() || !ExistingWorlds.Contains(Target) || !CanDeleteExistingWorld(*Target, &Reason))
+	{
+		WorldBrowserNotice = Reason;
+		RebuildExistingWorldDetails();
+		return FReply::Handled();
+	}
+	// A queued metadata read of this slot must not race its removal.
+	if (AMainMenuController* PC = Controller.Get())
+	{
+		PC->CancelWorldMetadataLoad();
+	}
+	FString Failure;
+	if (!DeleteWorldFiles(*Target, Failure, true))
+	{
+		WorldBrowserNotice = FText::Format(LOCTEXT("DeleteWorldFailed", "“{0}” could not be deleted. {1}"),
+			FText::FromString(Target->DisplayName), FText::FromString(Failure));
+		RefreshExistingWorlds();
+		return FReply::Handled();
+	}
+	WorldBrowserNotice = FText::Format(LOCTEXT("DeletedWorldNotice", "“{0}” was deleted."),
+		FText::FromString(Target->DisplayName));
+	// Rescan so the list, the counts and the directory fingerprint follow the disk; favourites keep only what is left;
+	// nothing stays selected.
+	LoadExistingWorlds();
+	APSMenu::SaveFavoriteSlots(ExistingWorlds);
+	SelectedWorld.Reset();
+	ApplyExistingWorldView();
+	BeginExistingWorldMetadataLoad();
+	return FReply::Handled();
+}
+
+bool SAPSMainMenuRoot::DeleteWorldFiles(const FAPSExistingWorldEntry& Entry, FString& OutFailure, const bool bLogEach)
+{
+	FText Reason;
+	if (!CanDeleteExistingWorld(Entry, &Reason))
+	{
+		OutFailure = Reason.ToString();
+		return false;
+	}
+	const FString SlotName = Entry.SaveFileName;
+	const bool bHadSave = UGameplayStatics::DoesSaveGameExist(SlotName, 0);
+	const bool bSaveDeleted = !bHadSave || UGameplayStatics::DeleteGameInSlot(SlotName, 0);
+	const FString SidecarPath = APSWorldBrowserMetadata::SidecarPath(SlotName);
+	const bool bSidecarDeleted = !IFileManager::Get().FileExists(*SidecarPath)
+		|| IFileManager::Get().Delete(*SidecarPath, false, true, true);
+	if (bLogEach || !bSaveDeleted || !bSidecarDeleted)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[APS.WorldBrowser] Deleted slot=%s save=%s sidecar=%s"), *SlotName,
+			bSaveDeleted ? (bHadSave ? TEXT("deleted") : TEXT("missing")) : TEXT("FAILED"),
+			bSidecarDeleted ? TEXT("deleted/missing") : TEXT("FAILED"));
+	}
+	if (!bSaveDeleted)
+	{
+		OutFailure = TEXT("The save file is locked or read-only.");
+		return false;
+	}
+	// A sidecar left behind is harmless: the browser lists .sav files only.
+	return true;
+}
+
+FReply SAPSMainMenuRoot::RequestDeleteListedWorlds()
+{
+	if (!ListedWorlds.IsEmpty())
+	{
+		PendingDeleteWorld.Reset();
+		PendingBulkDelete = ListedWorlds;
+		// The confirmation's DELETE ALL arms after a countdown: a stray double click cannot wipe the list.
+		BulkDeleteArmTime = FSlateApplication::Get().GetCurrentTime() + 3.0;
+	}
+	return FReply::Handled();
+}
+
+FReply SAPSMainMenuRoot::CancelDeleteListedWorlds()
+{
+	PendingBulkDelete.Reset();
+	return FReply::Handled();
+}
+
+FReply SAPSMainMenuRoot::ConfirmDeleteListedWorlds()
+{
+	if (PendingBulkDelete.IsEmpty() || FSlateApplication::Get().GetCurrentTime() < BulkDeleteArmTime)
+	{
+		return FReply::Handled();
+	}
+	const TArray<TSharedPtr<FAPSExistingWorldEntry>> Targets = MoveTemp(PendingBulkDelete);
+	PendingBulkDelete.Reset();
+	if (AMainMenuController* PC = Controller.Get())
+	{
+		PC->CancelWorldMetadataLoad();
+	}
+	int32 Deleted = 0;
+	TArray<FString> FailedSlots;
+	TArray<FString> FailedReasons;
+	for (const TSharedPtr<FAPSExistingWorldEntry>& Target : Targets)
+	{
+		FString Failure;
+		if (Target.IsValid() && DeleteWorldFiles(*Target, Failure, false))
+		{
+			++Deleted;
+		}
+		else if (Target.IsValid())
+		{
+			FailedSlots.Add(Target->SaveFileName);
+			FailedReasons.Add(Failure);
+		}
+	}
+	UE_LOG(LogTemp, Log, TEXT("[APS.WorldBrowser] Deleted all: %d slots, %d failed"), Deleted, FailedSlots.Num());
+	for (int32 Index = 0; Index < FailedSlots.Num(); ++Index)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[APS.WorldBrowser] Not deleted: slot=%s - %s"), *FailedSlots[Index], *FailedReasons[Index]);
+	}
+	const FText DeletedText = Deleted == 1
+		? LOCTEXT("DeletedAllOne", "1 world was deleted.")
+		: FText::Format(LOCTEXT("DeletedAllNotice", "{0} worlds were deleted."), APSUINumber::Number(Deleted));
+	if (FailedSlots.IsEmpty())
+	{
+		WorldBrowserNotice = DeletedText;
+	}
+	else
+	{
+		// The first few slots in the notice; the log has every one with its reason.
+		const TArray<FString> Shown(FailedSlots.GetData(), FMath::Min(FailedSlots.Num(), 4));
+		WorldBrowserNotice = FText::Format(LOCTEXT("DeletedAllFailedNotice", "{0} Not deleted ({1}): {2}{3}"),
+			DeletedText, APSUINumber::Number(FailedSlots.Num()), FText::FromString(FString::Join(Shown, TEXT(", "))),
+			FText::FromString(FailedSlots.Num() > Shown.Num() ? TEXT(", ...") : TEXT("")));
+	}
+	// One rescan for the whole batch; favourites keep only the worlds that are left.
+	LoadExistingWorlds();
+	APSMenu::SaveFavoriteSlots(ExistingWorlds);
+	SelectedWorld.Reset();
+	ExistingWorldPage = 0;
+	ApplyExistingWorldView();
+	BeginExistingWorldMetadataLoad();
+	return FReply::Handled();
 }
 
 FReply SAPSMainMenuRoot::ChangeExistingWorldPage(int32 Delta)
@@ -2233,70 +4011,200 @@ FReply SAPSMainMenuRoot::ChangeExistingWorldPage(int32 Delta)
 	return FReply::Handled();
 }
 
-bool SAPSMainMenuRoot::PassesExistingWorldFilters(const FAPSExistingWorldEntry& Entry) const
+bool SAPSMainMenuRoot::PassesWorldCollectionAndSearch(const FAPSExistingWorldEntry& Entry) const
 {
+	// RECENT keeps the six newest of what passes; the grid cuts the list, so the check here is the same as ALL.
 	if (WorldCollection == EAPSWorldCollection::Favorites && !Entry.bFavorite)
 	{
 		return false;
 	}
+	return WorldSearch.IsEmpty() || Entry.DisplayName.Contains(WorldSearch, ESearchCase::IgnoreCase)
+		|| Entry.SaveFileName.Contains(WorldSearch, ESearchCase::IgnoreCase);
+}
 
-	const int32 StarFilter = WorldFilterIndices.FindRef(EAPSWorldFilterKind::StarType);
-	if (StarFilter != 0)
+bool SAPSMainMenuRoot::MatchesWorldFilter(const FAPSExistingWorldEntry& Entry, const EAPSWorldFilterKind Kind) const
+{
+	const FString* Choice = WorldFilterChoices.Find(Kind);
+	return !Choice || Choice->IsEmpty() || APSMenu::WorldFilterKey(Entry, Kind) == *Choice;
+}
+
+bool SAPSMainMenuRoot::PassesExistingWorldFilters(const FAPSExistingWorldEntry& Entry) const
+{
+	return PassesWorldCollectionAndSearch(Entry)
+		&& MatchesWorldFilter(Entry, EAPSWorldFilterKind::StarType)
+		&& MatchesWorldFilter(Entry, EAPSWorldFilterKind::WorldType)
+		&& MatchesWorldFilter(Entry, EAPSWorldFilterKind::Inhabited)
+		&& MatchesWorldFilter(Entry, EAPSWorldFilterKind::Environment);
+}
+
+bool SAPSMainMenuRoot::HasWorldNarrowing() const
+{
+	return WorldCollection != EAPSWorldCollection::All || !WorldSearch.IsEmpty() || WorldFilterChoices.Num() > 0;
+}
+
+void SAPSMainMenuRoot::RebuildWorldFilterOptions()
+{
+	// Each filter's options count the worlds the other filters (and the collection and search) let through, so a
+	// number always says how many worlds picking that option shows.
+	constexpr EAPSWorldFilterKind Kinds[] = {EAPSWorldFilterKind::StarType, EAPSWorldFilterKind::WorldType,
+		EAPSWorldFilterKind::Inhabited, EAPSWorldFilterKind::Environment};
+	constexpr int32 KindCount = static_cast<int32>(UE_ARRAY_COUNT(Kinds));
+	TMap<FString, int32> Counts[KindCount];
+	int32 AnyCounts[KindCount] = {};
+	for (const TSharedPtr<FAPSExistingWorldEntry>& Entry : ExistingWorlds)
 	{
-		const FString Star = Entry.StarType.ToUpper();
-		const bool bKnown = Entry.bMetadataLoaded;
-		const bool bHot = Star == TEXT("O") || Star == TEXT("B") || Star == TEXT("A");
-		const bool bSolar = Star == TEXT("F") || Star == TEXT("G") || Star == TEXT("K");
-		const bool bCool = Star == TEXT("M") || Star == TEXT("L") || Star == TEXT("T") || Star == TEXT("Y");
-		if ((StarFilter == 1 && !bHot) || (StarFilter == 2 && !bSolar)
-			|| (StarFilter == 3 && !bCool) || (StarFilter == 4 && bKnown))
+		if (!Entry.IsValid() || !PassesWorldCollectionAndSearch(*Entry))
 		{
-			return false;
+			continue;
+		}
+		FString Keys[KindCount];
+		bool Passes[KindCount];
+		for (int32 KindIndex = 0; KindIndex < KindCount; ++KindIndex)
+		{
+			Keys[KindIndex] = APSMenu::WorldFilterKey(*Entry, Kinds[KindIndex]);
+			const FString* Choice = WorldFilterChoices.Find(Kinds[KindIndex]);
+			Passes[KindIndex] = !Choice || Keys[KindIndex] == *Choice;
+		}
+		for (int32 KindIndex = 0; KindIndex < KindCount; ++KindIndex)
+		{
+			bool bOthersPass = true;
+			for (int32 Other = 0; Other < KindCount; ++Other)
+			{
+				bOthersPass &= Other == KindIndex || Passes[Other];
+			}
+			if (bOthersPass)
+			{
+				++Counts[KindIndex].FindOrAdd(Keys[KindIndex]);
+				++AnyCounts[KindIndex];
+			}
 		}
 	}
-
-	const int32 WorldTypeFilter = WorldFilterIndices.FindRef(EAPSWorldFilterKind::WorldType);
-	if (WorldTypeFilter != 0)
+	for (int32 KindIndex = 0; KindIndex < KindCount; ++KindIndex)
 	{
-		const FString Type = Entry.SystemType.ToUpper();
-		const bool bMulti = Type.Contains(TEXT("MULTI"));
-		const bool bSingle = Type.Contains(TEXT("SINGLE"));
-		if ((WorldTypeFilter == 1 && !bMulti) || (WorldTypeFilter == 2 && !bSingle)
-			|| (WorldTypeFilter == 3 && (bMulti || bSingle)))
+		const EAPSWorldFilterKind Kind = Kinds[KindIndex];
+		// The current choice stays listed even when nothing matches it any more, so it can be read and undone.
+		if (const FString* Choice = WorldFilterChoices.Find(Kind))
 		{
-			return false;
+			Counts[KindIndex].FindOrAdd(*Choice);
+		}
+		if (WorldCollection == EAPSWorldCollection::Recent)
+		{
+			// RECENT shows the newest few of whatever passes, so no option shows more than that.
+			AnyCounts[KindIndex] = FMath::Min(AnyCounts[KindIndex], APSMenu::RecentWorldCount);
+			for (TPair<FString, int32>& Count : Counts[KindIndex])
+			{
+				Count.Value = FMath::Min(Count.Value, APSMenu::RecentWorldCount);
+			}
+		}
+		TArray<FString> Keys;
+		Counts[KindIndex].GetKeys(Keys);
+		Keys.Sort([Kind](const FString& A, const FString& B)
+		{
+			const int32 OrderA = APSMenu::WorldFilterOrder(Kind, A);
+			const int32 OrderB = APSMenu::WorldFilterOrder(Kind, B);
+			return OrderA != OrderB ? OrderA < OrderB : A < B;
+		});
+		TArray<FAPSWorldFilterOption>& Options = WorldFilterOptions.FindOrAdd(Kind);
+		Options.Reset();
+		Options.Add({FString(), APSMenu::WorldFilterOptionLabel(Kind, FString()), AnyCounts[KindIndex]});
+		for (const FString& Key : Keys)
+		{
+			Options.Add({Key, APSMenu::WorldFilterOptionLabel(Kind, Key), Counts[KindIndex].FindRef(Key)});
 		}
 	}
+}
 
-	const int32 InhabitedFilter = WorldFilterIndices.FindRef(EAPSWorldFilterKind::Inhabited);
-	if ((InhabitedFilter == 1 && Entry.InhabitedPlanets <= 0)
-		|| (InhabitedFilter == 2 && Entry.InhabitedPlanets > 0))
+void SAPSMainMenuRoot::ApplyExistingWorldView()
+{
+	RebuildExistingWorldGrid();
+	// Rio 03.10: a world the list no longer shows is no longer selected.
+	if (SelectedWorld.IsValid() && !ListedWorlds.Contains(SelectedWorld))
 	{
-		return false;
+		SelectedWorld.Reset();
 	}
+	RebuildExistingWorldDetails();
+}
 
-	const int32 EnvironmentFilter = WorldFilterIndices.FindRef(EAPSWorldFilterKind::Environment);
-	if (EnvironmentFilter != 0)
+TSharedRef<SWidget> SAPSMainMenuRoot::BuildWorldFilterMenu(const EAPSWorldFilterKind Kind)
+{
+	const FString* Choice = WorldFilterChoices.Find(Kind);
+	const FString Current = Choice ? *Choice : FString();
+	TSharedRef<SVerticalBox> Rows = SNew(SVerticalBox);
+	for (const FAPSWorldFilterOption& Option : WorldFilterOptions.FindRef(Kind))
 	{
-		const FString EnvironmentValue = (Entry.Environment + TEXT(" ") + Entry.PlanetType).ToUpper();
-		const bool bRocky = EnvironmentValue.Contains(TEXT("ROCK")) || EnvironmentValue.Contains(TEXT("EARTH"));
-		const bool bGas = EnvironmentValue.Contains(TEXT("GAS"));
-		const bool bIce = EnvironmentValue.Contains(TEXT("ICE")) || EnvironmentValue.Contains(TEXT("FROZEN"));
-		if ((EnvironmentFilter == 1 && !bRocky) || (EnvironmentFilter == 2 && !bGas)
-			|| (EnvironmentFilter == 3 && !bIce)
-			|| (EnvironmentFilter == 4 && (bRocky || bGas || bIce)))
-		{
-			return false;
-		}
+		const bool bChosen = Option.Key == Current;
+		Rows->AddSlot().AutoHeight()
+		[
+			SNew(SButton).ButtonStyle(&DropdownOptionStyle)
+			.ContentPadding(APSMenu::ButtonPadding("Bold", 11, 12.0f))
+			.OnClicked(this, &SAPSMainMenuRoot::SelectWorldFilter, Kind, Option.Key)
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
+				[
+					SNew(STextBlock).Text(Option.Label).Font(APSMenu::Font("Bold", 11))
+					.ColorAndOpacity(bChosen ? APSMenu::Amber : (Option.Count > 0 ? APSMenu::White : APSMenu::Muted))
+					.RenderTransform(APSMenu::CapsShift("Bold", 11))
+				]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(16.0f, 0.0f, 0.0f, 0.0f)
+				[
+					SNew(STextBlock).Text(APSUINumber::Number(Option.Count)).Font(APSMenu::Font("Bold", 11))
+					.ColorAndOpacity(bChosen ? APSMenu::Amber : APSMenu::Readable)
+					.RenderTransform(APSMenu::CapsShift("Bold", 11))
+				]
+			]
+		];
 	}
-	return true;
+	return SNew(SBorder).BorderImage(&APSMenu::PanelBrush).Padding(6.0f)
+	[
+		SNew(SBox).MinDesiredWidth(240.0f).MaxDesiredHeight(420.0f)
+		[
+			SNew(SScrollBox).ScrollBarStyle(&ScrollBarStyle)
+			+ SScrollBox::Slot()[Rows]
+		]
+	];
+}
+
+FReply SAPSMainMenuRoot::ToggleWorldFilterMenu(const EAPSWorldFilterKind Kind)
+{
+	if (const TSharedPtr<SMenuAnchor>* Anchor = WorldFilterAnchors.Find(Kind); Anchor && Anchor->IsValid())
+	{
+		(*Anchor)->SetIsOpen(!(*Anchor)->IsOpen());
+	}
+	return FReply::Handled();
+}
+
+FReply SAPSMainMenuRoot::SelectWorldFilter(const EAPSWorldFilterKind Kind, FString Key)
+{
+	if (const TSharedPtr<SMenuAnchor>* Anchor = WorldFilterAnchors.Find(Kind); Anchor && Anchor->IsValid())
+	{
+		(*Anchor)->SetIsOpen(false);
+	}
+	if (Key.IsEmpty())
+	{
+		WorldFilterChoices.Remove(Kind);
+	}
+	else
+	{
+		WorldFilterChoices.Add(Kind, MoveTemp(Key));
+	}
+	ExistingWorldPage = 0;
+	ApplyExistingWorldView();
+	return FReply::Handled();
+}
+
+FReply SAPSMainMenuRoot::ClearWorldFilters()
+{
+	WorldFilterChoices.Reset();
+	ExistingWorldPage = 0;
+	ApplyExistingWorldView();
+	return FReply::Handled();
 }
 
 FText SAPSMainMenuRoot::GetWorldCollectionLabel(EAPSWorldCollection Collection) const
 {
 	switch (Collection)
 	{
-	case EAPSWorldCollection::MyWorlds: return LOCTEXT("MyWorldsValue", "MY WORLDS");
 	case EAPSWorldCollection::Favorites: return LOCTEXT("FavoritesValue", "FAVORITES");
 	case EAPSWorldCollection::Recent: return LOCTEXT("RecentValue", "RECENT");
 	default: return LOCTEXT("AllWorldsValue", "ALL WORLDS");
@@ -2315,35 +4223,30 @@ FText SAPSMainMenuRoot::GetWorldSortLabel() const
 
 FText SAPSMainMenuRoot::GetWorldFilterLabel(EAPSWorldFilterKind Kind) const
 {
-	static const TCHAR* StarLabels[] = {TEXT("ANY  v"), TEXT("HOT O/B/A  v"), TEXT("SOLAR F/G/K  v"), TEXT("COOL M/L/T/Y  v"), TEXT("UNKNOWN  v")};
-	static const TCHAR* TypeLabels[] = {TEXT("ANY  v"), TEXT("MULTI PLANET  v"), TEXT("SINGLE STAR  v"), TEXT("OTHER  v")};
-	static const TCHAR* InhabitedLabels[] = {TEXT("ANY  v"), TEXT("INHABITED  v"), TEXT("UNINHABITED  v")};
-	static const TCHAR* EnvironmentLabels[] = {TEXT("ANY  v"), TEXT("ROCKY  v"), TEXT("GAS  v"), TEXT("ICE  v"), TEXT("OTHER  v")};
-	const int32 Index = WorldFilterIndices.FindRef(Kind);
-	switch (Kind)
+	// "ANY", or the choice and how many worlds it shows: "G YELLOW (12)".
+	const FString* Choice = WorldFilterChoices.Find(Kind);
+	if (!Choice || Choice->IsEmpty())
 	{
-	case EAPSWorldFilterKind::StarType: return FText::FromString(StarLabels[FMath::Clamp(Index, 0, UE_ARRAY_COUNT(StarLabels) - 1)]);
-	case EAPSWorldFilterKind::WorldType: return FText::FromString(TypeLabels[FMath::Clamp(Index, 0, UE_ARRAY_COUNT(TypeLabels) - 1)]);
-	case EAPSWorldFilterKind::Inhabited: return FText::FromString(InhabitedLabels[FMath::Clamp(Index, 0, UE_ARRAY_COUNT(InhabitedLabels) - 1)]);
-	default: return FText::FromString(EnvironmentLabels[FMath::Clamp(Index, 0, UE_ARRAY_COUNT(EnvironmentLabels) - 1)]);
+		return APSMenu::WorldFilterOptionLabel(Kind, FString());
 	}
+	int32 Count = 0;
+	for (const FAPSWorldFilterOption& Option : WorldFilterOptions.FindRef(Kind))
+	{
+		if (Option.Key == *Choice)
+		{
+			Count = Option.Count;
+			break;
+		}
+	}
+	return FText::Format(LOCTEXT("FilterChoiceCount", "{0} ({1})"), APSMenu::WorldFilterOptionLabel(Kind, *Choice),
+		APSUINumber::Number(Count));
 }
 
 FReply SAPSMainMenuRoot::SetWorldCollection(EAPSWorldCollection Collection)
 {
 	WorldCollection = Collection;
 	ExistingWorldPage = 0;
-	if (!SelectedWorld.IsValid() || !PassesExistingWorldFilters(*SelectedWorld))
-	{
-		const TSharedPtr<FAPSExistingWorldEntry>* FirstMatch = ExistingWorlds.FindByPredicate(
-			[this](const TSharedPtr<FAPSExistingWorldEntry>& Entry)
-			{
-				return Entry.IsValid() && PassesExistingWorldFilters(*Entry);
-			});
-		SelectedWorld = FirstMatch ? *FirstMatch : nullptr;
-	}
-	RebuildExistingWorldGrid();
-	RebuildExistingWorldDetails();
+	ApplyExistingWorldView();
 	return FReply::Handled();
 }
 
@@ -2363,43 +4266,21 @@ FReply SAPSMainMenuRoot::ToggleWorldView()
 	return FReply::Handled();
 }
 
-FReply SAPSMainMenuRoot::CycleWorldFilter(EAPSWorldFilterKind Kind)
-{
-	static const int32 Counts[] = {5, 4, 3, 5};
-	int32& Index = WorldFilterIndices.FindOrAdd(Kind);
-	Index = (Index + 1) % Counts[static_cast<uint8>(Kind)];
-	ExistingWorldPage = 0;
-	if (!SelectedWorld.IsValid() || !PassesExistingWorldFilters(*SelectedWorld))
-	{
-		const TSharedPtr<FAPSExistingWorldEntry>* FirstMatch = ExistingWorlds.FindByPredicate(
-			[this](const TSharedPtr<FAPSExistingWorldEntry>& Entry)
-			{
-				return Entry.IsValid() && PassesExistingWorldFilters(*Entry);
-			});
-		SelectedWorld = FirstMatch ? *FirstMatch : nullptr;
-	}
-	RebuildExistingWorldGrid();
-	RebuildExistingWorldDetails();
-	return FReply::Handled();
-}
-
 FReply SAPSMainMenuRoot::ToggleWorldFavorite(TSharedPtr<FAPSExistingWorldEntry> Entry)
 {
 	if (Entry.IsValid())
 	{
+		// The star on a card: saved at once (Saved/Config/APSWorldBrowser.ini); FAVORITES counts it live.
 		Entry->bFavorite = !Entry->bFavorite;
 		APSMenu::SaveFavoriteSlots(ExistingWorlds);
-		if (WorldCollection == EAPSWorldCollection::Favorites && !Entry->bFavorite && SelectedWorld == Entry)
+		if (WorldCollection == EAPSWorldCollection::Favorites)
 		{
-			const TSharedPtr<FAPSExistingWorldEntry>* FirstMatch = ExistingWorlds.FindByPredicate(
-				[this](const TSharedPtr<FAPSExistingWorldEntry>& Candidate)
-				{
-					return Candidate.IsValid() && PassesExistingWorldFilters(*Candidate);
-				});
-			SelectedWorld = FirstMatch ? *FirstMatch : nullptr;
-			RebuildExistingWorldDetails();
+			ApplyExistingWorldView();
 		}
-		RebuildExistingWorldGrid();
+		else
+		{
+			RebuildExistingWorldGrid();
+		}
 	}
 	return FReply::Handled();
 }
@@ -2612,8 +4493,36 @@ void SAPSMainMenuRoot::DiscoverSpawnClassOptions()
 		HiddenStartClasses.Num());
 }
 
+namespace APSMenuStartDefaults
+{
+	/** Rio 02.10: until the player picks, the menu starts with the newest pieces: the ranger pilot, the S P3 cargo ship,
+	 * station R2 and headquarters Alpha. The shipyard stays the generator's. Loaded like any pick (asynchronously). */
+	FSoftObjectPath For(const EAPSStartAssetSlot Slot)
+	{
+		switch (Slot)
+		{
+		case EAPSStartAssetSlot::Character:
+			return FSoftObjectPath(TEXT("/Game/APS/APS_ALPHA/Blueprints/BP_CustomGravityCharacter_SpeedModes.BP_CustomGravityCharacter_SpeedModes_C"));
+		case EAPSStartAssetSlot::Spaceship:
+			return FSoftObjectPath(TEXT("/Game/APS/APS_ALPHA/Core/Spaceships/S/BP_Spaceship_S_P3_01.BP_Spaceship_S_P3_01_C"));
+		case EAPSStartAssetSlot::SpaceStation:
+			return FSoftObjectPath(TEXT("/Game/APS/APS_ALPHA/Core/Stations/BP_SpaceStation_R2.BP_SpaceStation_R2_C"));
+		case EAPSStartAssetSlot::Headquarters:
+			return FSoftObjectPath(TEXT("/Game/APS/APS_ALPHA/Core/SpaceInfrastructure/BP_SpaceHeadquarters_Alpha.BP_SpaceHeadquarters_Alpha_C"));
+		default:
+			return FSoftObjectPath();
+		}
+	}
+}
+
+namespace APSMenuClassNames
+{
+	FText BaseName(const TSoftClassPtr<AActor>& Option);
+}
+
 void SAPSMainMenuRoot::SynchronizeSpawnClassOptions()
 {
+	SpawnClassCaptions.Reset();
 	for (auto& Pair : SpawnClassOptions)
 	{
 		UClass* CurrentClass = nullptr;
@@ -2649,6 +4558,17 @@ void SAPSMainMenuRoot::SynchronizeSpawnClassOptions()
 				|| (CurrentPath.IsValid() && Candidate.ToSoftObjectPath() == CurrentPath);
 		});
 		if (InitialIndex == INDEX_NONE) InitialIndex = 0;
+		if (ViewModel.IsValid() && ViewModel->IsSpawnSlotDefaulted(Pair.Key))
+		{
+			const FSoftObjectPath Preferred = APSMenuStartDefaults::For(Pair.Key);
+			const int32 PreferredIndex = Preferred.IsValid() ? Pair.Value.IndexOfByPredicate(
+				[&Preferred](const TSoftClassPtr<AActor>& Candidate) { return Candidate.ToSoftObjectPath() == Preferred; })
+				: INDEX_NONE;
+			if (PreferredIndex != INDEX_NONE)
+			{
+				InitialIndex = PreferredIndex;
+			}
+		}
 		SpawnClassIndices.Add(Pair.Key, InitialIndex);
 		ApplySpawnClassSelection(Pair.Key);
 	}
@@ -2680,10 +4600,8 @@ void SAPSMainMenuRoot::RefreshSpawnThumbnails()
 					PC->HoldSlateResource(Texture);
 				}
 				Brush = MakeShared<FSlateBrush>();
-				Brush->SetResourceObject(Texture);
-				Brush->ImageSize = FVector2D(static_cast<float>(Texture->GetSizeX()),
-					static_cast<float>(Texture->GetSizeY()));
-				Brush->DrawAs = ESlateBrushDrawType::Image;
+				// Cropped to the object, so the card's picture fills with it (Rio 05.10).
+				APSUIThumbnails::InitBrush(*Brush, Texture);
 			}
 			SpawnThumbnailBrushCache.Add(Key, Brush);
 			Brushes.Add(Brush);
@@ -2797,6 +4715,8 @@ void SAPSMainMenuRoot::OnSpawnClassSelectionLoaded(EAPSStartAssetSlot Slot, FSof
 	{
 		ViewModel->SetSpawnClass(Slot, LoadedClass);
 	}
+	// Remembers its in-game name for the next session; this session's captions stay as they are.
+	APSMenuClassNames::BaseName((*Options)[Index]);
 	Invalidate(EInvalidateWidgetReason::Paint);
 }
 
@@ -2807,29 +4727,114 @@ FText SAPSMainMenuRoot::GetSpawnClassName(EAPSStartAssetSlot Slot) const
 	return GetSpawnClassOptionName(Slot, Index);
 }
 
+namespace APSMenuClassNames
+{
+	/** In-game names of start classes seen loaded, kept across sessions (GameUserSettings). */
+	const TCHAR* const Section = TEXT("APS.Menu.ClassNames");
+
+	TMap<FString, FString>& Remembered()
+	{
+		static TMap<FString, FString> Names;
+		static bool bRead = false;
+		if (!bRead && GConfig)
+		{
+			bRead = true;
+			if (const FConfigSection* Stored = GConfig->GetSection(Section, false, GGameUserSettingsIni))
+			{
+				for (const auto& Pair : *Stored) Names.Add(Pair.Key.ToString(), Pair.Value.GetValue());
+			}
+		}
+		return Names;
+	}
+
+	/**
+	 * Rio 02.10 ("the names keep changing, at least the headquarters"): an option read its in-game name only while
+	 * its class happened to be loaded and its asset name otherwise, so the list changed with what was loaded. The
+	 * in-game name, once seen, is remembered; until then the asset name stands in.
+	 */
+	/** Rio 02.10: names given in the menu where the in-game ones say nothing (both pilots read the same). */
+	const FString* Curated(const FString& Path)
+	{
+		static const TMap<FString, FString> Names = {
+			{TEXT("/Game/APS/APS_ALPHA/Blueprints/BP_CustomGravityCharacter.BP_CustomGravityCharacter_C"),
+				TEXT("PILOT  /  STANDARD")},
+			{TEXT("/Game/APS/APS_ALPHA/Blueprints/BP_CustomGravityCharacter_SpeedModes.BP_CustomGravityCharacter_SpeedModes_C"),
+				TEXT("PILOT  /  RANGER")}};
+		return Names.Find(Path);
+	}
+
+	FText BaseName(const TSoftClassPtr<AActor>& Option)
+	{
+		const FString Path = Option.ToSoftObjectPath().ToString();
+		if (const FString* Name = Curated(Path))
+		{
+			return FText::FromString(*Name);
+		}
+		if (const UClass* Loaded = Option.Get())
+		{
+			const AActor* Default = Loaded->GetDefaultObject<AActor>();
+			const FText InGameName = Default && Default->Implements<UItemInfoInterface>()
+				? IItemInfoInterface::Execute_GetInGameName(Default) : FText::GetEmpty();
+			if (!InGameName.IsEmptyOrWhitespace())
+			{
+				const FString Name = InGameName.ToString();
+				if (Remembered().FindRef(Path) != Name && GConfig)
+				{
+					Remembered().Add(Path, Name);
+					GConfig->SetString(Section, *Path, *Name, GGameUserSettingsIni);
+					GConfig->Flush(false, GGameUserSettingsIni);
+				}
+				return InGameName;
+			}
+		}
+		if (const FString* Name = Remembered().Find(Path))
+		{
+			return FText::FromString(*Name);
+		}
+		FString AssetName = Option.ToSoftObjectPath().GetAssetName();
+		AssetName.RemoveFromEnd(TEXT("_C"));
+		return FText::FromString(AssetName.Replace(TEXT("BP_"), TEXT("")));
+	}
+}
+
 FText SAPSMainMenuRoot::GetSpawnClassOptionName(EAPSStartAssetSlot Slot, int32 OptionIndex) const
 {
 	const TArray<TSoftClassPtr<AActor>>* Options = SpawnClassOptions.Find(Slot);
 	if (!Options || !Options->IsValidIndex(OptionIndex)) return LOCTEXT("Unavailable", "NOT CONFIGURED");
-	UClass* LoadedClass = (*Options)[OptionIndex].Get();
-	if (!LoadedClass)
+	TArray<FText>& Captions = SpawnClassCaptions.FindOrAdd(Slot);
+	if (Captions.Num() != Options->Num())
 	{
-		FString AssetName = (*Options)[OptionIndex].ToSoftObjectPath().GetAssetName();
-		AssetName.RemoveFromEnd(TEXT("_C"));
-		return FText::FromString(AssetName.Replace(TEXT("BP_"), TEXT("")));
-	}
-	const AActor* DefaultActor = LoadedClass->GetDefaultObject<AActor>();
-	if (DefaultActor && DefaultActor->Implements<UItemInfoInterface>())
-	{
-		const FText InGameName = IItemInfoInterface::Execute_GetInGameName(DefaultActor);
-		if (!InGameName.IsEmptyOrWhitespace())
+		// Rio 02.10 ("the names under the list change"): a name read while its class happened to be loaded renamed the
+		// option, and its twins with it, as picks loaded classes. A slot's captions are now taken at once and kept.
+		TArray<FText> Names;
+		for (const TSoftClassPtr<AActor>& Option : *Options)
 		{
-			return InGameName;
+			Names.Add(APSMenuClassNames::BaseName(Option));
+		}
+		Captions.Reset(Options->Num());
+		for (int32 Index = 0; Index < Options->Num(); ++Index)
+		{
+			// Rio 02.10: three headquarters all read "HQ X-1". Options sharing a name show their variant (the asset's suffix).
+			bool bShared = false;
+			for (int32 Other = 0; Other < Names.Num() && !bShared; ++Other)
+			{
+				bShared = Other != Index && Names[Other].EqualTo(Names[Index]);
+			}
+			if (!bShared)
+			{
+				Captions.Add(Names[Index]);
+				continue;
+			}
+			FString Variant = (*Options)[Index].ToSoftObjectPath().GetAssetName();
+			Variant.RemoveFromEnd(TEXT("_C"));
+			Variant.RemoveFromStart(TEXT("BP_"));
+			FString Head, Tail;
+			const FString Suffix = Variant.Split(TEXT("_"), &Head, &Tail, ESearchCase::IgnoreCase, ESearchDir::FromEnd)
+				? Tail.ToUpper() : FString(TEXT("ORIGINAL"));
+			Captions.Add(FText::Format(LOCTEXT("SpawnClassVariant", "{0}  /  {1}"), Names[Index], FText::FromString(Suffix)));
 		}
 	}
-	FString ClassName = LoadedClass->GetName();
-	ClassName.RemoveFromEnd(TEXT("_C"));
-	return FText::FromString(ClassName.Replace(TEXT("BP_"), TEXT("")));
+	return Captions[OptionIndex];
 }
 
 namespace
@@ -2890,12 +4895,12 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildSpawnCard(EAPSStartAssetSlot Slot, co
 		[
 			SNew(SButton)
 			.ButtonStyle(&CardButtonStyle)
-			.ContentPadding(FMargin(7.0f, 7.0f))
+			.ContentPadding(FMargin(12.0f, 7.0f))
 			.ButtonColorAndOpacity_Lambda([this, Slot, CapturedIndex]()
 			{
 				return SpawnClassIndices.FindRef(Slot) == CapturedIndex
-					? FLinearColor(0.42f, 0.19f, 0.01f, 1.0f)
-					: FLinearColor(0.02f, 0.13f, 0.18f, 0.92f);
+					? APSMenu::RetintAction(FLinearColor(0.42f, 0.19f, 0.01f, 1.0f))
+					: APSMenu::Retint(FLinearColor(0.02f, 0.13f, 0.18f, 0.92f));
 			})
 			.ToolTipText(FText::FromString(Options[OptionIndex].ToSoftObjectPath().ToString()))
 			.OnClicked(this, &SAPSMainMenuRoot::SelectSpawnClass, Slot, OptionIndex)
@@ -2905,7 +4910,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildSpawnCard(EAPSStartAssetSlot Slot, co
 				[
 					SNew(STextBlock)
 					.Text(FText::FromString(FString::Printf(TEXT("%02d"), OptionIndex + 1)))
-					.Font(APSMenu::Font("Bold", 9))
+					.Font(APSMenu::Font("Bold", 9)).RenderTransform(APSMenu::CapsShift("Bold", 9))
 					.ColorAndOpacity_Lambda([this, Slot, CapturedIndex]()
 					{
 						return SpawnClassIndices.FindRef(Slot) == CapturedIndex ? APSMenu::Amber : APSMenu::Cyan;
@@ -2919,19 +4924,21 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildSpawnCard(EAPSStartAssetSlot Slot, co
 						return GetSpawnClassThumbnail(Slot, CapturedIndex)
 							? EVisibility::HitTestInvisible : EVisibility::Collapsed;
 					})
-					[SNew(SImage).Image_Lambda([this, Slot, CapturedIndex]() { return GetSpawnClassThumbnail(Slot, CapturedIndex); })]
+					// Rio 05.10: icons may be wide (a long hull baked with -Wide); fit, never stretch.
+					[SNew(SScaleBox).Stretch(EStretch::ScaleToFit)
+						[SNew(SImage).Image_Lambda([this, Slot, CapturedIndex]() { return GetSpawnClassThumbnail(Slot, CapturedIndex); })]]
 				]
 				+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center).Padding(7.0f, 0.0f)
 				[
 					SNew(STextBlock)
 					.Text_Lambda([this, Slot, CapturedIndex]() { return GetSpawnClassOptionName(Slot, CapturedIndex); })
 					.Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::White)
-					.OverflowPolicy(ETextOverflowPolicy::Ellipsis)
+					.OverflowPolicy(ETextOverflowPolicy::Ellipsis).RenderTransform(APSMenu::CapsShift("Bold", 11))
 				]
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 				[
 					SNew(STextBlock).Text(LOCTEXT("SpawnOptionActive", "ACTIVE"))
-					.Font(APSMenu::Font("Bold", 8)).ColorAndOpacity(APSMenu::Success)
+					.Font(APSMenu::Font("Bold", 8)).ColorAndOpacity(APSMenu::Success).RenderTransform(APSMenu::CapsShift("Bold", 8))
 					.Visibility_Lambda([this, Slot, CapturedIndex]()
 					{
 						return SpawnClassIndices.FindRef(Slot) == CapturedIndex
@@ -2975,12 +4982,13 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildSpawnCard(EAPSStartAssetSlot Slot, co
 						]
 						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 						[
-							SNew(SBorder).BorderImage(&APSMenu::CivStatusBrush).Padding(FMargin(6.0f, 3.0f))
+							SNew(SBorder).BorderImage(&APSMenu::CivStatusBrush).Padding(FMargin(8.0f, 4.0f))
+							.HAlign(HAlign_Center).VAlign(VAlign_Center)
 							[
 								SNew(STextBlock)
 								.Text(bLockedProductionPilot ? LOCTEXT("PilotCardLocked", "LOCKED")
 									: FText::FromString(FString::Printf(TEXT("%02d"), SlotNumber)))
-								.Font(APSMenu::Font("Bold", 8))
+								.Font(APSMenu::Font("Bold", 8)).RenderTransform(APSMenu::CapsShift("Bold", 8))
 								.ColorAndOpacity(bLockedProductionPilot ? APSMenu::Amber : APSMenu::Cyan)
 							]
 						]
@@ -2994,7 +5002,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildSpawnCard(EAPSStartAssetSlot Slot, co
 							[
 								SNew(SBox).WidthOverride(118.0f).HeightOverride(118.0f)
 								.Visibility_Lambda([this, Slot]() { return GetSelectedSpawnThumbnail(Slot) ? EVisibility::Collapsed : EVisibility::Visible; })
-								[SNew(SVectorMenuGlyph).Glyph(SlotGlyph).Color(FLinearColor(0.03f, 0.28f, 0.38f, 0.32f)).StrokeWidth(4.8f)]
+								[SNew(SVectorMenuGlyph).Glyph(SlotGlyph).Color(APSMenu::Retint(FLinearColor(0.03f, 0.28f, 0.38f, 0.32f))).StrokeWidth(4.8f)]
 							]
 							+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center)
 							[
@@ -3014,6 +5022,20 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildSpawnCard(EAPSStartAssetSlot Slot, co
 								SNew(STextBlock).Text(LOCTEXT("SpawnCardLoadout", "LOADOUT CLASS"))
 								.Font(APSMenu::Font("Bold", 8)).ColorAndOpacity(APSMenu::Muted)
 							]
+							// Rio 06.10: the start is chosen in the console (START); the card the pilot starts on shows it here
+							// instead of a START HERE button: the image framed in the action colour and a label in its corner.
+							+ SOverlay::Slot().HAlign(HAlign_Right).VAlign(VAlign_Bottom).Padding(8.0f)
+							[
+								SNew(STextBlock).Text(LOCTEXT("SpawnCardStartsHere", "START HERE"))
+								.Font(APSMenu::Font("Bold", 8)).ColorAndOpacity_Lambda([]() { return FSlateColor(APSMenu::ActionBright); })
+								.Visibility_Lambda([this, Slot]() { return IsStartHere(Slot) ? EVisibility::HitTestInvisible : EVisibility::Collapsed; })
+							]
+							+ SOverlay::Slot().Padding(-2.0f)
+							[
+								// A rounded box's outline ignores the border's tint: ApplyTheme draws it in the action colour.
+								SNew(SBorder).BorderImage(&APSMenu::OutlineBrush).Padding(0.0f)
+								.Visibility_Lambda([this, Slot]() { return IsStartHere(Slot) ? EVisibility::HitTestInvisible : EVisibility::Collapsed; })
+							]
 						]
 					]
 					+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)
@@ -3028,11 +5050,12 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildSpawnCard(EAPSStartAssetSlot Slot, co
 						SNew(SOverlay)
 						+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center)
 						[
-							SNew(SBorder).BorderImage(&APSMenu::CivStatusBrush).Padding(FMargin(8.0f, 4.0f))
+							SNew(SBorder).BorderImage(&APSMenu::CivStatusBrush).Padding(FMargin(12.0f, 5.0f))
+							.HAlign(HAlign_Center).VAlign(VAlign_Center)
 							.Visibility(bLockedProductionPilot ? EVisibility::Visible : EVisibility::Collapsed)
 							[
 								SNew(STextBlock).Text(LOCTEXT("ProductionPilotLocked", "VERIFIED GRAVITY PILOT"))
-								.Font(APSMenu::Font("Bold", 8)).ColorAndOpacity(APSMenu::Amber)
+								.Font(APSMenu::Font("Bold", 8)).ColorAndOpacity(APSMenu::Amber).RenderTransform(APSMenu::CapsShift("Bold", 8))
 							]
 						]
 						+ SOverlay::Slot()
@@ -3040,50 +5063,34 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildSpawnCard(EAPSStartAssetSlot Slot, co
 						SNew(SHorizontalBox)
 						.Visibility(bLockedProductionPilot ? EVisibility::Hidden : EVisibility::Visible)
 						+ SHorizontalBox::Slot().FillWidth(0.28f)
-						[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(0.0f)
+						[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(APSMenu::ButtonPadding("Bold", 11, 14.0f))
 						.HAlign(HAlign_Center).VAlign(VAlign_Center).OnClicked(this, &SAPSMainMenuRoot::CycleSpawnClass, Slot, -1)
-						[SNew(STextBlock).Text(FText::FromString(TEXT("<"))).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::Cyan)]]
-						+ SHorizontalBox::Slot().FillWidth(0.44f).HAlign(HAlign_Center).VAlign(VAlign_Center)
+						[SNew(STextBlock).Text(FText::FromString(TEXT("<"))).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::Cyan).RenderTransform(APSMenu::SymbolShift("Bold", 11))]]
+						// Rio 06.10: the class counter opens every class of this card as a grid of large cards.
+						+ SHorizontalBox::Slot().FillWidth(0.44f).Padding(4.0f, 0.0f)
 						[
-							SNew(STextBlock).Text_Lambda([this, Slot]()
-							{
-								const int32 Count = SpawnClassOptions.FindRef(Slot).Num();
-								return FText::FromString(FString::Printf(TEXT("CLASS %02d / %02d"), Count > 0 ? SpawnClassIndices.FindRef(Slot) + 1 : 0, Count));
-							}).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 8)).ColorAndOpacity(APSMenu::Muted)
+							SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(APSMenu::ButtonPadding("Bold", 9, 6.0f))
+							.HAlign(HAlign_Center).VAlign(VAlign_Center)
+							.ToolTipText(LOCTEXT("SpawnPickerTip", "Show every class as cards"))
+							.OnClicked_Lambda([this, Slot]() { OpenSpawnPicker(Slot); return FReply::Handled(); })
+							[
+								SNew(STextBlock).Text_Lambda([this, Slot]()
+								{
+									const int32 Count = SpawnClassOptions.FindRef(Slot).Num();
+									return FText::FromString(FString::Printf(TEXT("CLASS %02d / %02d"), Count > 0 ? SpawnClassIndices.FindRef(Slot) + 1 : 0, Count));
+								}).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 9)).ColorAndOpacity(APSMenu::Readable)
+								.RenderTransform(APSMenu::CapsShift("Bold", 9))
+							]
 						]
 						+ SHorizontalBox::Slot().FillWidth(0.28f)
-						[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(0.0f)
+						[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(APSMenu::ButtonPadding("Bold", 11, 14.0f))
 						.HAlign(HAlign_Center).VAlign(VAlign_Center).OnClicked(this, &SAPSMainMenuRoot::CycleSpawnClass, Slot, 1)
-						[SNew(STextBlock).Text(FText::FromString(TEXT(">"))).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::Cyan)]]
-						]
-					]
-					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 4.0f)
-					[
-						SNew(SButton)
-						.Visibility(IsStationCard(Slot) ? EVisibility::Visible : EVisibility::Hidden)
-						.ButtonStyle(&SecondaryButtonStyle)
-						.ContentPadding(FMargin(8.0f, 5.0f))
-						.HAlign(HAlign_Center)
-						.ButtonColorAndOpacity_Lambda([this, Slot]()
-						{
-							return IsStartHere(Slot) ? FLinearColor(0.42f, 0.19f, 0.01f, 1.0f) : FLinearColor::White;
-						})
-						.ToolTipText(LOCTEXT("StartHereTip", "The pilot starts in planet orbit aboard this station."))
-						.OnClicked(this, &SAPSMainMenuRoot::SetStartHere, Slot)
-						[
-							SNew(STextBlock)
-							.Text_Lambda([this, Slot]()
-							{
-								return IsStartHere(Slot) ? LOCTEXT("StartingHere", "PILOT STARTS HERE")
-									: LOCTEXT("StartHere", "START HERE");
-							})
-							.Font(APSMenu::Font("Bold", 9))
-							.ColorAndOpacity_Lambda([this, Slot]() { return IsStartHere(Slot) ? APSMenu::Amber : APSMenu::Cyan; })
+						[SNew(STextBlock).Text(FText::FromString(TEXT(">"))).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::Cyan).RenderTransform(APSMenu::SymbolShift("Bold", 11))]]
 						]
 					]
 					+ SVerticalBox::Slot().FillHeight(0.44f).Padding(0.0f, 4.0f, 0.0f, 0.0f)
 					[
-						SNew(SBox).MaxDesiredHeight(116.0f)
+						SNew(SBox).MaxDesiredHeight(200.0f)
 						.Visibility(bLockedProductionPilot ? EVisibility::Hidden : EVisibility::Visible)
 						[
 							SNew(SBorder).BorderImage(&APSMenu::InsetBrush).Padding(4.0f)
@@ -3104,6 +5111,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildSpawnCard(EAPSStartAssetSlot Slot, co
 TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 {
 	DiscoverSpawnClassOptions();
+	bSpawnPickerOpen = false;
 	const TWeakObjectPtr<UWorldGenerationViewModel> VM = ViewModel;
 	CivilizationEditorSection = FMath::Clamp(CivilizationEditorSection, 0, 3);
 
@@ -3143,10 +5151,10 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 				SNew(SBorder).BorderImage(&APSMenu::InsetBrush).Padding(FMargin(2.0f))
 				[
 					SNew(SHorizontalBox)
-					+ SHorizontalBox::Slot().AutoWidth()[SNew(SBox).WidthOverride(40.0f).HeightOverride(40.0f)[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(0.0f).HAlign(HAlign_Center).VAlign(VAlign_Center).OnClicked_Lambda([Step](){ return Step(-1); })[SNew(STextBlock).Text(FText::FromString(TEXT("<"))).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::Cyan)]]]
-					+ SHorizontalBox::Slot().FillWidth(1.0f).HAlign(HAlign_Center).VAlign(VAlign_Center)
-					[SNew(STextBlock).Text_Lambda([Enum, Getter](){ return Enum ? Enum->GetDisplayNameTextByValue(Getter()) : FText::FromString(TEXT("--")); }).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::White).OverflowPolicy(ETextOverflowPolicy::Ellipsis)]
-					+ SHorizontalBox::Slot().AutoWidth()[SNew(SBox).WidthOverride(40.0f).HeightOverride(40.0f)[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(0.0f).HAlign(HAlign_Center).VAlign(VAlign_Center).OnClicked_Lambda([Step](){ return Step(1); })[SNew(STextBlock).Text(FText::FromString(TEXT(">"))).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::Cyan)]]]
+					+ SHorizontalBox::Slot().AutoWidth()[SNew(SBox).WidthOverride(40.0f).HeightOverride(40.0f)[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(0.0f).HAlign(HAlign_Center).VAlign(VAlign_Center).OnClicked_Lambda([Step](){ return Step(-1); })[SNew(STextBlock).Text(FText::FromString(TEXT("<"))).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::Cyan).RenderTransform(APSMenu::SymbolShift("Bold", 10))]]]
+					+ SHorizontalBox::Slot().FillWidth(1.0f).HAlign(HAlign_Center).VAlign(VAlign_Center).Padding(8.0f, 0.0f)
+					[SNew(STextBlock).Text_Lambda([Enum, Getter](){ return Enum ? Enum->GetDisplayNameTextByValue(Getter()) : FText::FromString(TEXT("--")); }).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::White).OverflowPolicy(ETextOverflowPolicy::Ellipsis).RenderTransform(APSMenu::CapsShift("Bold", 11))]
+					+ SHorizontalBox::Slot().AutoWidth()[SNew(SBox).WidthOverride(40.0f).HeightOverride(40.0f)[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(0.0f).HAlign(HAlign_Center).VAlign(VAlign_Center).OnClicked_Lambda([Step](){ return Step(1); })[SNew(STextBlock).Text(FText::FromString(TEXT(">"))).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::Cyan).RenderTransform(APSMenu::SymbolShift("Bold", 10))]]]
 				]
 			]
 		];
@@ -3164,7 +5172,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 				+ SVerticalBox::Slot().AutoHeight()
 				[SNew(STextBlock).Text(Label).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::White)]
 				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f, 0.0f, 0.0f)
-				[SNew(STextBlock).Text(FText::FromString(FString::Printf(TEXT("RANGE  %s - %s"), *FText::AsNumber(MinValue).ToString(), *FText::AsNumber(MaxValue).ToString()))).Font(APSMenu::Font("Regular", 9)).ColorAndOpacity(APSMenu::Muted)]
+				[SNew(STextBlock).Text(FText::FromString(FString::Printf(TEXT("RANGE  %s - %s"), *APSUINumber::Number(MinValue).ToString(), *APSUINumber::Number(MaxValue).ToString()))).Font(APSMenu::Font("Regular", 9)).ColorAndOpacity(APSMenu::Muted)]
 			]
 			+ SHorizontalBox::Slot().FillWidth(0.42f).VAlign(VAlign_Center).Padding(10.0f, 0.0f, 0.0f, 0.0f)
 			[
@@ -3195,28 +5203,58 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 				SNew(SHorizontalBox)
 				+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
 				[SNew(STextBlock).Text(Label).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::White)]
+				// Rio 03.10: square steppers, the sign centred in each.
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
-				[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(0.0f).HAlign(HAlign_Center).VAlign(VAlign_Center).OnClicked_Lambda([Step](){ return Step(-1); })[SNew(STextBlock).Text(FText::FromString(TEXT("-"))).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::Cyan)]]
-				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(9.0f, 0.0f)
-				[SNew(STextBlock).Text_Lambda([Getter](){ return FText::FromString(FString::Printf(TEXT("%02d / 20"), Getter())); }).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::Cyan)]
+				[SNew(SBox).WidthOverride(30.0f).HeightOverride(30.0f)[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(0.0f).HAlign(HAlign_Center).VAlign(VAlign_Center).OnClicked_Lambda([Step](){ return Step(-1); })[SNew(STextBlock).Text(FText::FromString(TEXT("-"))).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::Cyan).RenderTransform(APSMenu::SymbolShift("Bold", 11))]]]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(10.0f, 0.0f)
+				[SNew(STextBlock).Text_Lambda([Getter](){ return FText::FromString(FString::Printf(TEXT("%02d / 20"), Getter())); }).Font(APSMenu::Font("Bold", 10)).ColorAndOpacity(APSMenu::Cyan).RenderTransform(APSMenu::CapsShift("Bold", 10))]
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
-				[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(0.0f).HAlign(HAlign_Center).VAlign(VAlign_Center).OnClicked_Lambda([Step](){ return Step(1); })[SNew(STextBlock).Text(FText::FromString(TEXT("+"))).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::Cyan)]]
+				[SNew(SBox).WidthOverride(30.0f).HeightOverride(30.0f)[SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(0.0f).HAlign(HAlign_Center).VAlign(VAlign_Center).OnClicked_Lambda([Step](){ return Step(1); })[SNew(STextBlock).Text(FText::FromString(TEXT("+"))).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::Cyan).RenderTransform(APSMenu::SymbolShift("Bold", 11))]]]
 			]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 7.0f, 0.0f, 0.0f)
 			[
 				SNew(SBox).HeightOverride(4.0f)
 				[
 					SNew(SProgressBar)
+					.BackgroundImage(&APSMenu::ProgressTrackBrush)
+					.FillImage(FAppStyle::GetBrush("WhiteBrush"))
 					.Percent_Lambda([Getter](){ return TOptional<float>(FMath::Clamp(Getter() / 20.0f, 0.0f, 1.0f)); })
-					.FillColorAndOpacity(APSMenu::Cyan)
+					.FillColorAndOpacity_Lambda([]() { return FSlateColor(APSMenu::Cyan); })
 				]
 			]
 		];
 	};
 
-	const auto InfoPanel = [](EAPSMenuGlyph Glyph, const FText& Title,
-		const FText& Subtitle, TAttribute<FText> Body)
+	// Rio 02.10 ("unreadable UX"): a headline value, then tiles with a small label over a large value, like LIVE MODEL.
+	struct FInfoTile
 	{
+		FText Label;
+		int32 Span{1};
+		TFunction<FText()> Value;
+	};
+	const auto InfoPanel = [](EAPSMenuGlyph Glyph, const FText& Title,
+		const FText& Subtitle, TAttribute<FText> Headline, TArray<FInfoTile> Tiles)
+	{
+		const TSharedRef<SGridPanel> Grid = SNew(SGridPanel).FillColumn(0, 1.0f).FillColumn(1, 1.0f).FillColumn(2, 1.0f);
+		int32 Column = 0;
+		int32 Row = 0;
+		for (FInfoTile& Tile : Tiles)
+		{
+			if (Column + Tile.Span > 3)
+			{
+				Column = 0;
+				++Row;
+			}
+			Grid->AddSlot(Column, Row).ColumnSpan(Tile.Span).Padding(0.0f, 0.0f, 14.0f, 12.0f)
+			[
+				SNew(SVerticalBox)
+				+ SVerticalBox::Slot().AutoHeight()
+				[SNew(STextBlock).Text(Tile.Label).Font(APSMenu::Font("Bold", 9)).ColorAndOpacity(APSMenu::Muted)]
+				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 3.0f, 0.0f, 0.0f)
+				[SNew(STextBlock).Text_Lambda(MoveTemp(Tile.Value)).AutoWrapText(true).Font(APSMenu::Font("Bold", 13)).ColorAndOpacity(APSMenu::White)]
+			];
+			Column += Tile.Span;
+		}
 		return APSMenu::ChamferPanel(
 			SNew(SVerticalBox)
 			+ SVerticalBox::Slot().AutoHeight()
@@ -3234,29 +5272,37 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 			]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 9.0f, 0.0f, 0.0f)
 			[SNew(SBox).HeightOverride(1.0f)[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(APSMenu::CyanDim)]]
-			+ SVerticalBox::Slot().FillHeight(1.0f).Padding(0.0f, 10.0f, 0.0f, 0.0f)
-			[SNew(STextBlock).Text(Body).AutoWrapText(true).Font(APSMenu::Font("Regular", 13)).ColorAndOpacity(APSMenu::White)]
-		, FMargin(15.0f), FLinearColor(0.035f, 0.28f, 0.37f, 0.95f), 1.0f);
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 10.0f, 0.0f, 0.0f)
+			[SNew(STextBlock).Text(Headline).AutoWrapText(true).Font(APSMenu::Font("Bold", 16)).ColorAndOpacity(APSMenu::Cyan)]
+			+ SVerticalBox::Slot().FillHeight(1.0f).Padding(0.0f, 12.0f, 0.0f, 0.0f)
+			[Grid]
+		, FMargin(15.0f), APSMenu::Retint(FLinearColor(0.035f, 0.28f, 0.37f, 0.95f)), 1.0f);
 	};
+	// The tiles read the live spawn parameters and generated world.
+	const auto Spawn = [VM]() -> const USpawnParameters* { return VM.IsValid() ? VM->SpawnParameters.Get() : nullptr; };
+	const auto Generated = [VM]() -> const UGeneratedWorld* { return VM.IsValid() ? VM->GeneratedWorld.Get() : nullptr; };
+	const auto Upper = [](const FString& Value) { return FText::FromString(Value.ToUpper()); };
 
 	const auto PresetButton = [this](const FText& Label, const FText& ToolTip,
 		TFunction<bool()> IsActive, TFunction<void()> Apply)
 	{
 		return SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ToolTipText(ToolTip)
-			.ContentPadding(FMargin(8.0f, 7.0f))
+			.ContentPadding(FMargin(14.0f, 8.0f))
+			.HAlign(HAlign_Center).VAlign(VAlign_Center)
 			.ButtonColorAndOpacity_Lambda([IsActive]()
 			{
-				return IsActive() ? FLinearColor(0.45f, 0.18f, 0.01f, 1.0f)
-					: FLinearColor(0.015f, 0.09f, 0.12f, 0.96f);
+				return IsActive() ? APSMenu::RetintAction(FLinearColor(0.45f, 0.18f, 0.01f, 1.0f))
+					: APSMenu::Retint(FLinearColor(0.015f, 0.09f, 0.12f, 0.96f));
 			})
 			.OnClicked_Lambda([Apply](){ Apply(); return FReply::Handled(); })
 			[
 				SNew(SVerticalBox)
 				+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)
-				[SNew(STextBlock).Text(Label).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 9)).ColorAndOpacity(APSMenu::White)]
+				[SNew(STextBlock).Text(Label).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 9)).ColorAndOpacity(APSMenu::White).RenderTransform(APSMenu::CapsShift("Bold", 9))]
 				+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0.0f, 2.0f, 0.0f, 0.0f)
 				[
 					SNew(STextBlock).Text_Lambda([IsActive](){ return IsActive() ? LOCTEXT("PresetActive", "ACTIVE") : LOCTEXT("PresetProfile", "PROFILE"); })
+					.Justification(ETextJustify::Center).RenderTransform(APSMenu::CapsShift("Bold", 8))
 					.Font(APSMenu::Font("Bold", 8)).ColorAndOpacity_Lambda([IsActive](){ return IsActive() ? APSMenu::Amber : APSMenu::Muted; })
 				]
 			];
@@ -3265,13 +5311,14 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 	const auto MetricTile = [](const FText& Label, TAttribute<FText> Value,
 		const FLinearColor& Accent = APSMenu::Cyan)
 	{
-		return SNew(SBorder).BorderImage(&APSMenu::CivMetricBrush).Padding(FMargin(8.0f, 7.0f))
+		return SNew(SBorder).BorderImage(&APSMenu::CivMetricBrush).Padding(FMargin(14.0f, 8.0f))
+		.HAlign(HAlign_Center).VAlign(VAlign_Center)
 		[
 			SNew(SVerticalBox)
 			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)
-			[SNew(STextBlock).Text(Value).Font(APSMenu::Font("Bold", 15)).ColorAndOpacity(Accent).Justification(ETextJustify::Center)]
+			[SNew(STextBlock).Text(Value).Font(APSMenu::Font("Bold", 15)).ColorAndOpacity(Accent).Justification(ETextJustify::Center).RenderTransform(APSMenu::CapsShift("Bold", 15))]
 			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0.0f, 2.0f, 0.0f, 0.0f)
-			[SNew(STextBlock).Text(Label).Font(APSMenu::Font("Bold", 8)).ColorAndOpacity(APSMenu::Muted).Justification(ETextJustify::Center)]
+			[SNew(STextBlock).Text(Label).Font(APSMenu::Font("Bold", 8)).ColorAndOpacity(APSMenu::Muted).Justification(ETextJustify::Center).RenderTransform(APSMenu::CapsShift("Bold", 8))]
 		];
 	};
 
@@ -3303,12 +5350,13 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 
 	const auto EditorTab = [this](int32 Index, EAPSMenuGlyph Glyph, const FText& Label)
 	{
-		return SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(FMargin(6.0f, 7.0f))
+		return SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(FMargin(12.0f, 8.0f))
+		.HAlign(HAlign_Fill).VAlign(VAlign_Center)
 		.ButtonColorAndOpacity_Lambda([this, Index]()
 		{
 			return CivilizationEditorSection == Index
-				? FLinearColor(0.38f, 0.16f, 0.01f, 1.0f)
-				: FLinearColor(0.015f, 0.08f, 0.11f, 0.95f);
+				? APSMenu::RetintAction(FLinearColor(0.38f, 0.16f, 0.01f, 1.0f))
+				: APSMenu::Retint(FLinearColor(0.015f, 0.08f, 0.11f, 0.95f));
 		})
 		.OnClicked_Lambda([this, Index]()
 		{
@@ -3325,14 +5373,14 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 			[
 				SNew(SVerticalBox)
 				+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)
-				[SNew(STextBlock).Text(FText::FromString(FString::Printf(TEXT("STEP %02d"), Index + 1))).Font(APSMenu::Font("Bold", 8)).ColorAndOpacity_Lambda([this, Index](){ return CivilizationEditorSection == Index ? APSMenu::Amber : APSMenu::Muted; })]
+				[SNew(STextBlock).Text(FText::FromString(FString::Printf(TEXT("STEP %02d"), Index + 1))).Font(APSMenu::Font("Bold", 8)).RenderTransform(APSMenu::CapsShift("Bold", 8)).ColorAndOpacity_Lambda([this, Index](){ return CivilizationEditorSection == Index ? APSMenu::Amber : APSMenu::Muted; })]
 				+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0.0f, 5.0f, 0.0f, 0.0f)
 				[
 					SNew(SHorizontalBox)
 					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 					[SNew(SBox).WidthOverride(18.0f).HeightOverride(18.0f)[SNew(SVectorMenuGlyph).Glyph(Glyph).Color(APSMenu::Cyan).StrokeWidth(1.3f)]]
 					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(5.0f, 0.0f)
-					[SNew(STextBlock).Text(Label).Font(APSMenu::Font("Bold", 8)).ColorAndOpacity(APSMenu::White)]
+					[SNew(STextBlock).Text(Label).Font(APSMenu::Font("Bold", 8)).ColorAndOpacity(APSMenu::White).RenderTransform(APSMenu::CapsShift("Bold", 8))]
 				]
 			]
 			+ SOverlay::Slot().HAlign(HAlign_Fill).VAlign(VAlign_Bottom)
@@ -3406,12 +5454,84 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 			+ SVerticalBox::Slot().AutoHeight()[EnumControl(LOCTEXT("OrbitHeight", "HOME COMPLEX ORBIT"), StaticEnum<EOrbitHeight>(), [VM](){return VM.IsValid()&&VM->SpawnParameters?static_cast<int32>(VM->SpawnParameters->HomeStationOrbitHeight):0;}, [VM](int32 V){if(VM.IsValid())VM->SetStationOrbitHeight(V);})]
 		];
 
+	// STEP 05 (Rio 02.10, C19: "for the ground start, a screen of its own to choose the base colony, the ground vehicles,
+	// the launch pad"): the colony on the home world as it is founded. It stands in every start; on the ground the pilot
+	// wakes up in it.
+	const auto VehicleToggle = [this, VM](const FText& Label, const FText& ToolTip, const int32 Bit)
+	{
+		const auto IsOn = [VM, Bit]()
+		{
+			const USpawnParameters* P = VM.IsValid() ? VM->SpawnParameters.Get() : nullptr;
+			return P && (P->GroundVehicleMask & Bit) != 0;
+		};
+		return SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ToolTipText(ToolTip).ContentPadding(FMargin(14.0f, 8.0f))
+			.HAlign(HAlign_Center).VAlign(VAlign_Center)
+			.ButtonColorAndOpacity_Lambda([IsOn]()
+			{
+				return IsOn() ? APSMenu::RetintAction(FLinearColor(0.45f, 0.18f, 0.01f, 1.0f)) : APSMenu::Retint(FLinearColor(0.015f, 0.09f, 0.12f, 0.96f));
+			})
+			.OnClicked_Lambda([VM, Bit]()
+			{
+				if (VM.IsValid() && VM->SpawnParameters)
+				{
+					VM->SpawnParameters->GroundVehicleMask ^= Bit;
+				}
+				return FReply::Handled();
+			})
+			[
+				SNew(SVerticalBox)
+				+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)
+				[SNew(STextBlock).Text(Label).Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 9)).ColorAndOpacity(APSMenu::White).RenderTransform(APSMenu::CapsShift("Bold", 9))]
+				+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0.0f, 2.0f, 0.0f, 0.0f)
+				[
+					SNew(STextBlock).Text_Lambda([IsOn](){ return IsOn() ? LOCTEXT("VehicleOn", "AT THE COLONY") : LOCTEXT("VehicleOff", "NONE"); })
+					.Justification(ETextJustify::Center).RenderTransform(APSMenu::CapsShift("Bold", 8))
+					.Font(APSMenu::Font("Bold", 8)).ColorAndOpacity_Lambda([IsOn](){ return IsOn() ? APSMenu::Amber : APSMenu::Muted; })
+				]
+			];
+	};
+	const auto PackageText = [VM]()
+	{
+		const USpawnParameters* P = VM.IsValid() ? VM->SpawnParameters.Get() : nullptr;
+		if (!P) return FText::GetEmpty();
+		switch (P->ColonyStartPackage)
+		{
+		case EAPSColonyStartPackage::Standard:
+			return LOCTEXT("PackageStandard", "The base, and the colony orders a habitat, a solar array and storage on founding.");
+		case EAPSColonyStartPackage::Settlement:
+			return LOCTEXT("PackageSettlement", "A working colony: habitat, solar array, storage, greenhouse, comms mast and floodlight, built over the first minutes.");
+		case EAPSColonyStartPackage::Outpost:
+		default:
+			return LOCTEXT("PackageOutpost", "The base alone: the first structures are yours to build.");
+		}
+	};
+	TSharedRef<SWidget> GroundEditor = SNew(SScrollBox)
+		+ SScrollBox::Slot()
+		[
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight()[APSMenu::IconSectionHeading(EAPSMenuGlyph::Planet,
+				LOCTEXT("GroundSetup", "GROUND START"), LOCTEXT("GroundSetupHint", "The colony on the home world as it is founded."))]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 14.0f, 0.0f, 4.0f)[EnumControl(LOCTEXT("ColonyPackage", "BASE COLONY"), StaticEnum<EAPSColonyStartPackage>(), [VM](){return VM.IsValid()&&VM->SpawnParameters?static_cast<int32>(VM->SpawnParameters->ColonyStartPackage):0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->ColonyStartPackage=static_cast<EAPSColonyStartPackage>(V);})]
+			+ SVerticalBox::Slot().AutoHeight().Padding(2.0f, 0.0f, 2.0f, 8.0f)
+			[SNew(STextBlock).Text_Lambda(PackageText).Font(APSMenu::Font("Regular", 9)).ColorAndOpacity(APSMenu::Muted).AutoWrapText(true)]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 8.0f)[EnumControl(LOCTEXT("LaunchPad", "LAUNCH PAD"), StaticEnum<EAPSLaunchPadStart>(), [VM](){return VM.IsValid()&&VM->SpawnParameters?static_cast<int32>(VM->SpawnParameters->LaunchPadStart):0;}, [VM](int32 V){if(VM.IsValid()&&VM->SpawnParameters)VM->SpawnParameters->LaunchPadStart=static_cast<EAPSLaunchPadStart>(V);})]
+			+ SVerticalBox::Slot().AutoHeight().Padding(2.0f, 4.0f, 0.0f, 6.0f)
+			[SNew(STextBlock).Text(LOCTEXT("GroundVehicles", "GROUND VEHICLES")).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::White)]
+			+ SVerticalBox::Slot().AutoHeight()
+			[
+				SNew(SUniformGridPanel).SlotPadding(FMargin(3.0f))
+				+ SUniformGridPanel::Slot(0, 0)[VehicleToggle(LOCTEXT("VehicleRover", "ROVER"), LOCTEXT("VehicleRoverTip", "Wheels, 25-35 m/s over the ground."), 1)]
+				+ SUniformGridPanel::Slot(1, 0)[VehicleToggle(LOCTEXT("VehicleHover", "HOVER"), LOCTEXT("VehicleHoverTip", "Floats over the ground and water, twice as fast."), 2)]
+				+ SUniformGridPanel::Slot(2, 0)[VehicleToggle(LOCTEXT("VehicleDrone", "DRONE"), LOCTEXT("VehicleDroneTip", "Flies up to the edge of the atmosphere."), 4)]
+			]
+		];
+
 	TSharedRef<SWidget> InfrastructureEditor = SNew(SScrollBox)
 		+ SScrollBox::Slot()
 		[
 			SNew(SVerticalBox)
 			+ SVerticalBox::Slot().AutoHeight()[APSMenu::IconSectionHeading(EAPSMenuGlyph::Infrastructure,
-				LOCTEXT("InfrastructureSetup", "PHYSICAL MANIFEST"), LOCTEXT("InfrastructureSetupHint", "Every count creates actors in the generated system."))]
+				LOCTEXT("InfrastructureSetup", "PHYSICAL MANIFEST"), LOCTEXT("InfrastructureSetupHint", "Everything counted here arrives in the generated system."))]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 14.0f, 0.0f, 10.0f)
 			[
 				SNew(SUniformGridPanel).SlotPadding(FMargin(3.0f))
@@ -3440,9 +5560,9 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)
 					[
 						SNew(SUniformGridPanel).SlotPadding(FMargin(2.0f))
-						+ SUniformGridPanel::Slot(0,0)[MetricTile(LOCTEXT("MetricActors", "TOTAL ACTORS"),TAttribute<FText>::CreateLambda([VM](){const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr;return FText::AsNumber(P?P->GetPlannedPhysicalActorCount():0);}),APSMenu::Amber)]
-						+ SUniformGridPanel::Slot(1,0)[MetricTile(LOCTEXT("MetricShips", "FLEET"),TAttribute<FText>::CreateLambda([VM](){const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr;return FText::AsNumber(P?P->StartingFleetSize:0);}))]
-						+ SUniformGridPanel::Slot(2,0)[MetricTile(LOCTEXT("MetricInfra", "INFRA NODES"),TAttribute<FText>::CreateLambda([VM](){const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr;return FText::AsNumber(P?P->GetPlannedInfrastructureActorCount():0);}))]
+						+ SUniformGridPanel::Slot(0,0)[MetricTile(LOCTEXT("MetricUnits", "UNITS"),TAttribute<FText>::CreateLambda([VM](){const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr;return APSUINumber::Number(P?P->GetPlannedUnitCount():0);}),APSMenu::Amber)]
+						+ SUniformGridPanel::Slot(1,0)[MetricTile(LOCTEXT("MetricShips", "FLEET"),TAttribute<FText>::CreateLambda([VM](){const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr;return APSUINumber::Number(P?P->StartingFleetSize:0);}))]
+						+ SUniformGridPanel::Slot(2,0)[MetricTile(LOCTEXT("MetricStructures", "STRUCTURES"),TAttribute<FText>::CreateLambda([VM](){const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr;return APSUINumber::Number(P?P->GetPlannedStructureCount():0);}))]
 					]
 				]
 			]
@@ -3475,37 +5595,12 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 		+ SWidgetSwitcher::Slot()[IdentityEditor]
 		+ SWidgetSwitcher::Slot()[InfrastructureEditor]
 		+ SWidgetSwitcher::Slot()[DivisionsEditor]
-		+ SWidgetSwitcher::Slot()[StartEditor];
+		+ SWidgetSwitcher::Slot()[StartEditor]
+		+ SWidgetSwitcher::Slot()[GroundEditor];
 
 	TSharedRef<SWidget> Page = SNew(SVerticalBox)
 		+ SVerticalBox::Slot().AutoHeight().Padding(28.0f, 18.0f, 28.0f, 3.0f)[BuildHeader(LOCTEXT("CivParameters", "CIVILIZATION GENERATION"))]
-		+ SVerticalBox::Slot().AutoHeight().Padding(32.0f, 2.0f, 32.0f, 7.0f)
-		[
-			SNew(SBorder).BorderImage(&APSMenu::CivStatusBrush).Padding(FMargin(12.0f, 7.0f))
-			[
-				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
-				[SNew(SBox).WidthOverride(18.0f).HeightOverride(18.0f)[SNew(SVectorMenuGlyph).Glyph(EAPSMenuGlyph::Civilization).Color(APSMenu::Cyan).StrokeWidth(1.2f)]]
-				+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center).Padding(8.0f, 0.0f)
-				[
-					SNew(SVerticalBox)
-					+ SVerticalBox::Slot().AutoHeight()[SNew(STextBlock).Text(LOCTEXT("CivManifestHint", "ARRIVAL ARCHITECT  /  LIVE CIVILIZATION MANIFEST")).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::White)]
-					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 1.0f, 0.0f, 0.0f)[SNew(STextBlock).Text(LOCTEXT("CivManifestSubHint", "Fleet and infrastructure values create persistent gameplay actors in the generated system.")).Font(APSMenu::Font("Regular", 10)).ColorAndOpacity(APSMenu::Muted)]
-				]
-				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
-				[
-					SNew(SVerticalBox)
-					+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right)
-					[
-						SNew(STextBlock).Text_Lambda([this](){return SpawnSelectionLoadHandles.IsEmpty()?LOCTEXT("CivManifestReady", "MANIFEST READY"):LOCTEXT("CivManifestResolving", "RESOLVING ASSETS");})
-						.Font(APSMenu::Font("Bold", 8)).ColorAndOpacity_Lambda([this](){return SpawnSelectionLoadHandles.IsEmpty()?APSMenu::Success:APSMenu::Amber;})
-					]
-					+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right).Padding(0.0f, 1.0f, 0.0f, 0.0f)
-					[SNew(STextBlock).Text_Lambda([VM](){const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr;return FText::FromString(FString::Printf(TEXT("%d PHYSICAL ACTORS"),P?P->GetPlannedPhysicalActorCount():0));}).Font(APSMenu::Font("Bold", 13)).ColorAndOpacity(APSMenu::Amber)]
-				]
-			]
-		]
-		+ SVerticalBox::Slot().FillHeight(1.0f).Padding(26.0f, 8.0f, 26.0f, 6.0f)
+		+ SVerticalBox::Slot().FillHeight(1.0f).Padding(26.0f, 4.0f, 26.0f, 6.0f)
 		[
 			SNew(SHorizontalBox)
 			+ SHorizontalBox::Slot().FillWidth(0.66f).Padding(5.0f)
@@ -3516,8 +5611,19 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 					SNew(SHorizontalBox)
 					+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
 					[SNew(STextBlock).Text(LOCTEXT("FoundingRegistryTitle", "FOUNDING ASSET REGISTRY")).Font(APSMenu::Font("Bold", 12)).ColorAndOpacity(APSMenu::White)]
+					// Rio 06.10: the manifest's state and count, moved here from the strip above the page.
 					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
-					[SNew(STextBlock).Text(LOCTEXT("FoundingRegistryStatus", "5 CLASS SLOTS  /  PILOT VERIFIED")).Font(APSMenu::Font("Bold", 9)).ColorAndOpacity(APSMenu::Success)]
+					[
+						SNew(STextBlock).Font(APSMenu::Font("Bold", 10))
+						.Text_Lambda([this, VM]()
+						{
+							const USpawnParameters* P = VM.IsValid() ? VM->SpawnParameters.Get() : nullptr;
+							return FText::Format(LOCTEXT("CivManifestLine", "{0}   ·   {1} UNITS  /  {2} STRUCTURES"),
+								SpawnSelectionLoadHandles.IsEmpty() ? LOCTEXT("CivManifestReady", "MANIFEST READY") : LOCTEXT("CivManifestResolving", "RESOLVING ASSETS"),
+								P ? P->GetPlannedUnitCount() : 0, P ? P->GetPlannedStructureCount() : 0);
+						})
+						.ColorAndOpacity_Lambda([this]() { return FSlateColor(SpawnSelectionLoadHandles.IsEmpty() ? APSMenu::Readable : APSMenu::Amber); })
+					]
 				]
 				+ SVerticalBox::Slot().FillHeight(0.60f)
 				[
@@ -3532,11 +5638,58 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 				[
 					SNew(SHorizontalBox)
 					+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(4.0f)
-					[InfoPanel(EAPSMenuGlyph::Civilization, LOCTEXT("CivilizationStatus", "CIVILIZATION"), LOCTEXT("CivilizationStatusHint", "Identity snapshot"), TAttribute<FText>::CreateLambda([VM](){ const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr; return P ? FText::FromString(FString::Printf(TEXT("%s\n%s  /  %s\n%s  /  %s\nPopulation  %s  /  Tech T%d"), *P->CivilizationName, *APSMenu::EnumLabel(P->CivilizationArchetype), *APSMenu::EnumLabel(P->GovernmentType), *APSMenu::EnumLabel(P->EconomicSystem), *APSMenu::EnumLabel(P->SocietyType), *FText::AsNumber(P->FoundingPopulation).ToString(), P->TechnologyLevel)) : FText::GetEmpty(); }))]
+					[InfoPanel(EAPSMenuGlyph::Civilization, LOCTEXT("CivilizationStatus", "CIVILIZATION"), LOCTEXT("CivilizationStatusHint", "Identity snapshot"),
+						TAttribute<FText>::CreateLambda([Spawn, Upper]() { const USpawnParameters* P = Spawn(); return P ? Upper(P->CivilizationName) : FText::GetEmpty(); }),
+						{
+							{LOCTEXT("CivStance", "STANCE"), 1, [Spawn, Upper]() { const USpawnParameters* P = Spawn(); return P ? Upper(APSMenu::EnumLabel(P->CivilizationArchetype)) : FText::GetEmpty(); }},
+							{LOCTEXT("CivGovernment", "GOVERNMENT"), 1, [Spawn, Upper]() { const USpawnParameters* P = Spawn(); return P ? Upper(APSMenu::EnumLabel(P->GovernmentType)) : FText::GetEmpty(); }},
+							{LOCTEXT("CivEconomy", "ECONOMY"), 1, [Spawn, Upper]() { const USpawnParameters* P = Spawn(); return P ? Upper(APSMenu::EnumLabel(P->EconomicSystem)) : FText::GetEmpty(); }},
+							{LOCTEXT("CivSociety", "SOCIETY"), 1, [Spawn, Upper]() { const USpawnParameters* P = Spawn(); return P ? Upper(APSMenu::EnumLabel(P->SocietyType)) : FText::GetEmpty(); }},
+							{LOCTEXT("CivPopulation", "POPULATION"), 1, [Spawn]() { const USpawnParameters* P = Spawn(); return P ? APSUINumber::Number(P->FoundingPopulation) : FText::GetEmpty(); }},
+							{LOCTEXT("CivTech", "TECH LEVEL"), 1, [Spawn]() { const USpawnParameters* P = Spawn(); return P ? FText::FromString(FString::Printf(TEXT("T%d"), P->TechnologyLevel)) : FText::GetEmpty(); }}
+						})]
 					+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(4.0f)
-					[InfoPanel(EAPSMenuGlyph::System, LOCTEXT("StarSystemInfo", "HOME SYSTEM"), LOCTEXT("StarSystemInfoHint", "Astronomical handoff"), TAttribute<FText>::CreateLambda([VM](){ const UGeneratedWorld* W=VM.IsValid()?VM->GeneratedWorld.Get():nullptr; return W ? FText::FromString(FString::Printf(TEXT("%s\n%s  /  %s\n%d planets\nHome  %s  /  %.0f KM"), *APSMenu::EnumLabel(W->PlanetarySystemType), *APSMenu::EnumLabel(W->StellarType), *APSMenu::EnumLabel(W->SpectralClass), W->PlanetsAmount, *APSMenu::EnumLabel(W->PlanetType), W->PlanetRadius)) : FText::GetEmpty(); }))]
+					[InfoPanel(EAPSMenuGlyph::System, LOCTEXT("StarSystemInfo", "HOME SYSTEM"), LOCTEXT("StarSystemInfoHint", "Astronomical handoff"),
+						TAttribute<FText>::CreateLambda([Generated, Upper]() { const UGeneratedWorld* W = Generated(); return W ? Upper(APSMenu::EnumLabel(W->PlanetarySystemType)) : FText::GetEmpty(); }),
+						{
+							{LOCTEXT("SysStar", "STAR"), 1, [Generated, Upper]() { const UGeneratedWorld* W = Generated(); return W ? Upper(APSMenu::EnumLabel(W->StellarType)) : FText::GetEmpty(); }},
+							{LOCTEXT("SysSpectrum", "SPECTRUM"), 1, [Generated, Upper]() { const UGeneratedWorld* W = Generated(); return W ? Upper(APSMenu::EnumLabel(W->SpectralClass)) : FText::GetEmpty(); }},
+							{LOCTEXT("SysPlanets", "PLANETS"), 1, [Generated]() { const UGeneratedWorld* W = Generated(); return W ? APSUINumber::Number(W->PlanetsAmount) : FText::GetEmpty(); }},
+							{LOCTEXT("SysHome", "HOME WORLD"), 1, [Generated, Upper]() { const UGeneratedWorld* W = Generated(); return W ? Upper(APSMenu::EnumLabel(W->PlanetType)) : FText::GetEmpty(); }},
+							{LOCTEXT("SysRadius", "RADIUS"), 1, [Generated]() { const UGeneratedWorld* W = Generated(); return W ? FText::Format(LOCTEXT("SysRadiusKm", "{0} KM"), APSUINumber::Number(FMath::RoundToInt(W->PlanetRadius))) : FText::GetEmpty(); }},
+							{LOCTEXT("SysMoons", "MOONS"), 1, [Generated]() { const UGeneratedWorld* W = Generated(); return W ? APSUINumber::Number(W->MoonsAmount) : FText::GetEmpty(); }}
+						})]
 					+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(4.0f)
-					[InfoPanel(EAPSMenuGlyph::Infrastructure, LOCTEXT("Infrastructure", "DEPLOYMENT"), LOCTEXT("InfrastructureHint", "Physical actor manifest"), TAttribute<FText>::CreateLambda([VM](){ const USpawnParameters* P=VM.IsValid()?VM->SpawnParameters.Get():nullptr; if (!P) return FText::GetEmpty(); FString Start = StaticEnum<ECharSpawnPlace>()->GetDisplayNameTextByValue(static_cast<int64>(P->CharacterSpawnPlace)).ToString(); if (P->CharacterSpawnPlace == ECharSpawnPlace::PlanetOrbit) { Start += TEXT(" / ") + StaticEnum<EAPSStartStation>()->GetDisplayNameTextByValue(static_cast<int64>(P->StartStation)).ToString(); } return FText::FromString(FString::Printf(TEXT("%d total actors\nFleet  %d ships\nInfrastructure  %d nodes\nPilot  Custom Gravity\nStart  %s"), P->GetPlannedPhysicalActorCount(), P->StartingFleetSize, P->GetPlannedInfrastructureActorCount(), *Start)); }))]
+					[InfoPanel(EAPSMenuGlyph::Infrastructure, LOCTEXT("Infrastructure", "DEPLOYMENT"), LOCTEXT("InfrastructureHint", "Arrival manifest"),
+						TAttribute<FText>::CreateLambda([Spawn]() { const USpawnParameters* P = Spawn(); return P ? FText::Format(LOCTEXT("DeployUnits", "{0} UNITS  /  {1} STRUCTURES"), APSUINumber::Number(P->GetPlannedUnitCount()), APSUINumber::Number(P->GetPlannedStructureCount())) : FText::GetEmpty(); }),
+						{
+							{LOCTEXT("DeployFleet", "FLEET"), 1, [Spawn]() { const USpawnParameters* P = Spawn(); return P ? FText::Format(LOCTEXT("DeployShips", "{0} SHIPS"), APSUINumber::Number(P->StartingFleetSize)) : FText::GetEmpty(); }},
+							{LOCTEXT("DeployInfrastructure", "INFRASTRUCTURE"), 1, [Spawn]() { const USpawnParameters* P = Spawn(); return P ? FText::Format(LOCTEXT("DeployNodes", "{0} NODES"), APSUINumber::Number(P->GetPlannedInfrastructureActorCount())) : FText::GetEmpty(); }},
+							{LOCTEXT("DeployPilot", "PILOT"), 1, [this]()
+							{
+								// The chosen pilot's name ("PILOT  /  RANGER" reads RANGER here).
+								FString Name = GetSpawnClassName(EAPSStartAssetSlot::Character).ToString();
+								Name.RemoveFromStart(TEXT("PILOT  /  "));
+								return FText::FromString(Name);
+							}},
+							{LOCTEXT("DeployStart", "START"), 3, [Spawn, Upper]()
+							{
+								const USpawnParameters* P = Spawn();
+								if (!P) return FText::GetEmpty();
+								FString Start = StaticEnum<ECharSpawnPlace>()->GetDisplayNameTextByValue(static_cast<int64>(P->CharacterSpawnPlace)).ToString();
+								if (P->CharacterSpawnPlace == ECharSpawnPlace::PlanetOrbit)
+								{
+									Start += TEXT("  /  ") + StaticEnum<EAPSStartStation>()->GetDisplayNameTextByValue(static_cast<int64>(P->StartStation)).ToString();
+								}
+								else if (P->CharacterSpawnPlace == ECharSpawnPlace::PlanetSurface)
+								{
+									// C19: the ground start names its colony package.
+									Start += TEXT("  /  ") + StaticEnum<EAPSColonyStartPackage>()->GetDisplayNameTextByValue(static_cast<int64>(P->ColonyStartPackage)).ToString()
+										+ TEXT(" COLONY");
+								}
+								return Upper(Start);
+							}}
+						})]
 				]
 			]
 			+ SHorizontalBox::Slot().FillWidth(0.34f).Padding(5.0f)
@@ -3554,8 +5707,9 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 						]
 						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 						[
-							SNew(SBorder).BorderImage(&APSMenu::CivStatusBrush).Padding(FMargin(7.0f, 4.0f))
-							[SNew(STextBlock).Text(LOCTEXT("CivilizationConsoleOnline", "ONLINE")).Font(APSMenu::Font("Bold", 8)).ColorAndOpacity(APSMenu::Success)]
+							SNew(SBorder).BorderImage(&APSMenu::CivStatusBrush).Padding(FMargin(10.0f, 5.0f))
+							.HAlign(HAlign_Center).VAlign(VAlign_Center)
+							[SNew(STextBlock).Text(LOCTEXT("CivilizationConsoleOnline", "ONLINE")).Font(APSMenu::Font("Bold", 8)).ColorAndOpacity(APSMenu::Success).RenderTransform(APSMenu::CapsShift("Bold", 8))]
 						]
 					]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 12.0f)
@@ -3565,9 +5719,10 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 						+ SUniformGridPanel::Slot(1, 0)[EditorTab(1, EAPSMenuGlyph::Infrastructure, LOCTEXT("ManifestTab", "MANIFEST"))]
 						+ SUniformGridPanel::Slot(2, 0)[EditorTab(2, EAPSMenuGlyph::Divisions, LOCTEXT("DivisionsTab", "DIVISIONS"))]
 						+ SUniformGridPanel::Slot(3, 0)[EditorTab(3, EAPSMenuGlyph::Station, LOCTEXT("StartTab", "START"))]
+						+ SUniformGridPanel::Slot(4, 0)[EditorTab(4, EAPSMenuGlyph::Planet, LOCTEXT("GroundTab", "GROUND"))]
 					]
 					+ SVerticalBox::Slot().FillHeight(1.0f)[EditorSwitcher]
-				, FMargin(16.0f), FLinearColor(0.05f, 0.34f, 0.43f, 0.95f), 1.2f)
+				, FMargin(16.0f), APSMenu::Retint(FLinearColor(0.05f, 0.34f, 0.43f, 0.95f)), 1.2f)
 			]
 		]
 		+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0.0f, 8.0f, 0.0f, 22.0f)
@@ -3576,7 +5731,8 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 			[
 				SNew(SButton).ButtonStyle(&PrimaryButtonStyle).OnClicked(this, &SAPSMainMenuRoot::CommitCivilization)
 				.IsEnabled_Lambda([this]() { return SpawnSelectionLoadHandles.IsEmpty(); })
-				.ContentPadding(FMargin(24.0f, 13.0f))
+				.ContentPadding(APSMenu::ButtonPadding("Bold", 18, 24.0f))
+				.HAlign(HAlign_Center).VAlign(VAlign_Center)
 				[
 					SNew(SVerticalBox)
 					+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center)
@@ -3585,24 +5741,198 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 						.Text_Lambda([this]()
 						{
 							if (!SpawnSelectionLoadHandles.IsEmpty()) return LOCTEXT("LoadingSpawnSelections", "LOADING SELECTED ASSETS...");
-							const USpawnParameters* P = ViewModel.IsValid() ? ViewModel->SpawnParameters.Get() : nullptr;
-							return P ? FText::FromString(FString::Printf(TEXT("GENERATE CIVILIZATION  /  %d ACTORS  >"), P->GetPlannedPhysicalActorCount()))
-								: LOCTEXT("GenerateWorld", "GENERATE CIVILIZATION  >");
+							// Rio 02.10: the start button says what it does, no counts of actors and the like.
+							return LOCTEXT("GenerateWorld", "GENERATE CIVILIZATION  >");
 						})
 						.Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 18)).ColorAndOpacity(APSMenu::White)
+						.RenderTransform(APSMenu::CapsShift("Bold", 18))
 					]
-					+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0.0f, 3.0f, 0.0f, 0.0f)
-					[SNew(STextBlock).Text(LOCTEXT("GenerateCivilizationSafety", "VALIDATED MANIFEST  /  TRANSACTIONAL SPAWN")).Font(APSMenu::Font("Bold", 8)).ColorAndOpacity(APSMenu::Cyan)]
 				]
 			]
 		];
 
 	return SNew(SOverlay)
 		+ SOverlay::Slot()
-		[SNew(SScaleBox).Stretch(EStretch::ScaleToFill)[SNew(SImage).Image(&BackgroundImage).ColorAndOpacity(FLinearColor(0.14f, 0.26f, 0.36f, 0.30f))]]
+		[SNew(SScaleBox).Stretch(EStretch::ScaleToFill)[SNew(SImage).Image(&BackgroundImage).ColorAndOpacity(APSMenu::Retint(FLinearColor(0.14f, 0.26f, 0.36f, 0.30f)))]]
 		+ SOverlay::Slot()
-		[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(FLinearColor(0.0f, 0.008f, 0.016f, 0.62f))]
-		+ SOverlay::Slot()[Page];
+		[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(APSMenu::Retint(FLinearColor(0.0f, 0.008f, 0.016f, 0.62f)))]
+		+ SOverlay::Slot()[Page]
+		+ SOverlay::Slot()
+		[
+			SAssignNew(SpawnPickerHost, SBox)
+			.Visibility_Lambda([this]() { return bSpawnPickerOpen ? EVisibility::Visible : EVisibility::Collapsed; })
+		];
+}
+
+void SAPSMainMenuRoot::OpenSpawnPicker(const EAPSStartAssetSlot Slot)
+{
+	if (!SpawnPickerHost.IsValid() || SpawnClassOptions.FindRef(Slot).Num() == 0)
+	{
+		return;
+	}
+	SpawnPickerHost->SetContent(BuildSpawnPicker(Slot));
+	bSpawnPickerOpen = true;
+	FSlateApplication::Get().SetKeyboardFocus(AsShared(), EFocusCause::SetDirectly);
+}
+
+void SAPSMainMenuRoot::CloseSpawnPicker()
+{
+	bSpawnPickerOpen = false;
+	if (SpawnPickerHost.IsValid())
+	{
+		SpawnPickerHost->SetContent(SNullWidget::NullWidget);
+	}
+}
+
+TSharedRef<SWidget> SAPSMainMenuRoot::BuildSpawnPicker(const EAPSStartAssetSlot Slot)
+{
+	const FText SlotName =
+		Slot == EAPSStartAssetSlot::Character ? LOCTEXT("Character", "CHARACTER") :
+		Slot == EAPSStartAssetSlot::Spaceship ? LOCTEXT("Spaceship", "SPACESHIP") :
+		Slot == EAPSStartAssetSlot::SpaceStation ? LOCTEXT("Station", "SPACE STATION") :
+		Slot == EAPSStartAssetSlot::Headquarters ? LOCTEXT("HQ", "HEADQUARTERS") : LOCTEXT("Shipyard", "SHIPYARD");
+	const EAPSMenuGlyph SlotGlyph =
+		Slot == EAPSStartAssetSlot::Character ? EAPSMenuGlyph::Pilot :
+		Slot == EAPSStartAssetSlot::Spaceship ? EAPSMenuGlyph::Ship :
+		Slot == EAPSStartAssetSlot::SpaceStation ? EAPSMenuGlyph::Station :
+		Slot == EAPSStartAssetSlot::Headquarters ? EAPSMenuGlyph::Headquarters : EAPSMenuGlyph::Shipyard;
+	const TSharedRef<SWrapBox> Grid = SNew(SWrapBox).UseAllottedSize(true).InnerSlotPadding(FVector2D(14.0f, 14.0f));
+	const int32 Count = SpawnClassOptions.FindRef(Slot).Num();
+	for (int32 OptionIndex = 0; OptionIndex < Count; ++OptionIndex)
+	{
+		const TSharedRef<SButton> Button = SNew(SButton)
+			.ButtonStyle(FAppStyle::Get(), "NoBorder")
+			.ContentPadding(0.0f)
+			.ToolTipText(FText::FromString(SpawnClassOptions.FindRef(Slot)[OptionIndex].ToSoftObjectPath().ToString()))
+			.OnClicked_Lambda([this, Slot, OptionIndex]()
+			{
+				SelectSpawnClass(Slot, OptionIndex);
+				CloseSpawnPicker();
+				return FReply::Handled();
+			});
+		const TWeakPtr<SButton> Weak = Button;
+		const auto Lit = [Weak]()
+		{
+			const TSharedPtr<SButton> Pinned = Weak.Pin();
+			return Pinned.IsValid() && Pinned->IsHovered();
+		};
+		const auto Picked = [this, Slot, OptionIndex]() { return SpawnClassIndices.FindRef(Slot) == OptionIndex; };
+		Button->SetContent(
+			SNew(SBox).WidthOverride(232.0f).HeightOverride(236.0f)
+			[
+				SNew(SAPSChamferedOverlay)
+				+ SOverlay::Slot()
+				[
+					SNew(SChamferedSurface).Brush(FAppStyle::GetBrush("WhiteBrush")).ChamferTop(true).ChamferBottom(true)
+					.Tint_Lambda([Lit, Picked]() { return Picked() ? APSMenu::CardSelectedFill : Lit() ? APSMenu::ChipLit : APSMenu::ChipRest; })
+				]
+				+ SOverlay::Slot().Padding(FMargin(12.0f, 12.0f, 12.0f, 10.0f))
+				[
+					SNew(SVerticalBox)
+					+ SVerticalBox::Slot().FillHeight(1.0f)
+					[
+						SNew(SBorder).BorderImage(&APSMenu::InsetBrush).Padding(6.0f)
+						[
+							SNew(SOverlay)
+							+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center)
+							[
+								SNew(SBox).WidthOverride(64.0f).HeightOverride(64.0f)
+								.Visibility_Lambda([this, Slot, OptionIndex]() { return GetSpawnClassThumbnail(Slot, OptionIndex) ? EVisibility::Collapsed : EVisibility::Visible; })
+								[SNew(SVectorMenuGlyph).Glyph(SlotGlyph).Color(APSMenu::CyanDim).StrokeWidth(1.6f)]
+							]
+							+ SOverlay::Slot()
+							[
+								SNew(SScaleBox).Stretch(EStretch::ScaleToFit)
+								.Visibility_Lambda([this, Slot, OptionIndex]() { return GetSpawnClassThumbnail(Slot, OptionIndex) ? EVisibility::HitTestInvisible : EVisibility::Collapsed; })
+								[SNew(SImage).Image_Lambda([this, Slot, OptionIndex]() { return GetSpawnClassThumbnail(Slot, OptionIndex); })]
+							]
+						]
+					]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 9.0f, 0.0f, 0.0f)
+					[
+						SNew(SHorizontalBox)
+						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.0f, 0.0f, 8.0f, 0.0f)
+						[
+							SNew(STextBlock).Text(FText::FromString(FString::Printf(TEXT("%02d"), OptionIndex + 1)))
+							.Font(APSMenu::Font("Bold", 10)).ColorAndOpacity_Lambda([Picked]() { return FSlateColor(Picked() ? APSMenu::ActionBright : APSMenu::Readable); })
+						]
+						+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
+						[
+							SNew(STextBlock).Text_Lambda([this, Slot, OptionIndex]() { return GetSpawnClassOptionName(Slot, OptionIndex); })
+							.Font(APSMenu::Font("Bold", 12)).ColorAndOpacity(APSMenu::White).OverflowPolicy(ETextOverflowPolicy::Ellipsis)
+						]
+						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(6.0f, 0.0f, 0.0f, 0.0f)
+						[
+							SNew(STextBlock).Text(LOCTEXT("SpawnOptionActive", "ACTIVE")).Font(APSMenu::Font("Bold", 8))
+							.ColorAndOpacity_Lambda([]() { return FSlateColor(APSMenu::ActionBright); })
+							.Visibility_Lambda([Picked]() { return Picked() ? EVisibility::Visible : EVisibility::Collapsed; })
+						]
+					]
+				]
+				+ SOverlay::Slot()
+				[
+					SNew(SChamferedFrame).Thickness(1.0f)
+					.Color_Lambda([Lit, Picked]() { return Picked() ? APSMenu::Amber : Lit() ? APSMenu::Cyan : APSMenu::CyanDim; })
+				]
+			]);
+		Grid->AddSlot()[Button];
+	}
+
+	const TSharedRef<SWidget> Panel = APSMenu::ChamferPanel(
+		SNew(SVerticalBox)
+		+ SVerticalBox::Slot().AutoHeight()
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
+			[
+				SNew(SVerticalBox)
+				+ SVerticalBox::Slot().AutoHeight()
+				[
+					SNew(STextBlock).Text(FText::Format(LOCTEXT("SpawnPickerTitle", "{0}  ·  CHOOSE A CLASS"), SlotName))
+					.Font(APSMenu::Font("Bold", 20)).ColorAndOpacity(APSMenu::White)
+				]
+				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 4.0f, 0.0f, 0.0f)
+				[
+					SNew(STextBlock).Text(FText::Format(LOCTEXT("SpawnPickerHint", "{0} classes. A click picks one; Esc closes."), FText::AsNumber(Count)))
+					.Font(APSMenu::Font("Regular", 14)).ColorAndOpacity(APSMenu::Readable)
+				]
+			]
+			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+			[
+				SNew(SButton).ButtonStyle(&SecondaryButtonStyle).ContentPadding(APSMenu::ButtonPadding("Bold", 13))
+				.OnClicked_Lambda([this]() { CloseSpawnPicker(); return FReply::Handled(); })
+				[
+					SNew(STextBlock).Text(LOCTEXT("SpawnPickerClose", "CLOSE")).Font(APSMenu::Font("Bold", 13)).ColorAndOpacity(APSMenu::White)
+					.RenderTransform(APSMenu::CapsShift("Bold", 13))
+				]
+			]
+		]
+		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 14.0f)
+		[SNew(SBox).HeightOverride(1.0f)[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(APSMenu::CyanDim)]]
+		+ SVerticalBox::Slot().FillHeight(1.0f)
+		[
+			SNew(SScrollBox) + SScrollBox::Slot()[Grid]
+		],
+		FMargin(26.0f, 22.0f), APSMenu::CyanDim);
+
+	return SNew(SBorder)
+		.BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+		.BorderBackgroundColor(APSUITheme::Fade(APSMenu::PageShade, 0.82f))
+		.OnMouseButtonDown_Lambda([this](const FGeometry&, const FPointerEvent&)
+		{
+			// A click beside the panel closes it; the panel's own clicks never reach here.
+			CloseSpawnPicker();
+			return FReply::Handled();
+		})
+		.HAlign(HAlign_Center).VAlign(VAlign_Center).Padding(FMargin(60.0f, 50.0f))
+		[
+			SNew(SBox).MaxDesiredWidth(1290.0f).MaxDesiredHeight(860.0f)
+			[
+				SNew(SBorder).BorderImage(FStyleDefaults::GetNoBrush()).Padding(0.0f)
+				.OnMouseButtonDown_Lambda([](const FGeometry&, const FPointerEvent&) { return FReply::Handled(); })
+				[Panel]
+			]
+		];
 }
 
 void SAPSMainMenuRoot::LoadVisualResources()
@@ -3633,22 +5963,17 @@ void SAPSMainMenuRoot::LoadVisualResources()
 	Load(ClusterImage, TEXT("/Game/APS/APS_ALPHA/UI/Images/I_Cluster.I_Cluster"));
 	Load(CivilizationImage, TEXT("/Game/APS/APS_ALPHA/UI/Images/circular_galaxy.circular_galaxy"));
 	Load(BackgroundImage, TEXT("/Game/APS/APS_ALPHA/UI/Images/Screenshot_2023.Screenshot_2023"));
-	Load(WorldMultiPlanetImage, TEXT("/Game/APS/APS_ALPHA/UI/Images/WorldBrowser/T_World_MultiPlanet.T_World_MultiPlanet"));
-	Load(WorldSinglePlanetImage, TEXT("/Game/APS/APS_ALPHA/UI/Images/WorldBrowser/T_World_SinglePlanet.T_World_SinglePlanet"));
-	Load(WorldHabitableZoneImage, TEXT("/Game/APS/APS_ALPHA/UI/Images/WorldBrowser/T_World_HabitableZone.T_World_HabitableZone"));
-	Load(WorldGasGiantsImage, TEXT("/Game/APS/APS_ALPHA/UI/Images/WorldBrowser/T_World_GasGiants.T_World_GasGiants"));
-	Load(WorldNoPlanetsImage, TEXT("/Game/APS/APS_ALPHA/UI/Images/WorldBrowser/T_World_NoPlanets.T_World_NoPlanets"));
+	// The world browser paints each world's own scheme (SAPSWorldSchemePreview, Rio 03.10); its five stock pictures
+	// under UI/Images/WorldBrowser are no longer loaded.
 }
 
 void SAPSMainMenuRoot::BeginAuxiliaryMenuLoad()
 {
-	SettingsPanelClass = TSoftClassPtr<UUserWidget>(FSoftObjectPath(
-		TEXT("/Game/APS/APS_ALPHA/UI/MainMenu/WBP_SettingsPanel.WBP_SettingsPanel_C")));
+	// Rio 06.10: SETTINGS is native (SAPSSettingsPage); only the profile panel is still a Blueprint.
 	ProfilePanelClass = TSoftClassPtr<UUserWidget>(FSoftObjectPath(
 		TEXT("/Game/APS/APS_APOSFERA_SPACETRIPS/MBLS/Widgets/MainMenu/APS_WB_ProfileMenu.APS_WB_ProfileMenu_C")));
 
 	TArray<FSoftObjectPath> Paths;
-	Paths.Add(SettingsPanelClass.ToSoftObjectPath());
 	Paths.Add(ProfilePanelClass.ToSoftObjectPath());
 	AuxiliaryMenuLoadHandle = UAssetManager::GetStreamableManager().RequestAsyncLoad(
 		Paths,
@@ -3660,7 +5985,6 @@ void SAPSMainMenuRoot::OnAuxiliaryMenuLoaded()
 {
 	if (AMainMenuController* PC = Controller.Get())
 	{
-		PC->HoldSlateResource(SettingsPanelClass.Get());
 		PC->HoldSlateResource(ProfilePanelClass.Get());
 	}
 	AuxiliaryMenuLoadHandle.Reset();
@@ -3669,11 +5993,7 @@ void SAPSMainMenuRoot::OnAuxiliaryMenuLoaded()
 	{
 		return;
 	}
-	if (CurrentPage == EAPSMenuPage::Settings)
-	{
-		ContentHost->SetContent(BuildSettingsPage());
-	}
-	else if (CurrentPage == EAPSMenuPage::Profile)
+	if (CurrentPage == EAPSMenuPage::Profile)
 	{
 		ContentHost->SetContent(BuildProfilePage());
 	}
@@ -3906,14 +6226,14 @@ FReply SAPSMainMenuRoot::OpenProfile() { Navigate(EAPSMenuPage::Profile); return
 FReply SAPSMainMenuRoot::OpenSettings() { Navigate(EAPSMenuPage::Settings); return FReply::Handled(); }
 FReply SAPSMainMenuRoot::CommitCivilization() { if (ViewModel.IsValid()) ViewModel->CommitAndOpenLevel(); return FReply::Handled(); }
 FReply SAPSMainMenuRoot::ContinueExistingWorld() { if (SelectedWorld.IsValid()) if (AMainMenuController* PC = Controller.Get()) PC->LoadWorldSlot(SelectedWorld->SaveFileName); return FReply::Handled(); }
-FReply SAPSMainMenuRoot::SelectExistingWorld(TSharedPtr<FAPSExistingWorldEntry> Entry) { SelectedWorld = Entry; RebuildExistingWorldDetails(); return FReply::Handled(); }
+FReply SAPSMainMenuRoot::SelectExistingWorld(TSharedPtr<FAPSExistingWorldEntry> Entry) { SelectedWorld = Entry; WorldBrowserNotice = FText::GetEmpty(); RebuildExistingWorldDetails(); return FReply::Handled(); }
 FReply SAPSMainMenuRoot::QuitGame() { if (AMainMenuController* PC = Controller.Get()) UKismetSystemLibrary::QuitGame(PC, PC, EQuitPreference::Quit, false); return FReply::Handled(); }
 
 void SAPSMainMenuRoot::OnWorldSearchChanged(const FText& SearchText)
 {
 	WorldSearch = SearchText.ToString();
 	ExistingWorldPage = 0;
-	RebuildExistingWorldGrid();
+	ApplyExistingWorldView();
 }
 
 FReply SAPSMainMenuRoot::CycleSpawnClass(EAPSStartAssetSlot Slot, int32 Direction)

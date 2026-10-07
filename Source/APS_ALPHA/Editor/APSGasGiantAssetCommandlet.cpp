@@ -1,4 +1,5 @@
 #include "APSGasGiantAssetCommandlet.h"
+#include "APS_ALPHA/Core/Planetary/APSGasGiantMaterial.h"
 
 #if WITH_EDITOR
 
@@ -15,6 +16,7 @@
 #include "Materials/MaterialExpressionVectorParameter.h"
 #include "Materials/MaterialExpressionVertexNormalWS.h"
 #include "Misc/PackageName.h"
+#include "Misc/Parse.h"
 #include "Modules/ModuleManager.h"
 #include "UObject/Package.h"
 #include "UObject/SavePackage.h"
@@ -60,7 +62,7 @@ namespace APSGasGiantAssets
 		return Node;
 	}
 
-	bool Build(UMaterial* Material)
+	bool Build(UMaterial* Material, const bool bCandidate)
 	{
 		// UE 5.4's bulk deletion helper mutates its own iteration array. Use the
 		// established tail-delete pattern so rerunning this exact-asset bake is safe.
@@ -84,7 +86,8 @@ namespace APSGasGiantAssets
 		LocalNormal->TransformType = TRANSFORM_Local;
 		LocalNormal->Input.Connect(0, Normal);
 		auto* Clouds = Add<UMaterialExpressionCustom>(Material, -300, -200);
-		Clouds->Description = TEXT("Seamless gas cloud belts and oval storms");
+		Clouds->Description = bCandidate ? TEXT("Candidate V2 connected variable-width belts and local circulation")
+			: TEXT("Seamless gas cloud belts and oval storms");
 		Clouds->OutputType = CMOT_Float3;
 		Clouds->Inputs.Reset();
 		Input(Clouds, TEXT("DirectionLocal"), LocalNormal);
@@ -168,7 +171,7 @@ float polarHaze = smoothstep(0.70, 0.97, abs(q.z));
 cloudColor = lerp(cloudColor, lerp(DarkCloud, LightCloud, 0.60), polarHaze * 0.32);
 return saturate(cloudColor);
 )APSGAS");
-		Clouds->Code = NoiseCode + CloudCode;
+		Clouds->Code = bCandidate ? APSGasGiantMaterial::CandidateCloudCode() : NoiseCode + CloudCode;
 
 		auto* Roughness = Scalar(Material, TEXT("GasCloudRoughness"), 0.86f, 700);
 		auto* Metallic = Add<UMaterialExpressionConstant>(Material, -300, 650);
@@ -213,15 +216,26 @@ int32 UAPSGasGiantAssetCommandlet::Main(const FString& Params)
 {
 #if WITH_EDITOR
 	using namespace APSGasGiantAssets;
-	const FString ObjectPath = FString(MaterialFolder) / MaterialName + TEXT(".") + MaterialName;
+	const bool bCandidate = FParse::Param(*Params, TEXT("Candidate"));
+	const TCHAR* TargetFolder = bCandidate ? APSGasGiantMaterial::CandidateFolder : MaterialFolder;
+	const TCHAR* TargetName = bCandidate ? APSGasGiantMaterial::CandidateName : MaterialName;
+	const FString PackageName = FString(TargetFolder) / TargetName;
+	const FString ObjectPath = PackageName + TEXT(".") + TargetName;
+	// This versioned candidate is immutable. Never reuse an existing package or
+	// let a diagnostic bake silently overwrite the accepted master material.
+	if (bCandidate && (FPackageName::DoesPackageExist(PackageName) || FindPackage(nullptr, *PackageName)))
+	{
+		UE_LOG(LogTemp, Error, TEXT("[APS.GasGiant] Refusing existing candidate package %s"), *PackageName);
+		return 2;
+	}
 	UMaterial* Material = LoadObject<UMaterial>(nullptr, *ObjectPath, nullptr, LOAD_NoWarn);
 	if (!Material)
 	{
 		IAssetTools& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>(TEXT("AssetTools")).Get();
-		Material = Cast<UMaterial>(AssetTools.CreateAsset(MaterialName, MaterialFolder,
+		Material = Cast<UMaterial>(AssetTools.CreateAsset(TargetName, TargetFolder,
 			UMaterial::StaticClass(), NewObject<UMaterialFactoryNew>()));
 	}
-	if (!IsValid(Material) || !Build(Material))
+	if (!IsValid(Material) || !Build(Material, bCandidate))
 	{
 		UE_LOG(LogTemp, Error, TEXT("[APS.GasGiant] Could not build %s"), *ObjectPath);
 		return 1;
@@ -234,6 +248,11 @@ int32 UAPSGasGiantAssetCommandlet::Main(const FString& Params)
 	Args.Error = GError;
 	const FString Filename = FPackageName::LongPackageNameToFilename(
 		Package->GetName(), FPackageName::GetAssetPackageExtension());
+	if (bCandidate && FPackageName::DoesPackageExist(PackageName))
+	{
+		UE_LOG(LogTemp, Error, TEXT("[APS.GasGiant] Candidate appeared during compilation; refusing overwrite %s"), *PackageName);
+		return 2;
+	}
 	const bool bSaved = UPackage::SavePackage(Package, Material, *Filename, Args);
 	UE_LOG(LogTemp, Display, TEXT("[APS.GasGiant] Material saved=%d path=%s; no worlds or imported assets changed"),
 		bSaved ? 1 : 0, *ObjectPath);

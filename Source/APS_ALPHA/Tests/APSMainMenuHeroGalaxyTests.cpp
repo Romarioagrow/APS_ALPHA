@@ -27,7 +27,14 @@
 namespace APSMainMenuHeroGalaxyTests
 {
 	constexpr double TimeoutSeconds = 180.0;
-	constexpr int32 ExpectedInstanceCount = 9200;
+	/** Rio 06.10: the hand-made composition has 9,200 points; the catalogue galaxy (aps.Menu.HeroGalaxyV2 1) its own. */
+	int32 ExpectedInstanceCount()
+	{
+		const IConsoleVariable* CatalogueGalaxy = IConsoleManager::Get().FindConsoleVariable(TEXT("aps.Menu.HeroGalaxyV2"));
+		const IConsoleVariable* CatalogueStars = IConsoleManager::Get().FindConsoleVariable(TEXT("aps.Menu.HeroGalaxyStars"));
+		return CatalogueGalaxy && CatalogueGalaxy->GetInt() != 0 && CatalogueStars
+			? FMath::Clamp(CatalogueStars->GetInt(), 5000, 200000) : 9200;
+	}
 	constexpr int32 ExpectedDeepSpaceInstanceCount = 2780;
 	constexpr int32 ExpectedNebulaInstanceCount = 0;
 
@@ -100,7 +107,7 @@ namespace APSMainMenuHeroGalaxyTests
 					return false;
 				}
 				Test->TestEqual(TEXT("Landing hero uses its fixed HISM budget"),
-					Generator->GetMainMenuHeroGalaxyInstanceCount(), ExpectedInstanceCount);
+					Generator->GetMainMenuHeroGalaxyInstanceCount(), ExpectedInstanceCount());
 				Test->TestEqual(TEXT("Landing deep-space layer uses its fixed HISM budget"),
 					Generator->GetMainMenuDeepSpaceInstanceCount(), ExpectedDeepSpaceInstanceCount);
 				Test->TestEqual(TEXT("Landing contains no nebula carriers"),

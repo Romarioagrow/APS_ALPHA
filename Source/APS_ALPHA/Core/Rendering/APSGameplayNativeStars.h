@@ -64,4 +64,6 @@ namespace APSGameplayNativeStars
 {
 // Catalog/model radius in physical centimetres; independent of HISM impostor scale.
 double PhysicalRadiusCm(const FAPSGameplayStellarKey& Key);
+// Rio 03.10: false while aps.Stars.NativeMode draws every resolved star as an instanced photosphere (no view selection).
+bool UsesViewSelection();
 }

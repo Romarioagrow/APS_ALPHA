@@ -1,5 +1,10 @@
 #include "PlanetarySurfaceGenerator.h"
 #include "APSAtmosphereGeneration.h"
+#include "APS_ALPHA/Core/Rendering/APSAtmosphereTailMaterial.h"
+#include "Materials/MaterialInterface.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "APS_ALPHA/Core/Planetary/APSWorldScapeFoliagePolicy.h"
+#include "APS_ALPHA/Core/Rendering/APSPlanetCloudComponent.h"
 #include "APS_ALPHA/Actors/Astro/Moon.h"
 #include "APS_ALPHA/Actors/Astro/Planet.h"
 #include "APS_ALPHA/Actors/Astro/Star.h"
@@ -7,6 +12,15 @@
 #include "APS_ALPHA/Core/Enums/PlanetType.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "HAL/IConsoleManager.h"
+
+// Rio 06.10 (audit: the moon tail master swap had no switch back to the 61532ed6 masters).
+static TAutoConsoleVariable<int32> CVarMoonTailMaster(
+	TEXT("aps.Sky.MoonTailMaster"), 1,
+	TEXT("1: every moon except Volcanic draws on M_APS_AtmosphereTail (06.10 evening). 0: only Icy moons, the native ")
+	TEXT("AtmoScape master for the rest (as in 61532ed6). Read when a body's atmosphere is (re)initialised: set it before ")
+	TEXT("generation (-ExecCmds)."),
+	ECVF_Default);
 
 // Sets default values
 APlanetarySurfaceGenerator::APlanetarySurfaceGenerator()
@@ -16,6 +30,8 @@ APlanetarySurfaceGenerator::APlanetarySurfaceGenerator()
 	PrimaryActorTick.bCanEverTick = true;
 	PrimaryActorTick.bStartWithTickEnabled = false;
 	RootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("RuntimeSurfaceGeneratorRoot"));
+	ContinuousAtmosphereMaterial = LoadObject<UMaterialInterface>(nullptr,
+		APSAtmosphereTailMaterial::MasterPath, nullptr, LOAD_NoWarn | LOAD_Quiet);
 
     /*MoonLikeNoise = LoadObject<UWorldScapeNoiseClass>(nullptr, TEXT("/WorldScape/Ressources/Noise/MoonLike.MoonLike"));
     LavaWorldNoise = LoadObject<UWorldScapeNoiseClass>(nullptr, TEXT("/WorldScape/Ressources/Noise/LavaWorld.LavaWorld"));
@@ -81,6 +97,12 @@ void APlanetarySurfaceGenerator::BeginPlay()
     {
         InitWorldScape(GetWorld());
     }
+}
+
+void APlanetarySurfaceGenerator::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	CancelLavaMaterialPreparation();
+	Super::EndPlay(EndPlayReason);
 }
 
 // Called every frame
@@ -200,9 +222,69 @@ void APlanetarySurfaceGenerator::InitAtmoScape(UWorld* World, double PlanetaryRa
 	// InitEnvironment is reached by both generated and editor-authored integration
 	// paths. Re-entering it must update the same shell, not stack another opaque
 	// atmosphere over the first one.
+	const APlanet* AtmospherePlanet = Cast<APlanet>(NewPlanetaryBody);
+	const AMoon* AtmosphereMoon = Cast<AMoon>(NewPlanetaryBody);
+	// Rio 06.10 (audit): aps.Sky.MoonTailMaster 0 keeps the 61532ed6 moon masters (tail master on Icy moons only). The
+	// re-initialisation branch below returns a moon already on the tail master to the native master in that case.
+	const bool bMoonTail = AtmosphereMoon && (CVarMoonTailMaster.GetValueOnGameThread() != 0
+		? APSAtmosphereTailMaterial::ManagedFor(AtmosphereMoon->MoonType)
+		: APSAtmosphereTailMaterial::EnabledFor(AtmosphereMoon->MoonType));
+	const bool bUseContinuousAtmosphere = (AtmospherePlanet
+		&& APSAtmosphereTailMaterial::ManagedFor(AtmospherePlanet->PlanetType))
+		|| bMoonTail;
 	if (!IsValid(PlanetAtmosphere))
 	{
-		PlanetAtmosphere = World->SpawnActor<AAtmoScape>(AAtmoScape::StaticClass(), FTransform());
+		PlanetAtmosphere = World->SpawnActorDeferred<AAtmoScape>(AAtmoScape::StaticClass(), FTransform());
+		if (PlanetAtmosphere)
+		{
+			if (bUseContinuousAtmosphere && ContinuousAtmosphereMaterial)
+			{
+				PlanetAtmosphere->Atmo_Material = ContinuousAtmosphereMaterial;
+				PlanetAtmosphere->SpaceAtmo_Material = ContinuousAtmosphereMaterial;
+			}
+			PlanetAtmosphere->FinishSpawning(FTransform());
+		}
+	}
+	else
+	{
+		// Explicit model/type re-initialization only, never a camera/altitude rule.
+		// Preserve authored custom parents. An ordinary revisit keeps both MIDs.
+		const AAtmoScape* Defaults = GetDefault<AAtmoScape>();
+		UMaterialInterface* Inside = bUseContinuousAtmosphere && ContinuousAtmosphereMaterial
+			? ContinuousAtmosphereMaterial.Get() : Defaults->Atmo_Material;
+		UMaterialInterface* Outside = bUseContinuousAtmosphere && ContinuousAtmosphereMaterial
+			? ContinuousAtmosphereMaterial.Get() : Defaults->SpaceAtmo_Material;
+		const bool bManagedInside = PlanetAtmosphere->Atmo_Material == Defaults->Atmo_Material
+			|| (ContinuousAtmosphereMaterial && PlanetAtmosphere->Atmo_Material == ContinuousAtmosphereMaterial);
+		const bool bManagedOutside = PlanetAtmosphere->SpaceAtmo_Material == Defaults->SpaceAtmo_Material
+			|| (ContinuousAtmosphereMaterial && PlanetAtmosphere->SpaceAtmo_Material == ContinuousAtmosphereMaterial);
+		if (bManagedInside && bManagedOutside && (PlanetAtmosphere->Atmo_Material != Inside
+			|| PlanetAtmosphere->SpaceAtmo_Material != Outside))
+		{
+			PlanetAtmosphere->Atmo_Material = Inside;
+			PlanetAtmosphere->SpaceAtmo_Material = Outside;
+			// Construction refreshes the plugin's private MID pointers. The authored
+			// settings and duplicate-pass suppression below are reapplied before draw.
+			PlanetAtmosphere->OnConstruction(PlanetAtmosphere->GetActorTransform());
+		}
+	}
+	if (bUseContinuousAtmosphere && !ContinuousAtmosphereMaterial)
+		UE_LOG(LogTemp, Warning, TEXT("[APS.AtmosphereTail] Missing installed master; preserving native atmosphere for %s"),
+			*GetNameSafe(NewPlanetaryBody));
+	// Rio 06.10 (Krathys hard outline): a moon newly on the tail master starts with the native math (tail 0); the
+	// gameplay sky (aps.Sky.AtmosphereTail) weighs it by the shell's thinness, so the menu preview stays as it was.
+	if (IsValid(PlanetAtmosphere) && AtmosphereMoon && ContinuousAtmosphereMaterial
+		&& !APSAtmosphereTailMaterial::EnabledFor(AtmosphereMoon->MoonType))
+	{
+		TInlineComponentArray<UStaticMeshComponent*> ShellMeshes(PlanetAtmosphere);
+		for (UStaticMeshComponent* ShellMesh : ShellMeshes)
+		{
+			UMaterialInstanceDynamic* Shell = ShellMesh ? Cast<UMaterialInstanceDynamic>(ShellMesh->GetMaterial(0)) : nullptr;
+			if (Shell && Shell->Parent == ContinuousAtmosphereMaterial)
+			{
+				Shell->SetScalarParameterValue(APSAtmosphereTailMaterial::TailParameter, 0.0f);
+			}
+		}
 	}
 
     if (PlanetAtmosphere)
@@ -649,6 +731,7 @@ void APlanetarySurfaceGenerator::InitAtmoScape(UWorld* World, double PlanetaryRa
 			AtmosphereMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 			AtmosphereMesh->SetGenerateOverlapEvents(false);
 		}
+        UAPSPlanetCloudComponent::Refresh(Cast<APlanet>(NewPlanetaryBody));
     }
 }
 
@@ -749,6 +832,12 @@ void APlanetarySurfaceGenerator::SpawnWorldScapeRoot()
 {
     if (WorldScapeRootInstance)
     {
+		if (bPendingLavaMaterial)
+		{
+			LavaMaterialResumeState = EDeferredWorldScapeRootState::Active;
+			// Retain a published root unchanged; never start an unconfigured new one.
+			return;
+		}
 		if (bPendingSurfaceProfileApply)
 		{
 			DeferredWorldScapeRootState = EDeferredWorldScapeRootState::Active;
@@ -772,15 +861,16 @@ void APlanetarySurfaceGenerator::SpawnWorldScapeRoot()
 		// WorldScape to include the possessed pawn in every supported net mode.
 		// Preload/frozen states still disable actor collision below their lifecycle
 		// boundary, so inactive siblings and ocean presentation meshes stay non-solid.
-		WorldScapeRootInstance->bGenerateCollision = true;
+		const bool bTransit = WorldScapeRootInstance->ActorHasTag(TEXT("APS.Surface.Transit"));
+		WorldScapeRootInstance->bGenerateCollision = !bTransit;
 		WorldScapeRootInstance->bGenerateCollisionForAllPlayer = true;
 #if WITH_EDITOR
-		WorldScapeRootInstance->bGenerateCollisionInEditor = true;
+		WorldScapeRootInstance->bGenerateCollisionInEditor = !bTransit;
 		WorldScapeRootInstance->bStaticCollisionInEditor = false;
 #endif
         WorldScapeRootInstance->SetActorHiddenInGame(false);    
         WorldScapeRootInstance->SetActorTickEnabled(true);
-        WorldScapeRootInstance->SetActorEnableCollision(true);
+        WorldScapeRootInstance->SetActorEnableCollision(!bTransit);
 
         if (WorldScapeRootInstance->GetAttachParentActor() != PlanetaryBody)
         {
@@ -788,6 +878,23 @@ void APlanetarySurfaceGenerator::SpawnWorldScapeRoot()
             WorldScapeRootInstance->AttachToActor(PlanetaryBody, FAttachmentTransformRules::SnapToTargetNotIncludingScale);
 		}
 		WorldScapeRootInstance->SetActorScale3D(FVector::OneVector);
+		// The native first Tick builds once for init=false, then compares Prev_*.
+		// A new owned root must acknowledge its configured parameters BEFORE that
+		// first build; otherwise the same Tick immediately rebuilds all components.
+		// Never consume regeneration requests on resident/partial/authored roots or
+		// while a worker owns data. This does not build geometry or set init=true.
+		const APlanet* SurfacePlanet = Cast<APlanet>(PlanetaryBody);
+		if (bOwnsWorldScapeRootInstance && bSurfaceProfileApplied
+			&& !(SurfacePlanet && SurfacePlanet->IsManual)
+			&& !WorldScapeRootInstance->init
+			&& WorldScapeRootInstance->WorldScapeLod.IsEmpty()
+			&& WorldScapeRootInstance->WorldScapeLodOcean.IsEmpty()
+			&& WorldScapeRootInstance->CollisionLods.IsEmpty()
+			&& WorldScapeRootInstance->WorldScapeLodInGeneration.IsEmpty()
+			&& !FAPSWorldScapeFoliagePolicy::HasPendingNativeWorker(WorldScapeRootInstance))
+		{
+			WorldScapeRootInstance->CheckForRegenerate();
+		}
 		// Never call WS_ForceRegenerate here. It destroys every existing LOD
 		// immediately, which is both unnecessary for a resident family and the exact
 		// lifetime hazard behind LodGenerationThread::DoWork -> SetData crashes. A new

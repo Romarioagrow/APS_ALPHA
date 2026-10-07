@@ -64,4 +64,12 @@ private:
 	FTransform CachedPlayerPawnTransform{FTransform::Identity};
 	FRotator CachedPlayerControlRotation{FRotator::ZeroRotator};
 	bool bHasCachedPlayerState{false};
+	/** Rio 06.10 (audit: saves, aps.Save.RestorePilotedShip): the ship the player last piloted with a pilot seated, and its
+	 * fleet key, for the lifecycle autosave that runs after UnPossess (APSCivilizationSave::Capture's fallback). */
+	TWeakObjectPtr<const class APilotingVehicle> CachedPilotedVehicle;
+	FString CachedPilotedVehicleKey;
+
+public:
+	/** The F10 strategic map is open (its own camera holds the view): HUDs that project through the camera may hide. */
+	bool IsStrategicMapOpen() const { return StrategicMapWidget.IsValid(); }
 };

@@ -12,6 +12,7 @@
 #include "APS_ALPHA/Core/Model/GeneratedWorld.h"
 #include "APS_ALPHA/Core/Structs/MoonGenerationModel.h"
 #include "APS_ALPHA/Core/Structs/PlanetGenerationModel.h"
+#include "APS_ALPHA/UI/MainMenu/APSAtmosphereControlBounds.h"
 
 namespace
 {
@@ -52,12 +53,14 @@ namespace
 		Result.SurfaceMountainScale = FMath::Clamp(WorldModel.SurfaceMountainScale, 0.0, 2.0);
 		Result.SurfaceCraterScale = FMath::Clamp(WorldModel.SurfaceCraterScale, 0.0, 2.0);
 		Result.SurfaceRoughnessScale = FMath::Clamp(WorldModel.SurfaceRoughnessScale, 0.25, 2.0);
-		Result.AtmosphereHeight = FMath::Clamp(WorldModel.AtmosphereHeight, 0.0, 2000.0);
+		Result.AtmosphereHeight = APSAtmosphereControlBounds::Height(
+			WorldModel.AtmosphereHeight, WorldModel.PlanetType);
+		Result.CloudSettings = WorldModel.CloudSettings.Sanitized();
 		Result.AtmosphereOpacity = FMath::Clamp(WorldModel.AtmosphereOpacity, 0.0, 40.0);
 		Result.AtmosphereMultiScattering = FMath::Clamp(
 			WorldModel.AtmosphereMultiScattering, 0.0, 10.0);
-		Result.AtmosphereRayleighScattering = FMath::Clamp(
-			WorldModel.AtmosphereRayleighScattering, 0.0, 64.0);
+		Result.AtmosphereRayleighScattering = APSAtmosphereControlBounds::Rayleigh(
+			WorldModel.AtmosphereRayleighScattering, WorldModel.PlanetType);
 		Result.AtmosphereColor = WorldModel.AtmosphereColor;
 		return Result;
 	}
@@ -81,6 +84,7 @@ namespace
 		WorldModel.SurfaceCraterScale = BodyOverride.SurfaceCraterScale;
 		WorldModel.SurfaceRoughnessScale = BodyOverride.SurfaceRoughnessScale;
 		WorldModel.AtmosphereHeight = BodyOverride.AtmosphereHeight;
+		WorldModel.CloudSettings = BodyOverride.CloudSettings.Sanitized();
 		WorldModel.AtmosphereOpacity = BodyOverride.AtmosphereOpacity;
 		WorldModel.AtmosphereMultiScattering = BodyOverride.AtmosphereMultiScattering;
 		WorldModel.AtmosphereRayleighScattering = BodyOverride.AtmosphereRayleighScattering;
@@ -103,6 +107,7 @@ namespace
 		Model.SurfaceCraterScale = BodyOverride.SurfaceCraterScale;
 		Model.SurfaceRoughnessScale = BodyOverride.SurfaceRoughnessScale;
 		Model.AtmosphereHeight = BodyOverride.AtmosphereHeight;
+		Model.CloudSettings = BodyOverride.CloudSettings.Sanitized();
 	}
 
 	bool ApplyToPlanetModelDataPreservingMoonCenters(
@@ -210,6 +215,7 @@ namespace
 		Model.SurfaceCraterScale = BodyOverride.SurfaceCraterScale;
 		Model.SurfaceRoughnessScale = BodyOverride.SurfaceRoughnessScale;
 		Model.MoonAtmosphereHeight = BodyOverride.AtmosphereHeight;
+		Model.CloudSettings = BodyOverride.CloudSettings.Sanitized();
 	}
 
 	bool ApplyMoonOrbitToParentModel(
@@ -380,6 +386,7 @@ namespace
 		Body.SurfaceCraterScale = BodyOverride.SurfaceCraterScale;
 		Body.SurfaceRoughnessScale = BodyOverride.SurfaceRoughnessScale;
 		Body.AtmosphereHeight = BodyOverride.AtmosphereHeight;
+		Body.CloudSettings = BodyOverride.CloudSettings.Sanitized();
 		const bool bMoonLayoutChanged = ApplyToGenerationModel(Body, BodyOverride);
 		if (bMoonLayoutChanged)
 		{

@@ -1,0 +1,35 @@
+[
+  {
+    "filename": "a-kind-of-hope.mp3",
+    "download": "https://www.scottbuckley.com.au/library/wp-content/uploads/2022/10/AKindOfHope.mp3",
+    "license": "CC BY 4.0",
+    "author": "Scott Buckley",
+    "title": "A Kind Of Hope",
+    "license_url": "https://creativecommons.org/licenses/by/4.0/",
+    "style": "piano and strings",
+    "sha256": "D0DC554C0DB9EA208B4F59E4F0C1B4446AA7EF622C7BFEFFCA278130A46C51F1",
+    "page": "https://www.scottbuckley.com.au/library/a-kind-of-hope/"
+  },
+  {
+    "filename": "tears-in-rain.mp3",
+    "download": "https://www.scottbuckley.com.au/library/wp-content/uploads/2019/07/sb_tearsinrain.mp3",
+    "license": "CC BY 4.0",
+    "author": "Scott Buckley",
+    "title": "Tears in Rain",
+    "license_url": "https://creativecommons.org/licenses/by/4.0/",
+    "style": "cinematic electronica",
+    "sha256": "C56F817A5090E17A2DEF09E3623104A5474F144F81A595EB4CCAE5F3EF9AB69F",
+    "page": "https://www.scottbuckley.com.au/library/tears-in-rain/"
+  },
+  {
+    "filename": "celestial.mp3",
+    "download": "https://www.scottbuckley.com.au/library/wp-content/uploads/2021/06/sb_celestial.mp3",
+    "license": "CC BY 4.0",
+    "author": "Scott Buckley",
+    "title": "Celestial",
+    "license_url": "https://creativecommons.org/licenses/by/4.0/",
+    "style": "orchestral",
+    "sha256": "AB5EDA0070D01631691EB0E71F9C55DD4229EB07897E5430A666D1F1944F2191",
+    "page": "https://www.scottbuckley.com.au/library/celestial/"
+  }
+]

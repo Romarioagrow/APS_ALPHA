@@ -1,0 +1,137 @@
+// Rio 03.10 (galaxy phase 3): the galaxy glow, i.e. the unresolved light of every star that is not drawn
+// as a point, with dust lanes. A 2.5D model built from catalogue samples: per map texel a surface brightness,
+// a dust tracer and a vertical profile (thin disk component of variable shape + thick Gaussian component).
+// The vertical integral of each ray step is exact, so a thin disk or dust lane cannot alias; the march runs
+// at reduced resolution without temporal noise.
+
+#include "/Plugin/APSStarRenderer/Private/APSStarCommon.ush"
+
+// --- Upload (once per volume) ----------------------------------------------------------------------
+
+uint MapResolution;
+StructuredBuffer<float4> SrcEmission;
+StructuredBuffer<float4> SrcProfile;
+StructuredBuffer<float> SrcShape;
+RWTexture2D<float4> DstEmission;
+RWTexture2D<float4> DstProfile;
+RWTexture2D<float> DstShape;
+
+[numthreads(8, 8, 1)]
+void UploadCS(uint3 DispatchThreadId : SV_DispatchThreadID)
+{
+	if (DispatchThreadId.x >= MapResolution || DispatchThreadId.y >= MapResolution)
+	{
+		return;
+	}
+	const uint Index = DispatchThreadId.y * MapResolution + DispatchThreadId.x;
+	DstEmission[DispatchThreadId.xy] = SrcEmission[Index];
+	DstProfile[DispatchThreadId.xy] = SrcProfile[Index];
+	DstShape[DispatchThreadId.xy] = SrcShape[Index];
+}
+
+// --- Ray march (every frame, per view) --------------------------------------------------------------
+
+float4x4 InvProjection;
+float4x4 ViewToMap;
+float3 CameraMap;
+float EmissionScale;
+float4 VolumeParams;
+float2 GlowSizeF;
+float CompressA;
+float CompressB;
+uint2 GlowSize;
+uint StepCount;
+float MinScaleHeight;
+// Rio 03.10 (gameplay sky): light nearer than this (map units, squared; 0 = off) counts as if it were this far,
+// the point sets' BrightnessFloorDistanceLocal law.
+float FloorDistanceSq;
+Texture2D SceneDepthTexture;
+Texture2D EmissionMap;
+Texture2D ProfileMap;
+Texture2D ShapeMap;
+SamplerState MapSampler;
+RWTexture2D<float4> OutGlow;
+
+[numthreads(8, 8, 1)]
+void RaymarchCS(uint3 DispatchThreadId : SV_DispatchThreadID)
+{
+	if (DispatchThreadId.x >= GlowSize.x || DispatchThreadId.y >= GlowSize.y)
+	{
+		return;
+	}
+
+	const float2 ViewportUV = (float2(DispatchThreadId.xy) + 0.5) / GlowSizeF;
+	const float2 Ndc = float2(ViewportUV.x * 2.0 - 1.0, 1.0 - ViewportUV.y * 2.0);
+	// Reverse Z: the near plane is at device Z = 1.
+	const float4 NearPoint = mul(float4(Ndc, 1.0, 1.0), InvProjection);
+	const float3 ViewPos = NearPoint.xyz / NearPoint.w;
+	const float ViewLength = length(ViewPos);
+	const float3 MapVector = mul(ViewPos, (float3x3)ViewToMap);
+	const float MapLength = length(MapVector);
+
+	float3 Light = float3(0.0, 0.0, 0.0);
+	float Transmittance = 1.0;
+	if (ViewLength > 0.0 && MapLength > 0.0 && ViewPos.z > 0.0)
+	{
+		const float3 Dir = MapVector / MapLength;
+
+		// Scene depth limit. The depth buffer holds render-space distances; undo the observer far envelope
+		// (render = A * d / (1 + B * d), d in map units) to march only up to the nearest opaque surface.
+		const uint4 DepthRect = View.ViewRectMinAndSize;
+		const float2 DepthPixelF = float2(DepthRect.xy) + ViewportUV * float2(DepthRect.zw);
+		const uint2 DepthPixel = min(uint2(DepthPixelF), DepthRect.xy + DepthRect.zw - 1u);
+		const float DeviceZ = SceneDepthTexture.Load(int3(int2(DepthPixel), 0)).r;
+		float TLimit = 3.0e38;
+		if (DeviceZ > 0.0)
+		{
+			const float RenderDistance = ConvertFromDeviceZ(DeviceZ) * (ViewLength / ViewPos.z);
+			const float Denominator = CompressA - CompressB * RenderDistance;
+			if (Denominator > 0.0)
+			{
+				TLimit = RenderDistance / Denominator;
+			}
+		}
+
+		const float ExtentZ = VolumeParams.x;
+		const float2 Hit = ApsRayBox(CameraMap, Dir, float3(-1.0, -1.0, -ExtentZ), float3(1.0, 1.0, ExtentZ));
+		const float T0 = max(Hit.x, 0.0);
+		const float T1 = min(Hit.y, TLimit);
+		if (T1 > T0)
+		{
+			const float Dt = (T1 - T0) / float(StepCount);
+			LOOP
+			for (uint StepIndex = 0u; StepIndex < StepCount; ++StepIndex)
+			{
+				const float Ta = T0 + Dt * float(StepIndex);
+				const float3 Mid = CameraMap + Dir * (Ta + 0.5 * Dt);
+				const float2 MapUV = Mid.xy * 0.5 + 0.5;
+				const float4 Emission = EmissionMap.SampleLevel(MapSampler, MapUV, 0);
+				// x thin sigma, y mid-plane offset, z thick sigma, w thin share.
+				const float4 Profile = ProfileMap.SampleLevel(MapSampler, MapUV, 0);
+				const float Shape = ShapeMap.SampleLevel(MapSampler, MapUV, 0).x;
+				const float ThinSigma = max(Profile.x, MinScaleHeight);
+				const float ThickSigma = max(Profile.z, ThinSigma);
+				const float DustSigma = max(min(ThinSigma * VolumeParams.z, VolumeParams.w), MinScaleHeight);
+				const float Ua = CameraMap.z + Dir.z * Ta - Profile.y;
+				const float Ub = Ua + Dir.z * Dt;
+				const float StarColumn = Profile.w * ApsThinSegment(Ua, Ub, ThinSigma, Shape, Dt)
+					+ (1.0 - Profile.w) * ApsGaussSegment(Ua, Ub, ThickSigma, Dt);
+				const float DustColumn = ApsThinSegment(Ua, Ub, DustSigma, Shape, Dt);
+				const float DeltaTau = VolumeParams.y * Emission.a * DustColumn;
+				const float StepTransmittance = exp(-DeltaTau);
+				// Emission spread uniformly through an absorbing step: (1 - e^-tau) / tau.
+				const float Spread = DeltaTau > 1.0e-4 ? (1.0 - StepTransmittance) / DeltaTau : 1.0 - 0.5 * DeltaTau;
+				const float Tm = Ta + 0.5 * Dt;
+				const float NearWeight = FloorDistanceSq > 0.0 ? min(Tm * Tm / FloorDistanceSq, 1.0) : 1.0;
+				Light += Emission.rgb * (Transmittance * StarColumn * Spread * NearWeight);
+				Transmittance *= StepTransmittance;
+				if (Transmittance < 1.0e-3)
+				{
+					break;
+				}
+			}
+		}
+	}
+
+	OutGlow[DispatchThreadId.xy] = float4(Light * (EmissionScale * View.PreExposure), Transmittance);
+}

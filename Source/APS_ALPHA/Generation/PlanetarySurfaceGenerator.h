@@ -4,6 +4,7 @@
 #include "AtmoScape/Public/PlanetaryAtmosphere.h"
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
+#include "Engine/TimerHandle.h"
 #include "APS_ALPHA/Core/Planetary/APSPlanetSurfaceProfile.h"
 #include "PlanetarySurfaceGenerator.generated.h"
 
@@ -12,6 +13,7 @@ class AMoon;
 class APlanetaryBody;
 class UAPSWorldScapePlanetNoise;
 class UMaterialInstanceDynamic;
+namespace APSUnifiedLavaSurface { struct FMaterialPreparation; }
 
 USTRUCT(BlueprintType)
 struct FAmbientParameters
@@ -139,6 +141,7 @@ public:
 protected:
 	// Called when the game starts or when spawned
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 public:
 	// Called every frame
@@ -203,6 +206,10 @@ public:
 	UPROPERTY(VisibleAnywhere, Category = "Atmo Scape")
 	AAtmoScape* PlanetAtmosphere;
 
+	// Hard reference keeps the immutable atmosphere master in packaged builds.
+	UPROPERTY()
+	TObjectPtr<UMaterialInterface> ContinuousAtmosphereMaterial;
+
 	UPROPERTY(VisibleAnywhere, Category = "World Scape")
 	double RadiusKM;
 
@@ -230,10 +237,11 @@ public:
 
 	/**
 	 * True while a live profile edit is waiting for the current WorldScape worker
-	 * batch to finish. During this window the old profile and all of its UObject
-	 * dependencies stay resident and the root producer remains frozen.
+	 * batch to finish or the requested lava shader to become ready. Shader waiting
+	 * alone does not hide, freeze or disable collision on an existing surface.
 	 */
-	bool IsSurfaceProfileApplyPending() const { return bPendingSurfaceProfileApply; }
+	bool IsSurfaceProfileApplyPending() const { return bPendingSurfaceProfileApply || bPendingLavaMaterial; }
+	bool IsLavaMaterialPreparationPending() const { return bPendingLavaMaterial; }
 
 	/** True only when the current root was configured from this body's latest editable data. */
 	bool IsSurfaceProfileCurrent(const APlanetaryBody* Body) const;
@@ -248,6 +256,9 @@ public:
 
 	/** Existing visible-surface refresh drives two optical scalars; no extra actor tick or geometry change. */
 	void UpdateOrbitalWaterAppearance();
+
+	/** Exchange two independently prepared roots without changing the body/atmosphere owner. */
+	void ExchangeRuntimeSurface(APlanetarySurfaceGenerator& Other);
 
 	void SpawnWorldScapeRoot();
 
@@ -277,6 +288,23 @@ private:
 	void TryFinalizeSurfaceProfileApply();
 	void CancelPendingSurfaceProfileApply();
 	void TryFinalizeWorldScapeUnload();
+	bool DeferProfileForLavaMaterial(APlanetaryBody* Body);
+	void TryFinalizeLavaMaterial();
+	void CancelLavaMaterialPreparation();
+	void StopLavaMaterialPolling();
+
+	// Separate from the worker drain: shader compilation never owns mesh buffers
+	// and must not hide the accepted surface. A world timer survives actor tick
+	// disabling in the streaming states; unload/replacement/EndPlay cancel it.
+	TSharedPtr<APSUnifiedLavaSurface::FMaterialPreparation> LavaMaterialPreparation;
+	TWeakObjectPtr<APlanetaryBody> LavaMaterialBody;
+	TWeakObjectPtr<AWorldScapeRoot> LavaMaterialRoot;
+	FTimerHandle LavaMaterialPollTimer;
+	bool bPendingLavaMaterial{false};
+	bool bLavaMaterialTimedOut{false};
+	bool bLavaMaterialFailureLogged{false};
+	double LavaMaterialRequestTime{0.0};
+	EDeferredWorldScapeRootState LavaMaterialResumeState{EDeferredWorldScapeRootState::Preloaded};
 
 	/** Latest body edit wins while one immutable WorldScape worker batch drains. */
 	TWeakObjectPtr<APlanetaryBody> PendingSurfaceProfileBody;

@@ -3,10 +3,12 @@
 #include "Misc/AutomationTest.h"
 
 #include "APS_ALPHA/Core/Planetary/APSWorldScapeFoliagePolicy.h"
+#include "APS_ALPHA/Core/Planetary/APSPlanetFoliagePrototype.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "HAL/IConsoleManager.h"
 #include "WorldScapeCore/Public/WorldScapeRoot.h"
+#include "WorldScapeCommon/Public/WorldScapeHelper.h"
 #include "WorldScapeFoliages/Public/WorldScapeFoliagesAsset.h"
 #include "WorldScapeFoliages/Public/WorldScapeFoliagesBlueprint.h"
 #include "WorldScapeFoliages/Public/WorldScapeFoliagesCluster.h"
@@ -328,8 +330,15 @@ bool FAPSWorldScapeFoliageTransientBudgetTest::RunTest(const FString& Parameters
 	TArray<UWorldScapeFoliagesCollection*> Sources;
 	Sources.Add(Source);
 	TArray<UWorldScapeFoliagesCollection*> Budgeted;
+	Asset->SetFlags(RF_Public | RF_Standalone);
+	Cluster->SetFlags(RF_Public | RF_Standalone);
 	const int32 BuiltCount = FAPSWorldScapeFoliagePolicy::BuildBudgetedCollections(
 		GetTransientPackage(), Sources, Plan, Budgeted);
+	TestTrue(TEXT("Authored data-asset ownership flags are not changed"),
+		Asset->HasAllFlags(RF_Public | RF_Standalone) && Cluster->HasAllFlags(RF_Public | RF_Standalone));
+	// These test-only source objects must not become permanent editor roots.
+	Asset->ClearFlags(RF_Public | RF_Standalone);
+	Cluster->ClearFlags(RF_Public | RF_Standalone);
 	if (!TestEqual(TEXT("One supported collection is cloned"), BuiltCount, 1)
 		|| !TestTrue(TEXT("Cloned collection is present"), Budgeted.IsValidIndex(0)))
 	{
@@ -354,6 +363,9 @@ bool FAPSWorldScapeFoliageTransientBudgetTest::RunTest(const FString& Parameters
 	UWorldScapeFoliagesCluster* BudgetedCluster = nullptr;
 	for (UWorldScapeFoliagesInterface* Entry : Copy->FoliageList)
 	{
+		TestTrue(TEXT("Every runtime entry is transient"), Entry->HasAnyFlags(RF_Transient));
+		TestFalse(TEXT("Runtime copies cannot retain standalone/public asset ownership"),
+			Entry->HasAnyFlags(RF_Public | RF_Standalone));
 		if (Entry->GetClass() == UWorldScapeFoliagesAsset::StaticClass())
 		{
 			BudgetedAsset = static_cast<UWorldScapeFoliagesAsset*>(Entry);
@@ -574,6 +586,290 @@ bool FAPSWorldScapeFoliageFreshRootApplicationTest::RunTest(const FString& Param
 
 	DestroyTestWorld(World);
 	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FAPSWorldScapeFoliageAggregateBudgetTest,
+	"APS.Gameplay.World.PlanetSurface.Foliage.AggregateAdmissionBudget",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FAPSWorldScapeFoliageAggregateBudgetTest::RunTest(const FString& Parameters)
+{
+	using Policy = FAPSWorldScapeFoliagePolicy;
+	UStaticMesh* Mesh = NewObject<UStaticMesh>(GetTransientPackage());
+	for (int32 Collections = 1; Collections <= 2; ++Collections)
+	{
+		for (int32 Kind = 0; Kind < 3; ++Kind)
+		{
+			TArray<UWorldScapeFoliagesCollection*> Sources;
+			for (int32 C = 0; C < 3; ++C)
+			{
+				auto* Source = NewObject<UWorldScapeFoliagesCollection>(GetTransientPackage());
+				for (int32 T = 0; T < 8; ++T)
+				{
+					if (Kind == 1 || (Kind == 2 && T % 2 == 0))
+					{
+						auto* Cluster = NewObject<UWorldScapeFoliagesCluster>(Source);
+						Cluster->FoliagesCount = 10000.0f;
+						for (int32 U = 0; U < 8; ++U)
+						{
+							FWorldScapeFoliagesClusterUnit Unit;
+							Unit.StaticMesh = Mesh; Unit.ClusterMin = 99; Unit.ClusterMax = 999;
+							Cluster->FoliagesClusterUnitList.Add(Unit);
+						}
+						Source->FoliageList.Add(Cluster);
+					}
+					else
+					{
+						auto* Asset = NewObject<UWorldScapeFoliagesAsset>(Source);
+						Asset->StaticMesh = Mesh; Asset->FoliagesCount = 10000.0f;
+						Source->FoliageList.Add(Asset);
+					}
+				}
+				Sources.Add(Source);
+			}
+			FAPSFoliageActivationPlan Plan;
+			Plan.bEnabled = true; Plan.HabitatDensityScale = 1.0f;
+			Plan.MaxCollections = Collections; Plan.MaxTypesPerCollection = 6;
+			Plan.MaxInstancesPerSectorPerCollection = 512; Plan.MaxClusterMeshesPerType = 4;
+			Plan.MinSectorSizeCm = 2000.0f; Plan.MaxCullDistanceMultiplier = 1.5f;
+			TArray<UWorldScapeFoliagesCollection*> Result;
+			TestEqual(TEXT("Both admitted collections retain a nonempty palette"),
+				Policy::BuildBudgetedCollections(GetTransientPackage(), Sources, Plan, Result), Collections);
+			int64 InstancesPerSectorSum = 0, ComponentSlotsSum = 0;
+			for (const auto* Collection : Result)
+			{
+				for (const auto* Entry : Collection->FoliageList)
+				{
+					int32 Expansion = 1, Slots = 1;
+					if (const auto* Cluster = Cast<UWorldScapeFoliagesCluster>(Entry))
+					{
+						Expansion = 0; Slots = Cluster->FoliagesClusterUnitList.Num();
+						for (const auto& Unit : Cluster->FoliagesClusterUnitList) Expansion += Unit.ClusterMax;
+					}
+					TestTrue(TEXT("Every retained type has a positive spawn/component allocation"),
+						Entry->FoliagesCount >= 1 && Expansion >= 1 && Slots >= 1);
+					InstancesPerSectorSum += FMath::CeilToInt64(Entry->FoliagesCount) * Expansion;
+					ComponentSlotsSum += Slots;
+				}
+			}
+			TestTrue(TEXT("All types, collections and cluster expansions fit the instance envelope"),
+				InstancesPerSectorSum > 0 && InstancesPerSectorSum * Policy::PeakSectorEnvelopePerType <= Policy::MaximumPeakInstancesPerRoot);
+			TestTrue(TEXT("Even empty cluster units fit the HISM component envelope"),
+				ComponentSlotsSum > 0 && ComponentSlotsSum * Policy::PeakSectorEnvelopePerType <= Policy::MaximumPeakMeshComponentsPerRoot);
+			TestEqual(TEXT("Authored type list is untouched"), Sources[0]->FoliageList.Num(), 8);
+			TestEqual(TEXT("Authored density is untouched"), Sources[0]->FoliageList[0]->FoliagesCount, 10000.0f);
+			Plan.HabitatDensityScale = 0.001f;
+			TestEqual(TEXT("Low density retains a bounded first type rather than dropping the entire palette"),
+				Policy::BuildBudgetedCollections(GetTransientPackage(), Sources, Plan, Result), Collections);
+			for (const auto* Collection : Result)
+			{
+				TestEqual(TEXT("One viable type fits the one-instance collection budget"), Collection->FoliageList.Num(), 1);
+			}
+		}
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FAPSWorldScapeFoliageSectorEnvelopeTest,
+	"APS.Gameplay.World.PlanetSurface.Foliage.PluginSectorEnvelope",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FAPSWorldScapeFoliageSectorEnvelopeTest::RunTest(const FString& Parameters)
+{
+	using namespace APSWorldScapeFoliagePolicyTests;
+	UWorld* World = CreateTestWorld();
+	if (!TestNotNull(TEXT("Sector contract world"), World)) return false;
+	auto* Root = World->SpawnActor<AWorldScapeRoot>();
+	if (!TestNotNull(TEXT("Sector contract root"), Root)) { DestroyTestWorld(World); return false; }
+	Root->bGenerateFoliages = false; Root->bFlatWorld = false;
+	constexpr double Size = 12000.0;
+	TestEqual(TEXT("Plugin generation ring remains 27 sectors"),
+		Root->GetSurroundingFoliageSector(DVector(0), Size).Num(), FAPSWorldScapeFoliagePolicy::QueuedSectorEnvelopePerType);
+	int32 Retained = 0;
+	for (int32 X = -5; X <= 5; ++X)
+		for (int32 Y = -5; Y <= 5; ++Y)
+			for (int32 Z = -5; Z <= 5; ++Z)
+				if (WorldScapeHelper::IsPointInCube(DVector(0), DVector(X * Size, Y * Size, Z * Size), Size * 4)) ++Retained;
+	TestEqual(TEXT("Inclusive retention cube is 729 sectors, not 27"), Retained,
+		FAPSWorldScapeFoliagePolicy::RetainedSectorEnvelopePerType);
+	DestroyTestWorld(World);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FAPSWorldScapeFoliageWorldAdmissionTest,
+	"APS.Gameplay.World.PlanetSurface.Foliage.WorldAdmissionBudget",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FAPSWorldScapeFoliageWorldAdmissionTest::RunTest(const FString& Parameters)
+{
+	using namespace APSWorldScapeFoliagePolicyTests;
+	using Policy = FAPSWorldScapeFoliagePolicy;
+	FScopedFoliageRuntimeOptIn RuntimeOptIn;
+	if (!TestTrue(TEXT("Admission kill switch registered"), RuntimeOptIn.IsValid())) return false;
+	RuntimeOptIn.Set(1);
+	UWorld* World = CreateTestWorld();
+	UWorld* OtherWorld = CreateTestWorld();
+	if (!TestNotNull(TEXT("Admission world"), World) || !TestNotNull(TEXT("Independent world"), OtherWorld))
+	{
+		DestroyTestWorld(World); DestroyTestWorld(OtherWorld); return false;
+	}
+	auto* Source = NewObject<UWorldScapeFoliagesCollection>(GetTransientPackage());
+	auto* SourceAsset = NewObject<UWorldScapeFoliagesAsset>(Source);
+	SourceAsset->StaticMesh = NewObject<UStaticMesh>(Source);
+	SourceAsset->FoliagesCount = 1000.0f;
+	Source->FoliageList.Add(SourceAsset);
+	auto Profile = MakeOptedInProfile();
+	Profile.Foliage.Collections.Reset();
+	Profile.Foliage.Collections.Add(TSoftObjectPtr<UWorldScapeFoliagesCollection>(Source));
+	TArray<AWorldScapeRoot*> Roots;
+	for (int32 I = 0; I < Policy::MaximumAdmittedRootsPerWorld + 1; ++I)
+	{
+		auto* Root = World->SpawnActor<AWorldScapeRoot>();
+		if (!TestNotNull(TEXT("Admission candidate"), Root)) break;
+		Roots.Add(Root);
+		const int32 Expected = I < Policy::MaximumAdmittedRootsPerWorld ? 1 : 0;
+		TestEqual(TEXT("Only bounded roots receive collections"),
+			Policy::ApplyToFreshOwnedRuntimeRoot(Root, Profile, false), Expected);
+		TestEqual(TEXT("Only admitted roots generate"), Root->bGenerateFoliages, Expected != 0);
+	}
+	TestEqual(TEXT("World reservations stay bounded"), Policy::GetReservedRootCount(World),
+		Policy::MaximumAdmittedRootsPerWorld);
+	if (Roots.Num() > Policy::MaximumAdmittedRootsPerWorld
+		&& TestFalse(TEXT("First admission produced a collection before reuse test"), Roots[0]->Foliages.IsEmpty()))
+	{
+		// The fake soft path must NOT be loaded when the world is full. Unexpected
+		// load failures would fail this automation, proving denial happens too late.
+		TestEqual(TEXT("Budget rejects before resolving optional dependencies"),
+			Policy::ApplyToFreshOwnedRuntimeRoot(Roots.Last(), MakeOptedInProfile(), false), 0);
+		auto* FirstCollection = Roots[0]->Foliages[0];
+		RuntimeOptIn.Set(0);
+		TestEqual(TEXT("Reapplication is non-destructive even with kill switch off"),
+			Policy::ApplyToFreshOwnedRuntimeRoot(Roots[0], Profile, false), 1);
+		TestEqual(TEXT("A live collection is never swapped"), Roots[0]->Foliages[0], FirstCollection);
+		RuntimeOptIn.Set(1);
+		TestTrue(TEXT("Retire an admitted actor"), Roots[0]->Destroy());
+		TestEqual(TEXT("Pending-kill root retains its reservation until actual reclamation"),
+			Policy::GetReservedRootCount(World), Policy::MaximumAdmittedRootsPerWorld);
+		TestEqual(TEXT("Retirement cannot double-spend an outstanding slot"),
+			Policy::ApplyToFreshOwnedRuntimeRoot(Roots.Last(), Profile, false), 0);
+	}
+	if (auto* OtherRoot = OtherWorld->SpawnActor<AWorldScapeRoot>())
+	{
+		TestEqual(TEXT("Separate PIE/game world has a separate budget"),
+			Policy::ApplyToFreshOwnedRuntimeRoot(OtherRoot, Profile, false), 1);
+		TestEqual(TEXT("Separate world reservation count"), Policy::GetReservedRootCount(OtherWorld), 1);
+	}
+	else AddError(TEXT("Could not spawn independent-world root"));
+	TestEqual(TEXT("Source density remains authored"), SourceAsset->FoliagesCount, 1000.0f);
+	DestroyTestWorld(World); DestroyTestWorld(OtherWorld);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FAPSWorldScapeFoliagePrototypeGatesTest,
+	"APS.Gameplay.World.PlanetSurface.Foliage.PrototypePaletteGates",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FAPSWorldScapeFoliagePrototypeGatesTest::RunTest(const FString& Parameters)
+{
+	using Policy = FAPSWorldScapeFoliagePolicy;
+	FAPSResolvedPlanetSurfaceProfile Barren;
+	Barren.PlanetType = EPlanetType::Frozen;
+	Barren.Archetype = EAPSPlanetSurfaceArchetype::Cryogenic;
+	Barren.Biomass = 0; Barren.Biodiversity = 0; Barren.Humidity = 0;
+	const uint32 OriginalSignature = UAPSPlanetSurfaceProfileResolver::BuildProfileSignature(Barren);
+	TestFalse(TEXT("Normal barren profile remains empty"), Policy::BuildActivationPlan(Barren, true, false).bEnabled);
+	TestFalse(TEXT("Prototype alone cannot bypass the global key"), Policy::BuildActivationPlan(Barren, false, false, true).bEnabled);
+	TestFalse(TEXT("Prototype cannot run in scaled preview"), Policy::BuildActivationPlan(Barren, true, true, true).bEnabled);
+	const auto Minerals = Policy::BuildActivationPlan(Barren, true, false, true);
+	TestTrue(TEXT("Explicit mineral palette needs no biological habitat"), Minerals.bEnabled && Minerals.bPrototypePalette);
+	TestEqual(TEXT("Mineral density is not multiplied by nonexistent biomass"), Minerals.HabitatDensityScale, 1.0f);
+	TestFalse(TEXT("Mineral placement does not use the biological noise mask"), Minerals.bUseNoiseMask);
+	TestFalse(TEXT("Prototype shadows remain off"), Minerals.bCastShadows);
+	TestEqual(TEXT("Prototype has exactly one collection"), Minerals.Collections.Num(), 1);
+	TestEqual(TEXT("Prototype sector cap"), Minerals.MaxInstancesPerSectorPerCollection, 16);
+	if (Minerals.Collections.Num() == 1)
+	{
+		TestEqual(TEXT("Runtime palette path matches the separately baked preset"),
+			Minerals.Collections[0].ToSoftObjectPath().ToString(),
+			FString(TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/FoliagePrototype20260929V1/FC_APS_Proto_Frozen.FC_APS_Proto_Frozen")));
+	}
+	TestEqual(TEXT("Prototype selection never changes the input profile signature"),
+		UAPSPlanetSurfaceProfileResolver::BuildProfileSignature(Barren), OriginalSignature);
+	TestEqual(TEXT("No fake biomass is written"), Barren.Biomass, 0.0f);
+	TestTrue(TEXT("Authored source remains disabled and empty"), !Barren.Foliage.bEnabled && Barren.Foliage.Collections.IsEmpty());
+
+	FAPSResolvedPlanetSurfaceProfile Living = Barren;
+	Living.PlanetType = EPlanetType::Forest;
+	Living.Archetype = EAPSPlanetSurfaceArchetype::Biosphere;
+	TestFalse(TEXT("Tree prototypes cannot bypass biomass gate"), Policy::BuildActivationPlan(Living, true, false, true).bEnabled);
+	Living.Biomass = 0.8f; Living.Biodiversity = 0.7f; Living.Humidity = 0.75f;
+	const auto Trees = Policy::BuildActivationPlan(Living, true, false, true);
+	TestTrue(TEXT("Living prototype uses habitat and mask"), Trees.bEnabled && Trees.bUseNoiseMask);
+	TestTrue(TEXT("Biological density remains habitat-modulated"), Trees.HabitatDensityScale > 0 && Trees.HabitatDensityScale < 1);
+
+	auto Authored = APSWorldScapeFoliagePolicyTests::MakeOptedInProfile();
+	const auto AuthoredPlan = Policy::BuildActivationPlan(Authored, true, false, true);
+	TestTrue(TEXT("Authored opt-in still works"), AuthoredPlan.bEnabled);
+	TestFalse(TEXT("Prototype never replaces an authored palette"), AuthoredPlan.bPrototypePalette);
+	TestTrue(TEXT("Authored collection references are preserved"), AuthoredPlan.Collections == Authored.Foliage.Collections);
+	Authored.Foliage.bEnabled = false;
+	TestFalse(TEXT("An authored disabled palette stays disabled"), Policy::BuildActivationPlan(Authored, true, false, true).bEnabled);
+	Authored.Foliage.bEnabled = true; Authored.Biomass = 0; Authored.Biodiversity = 0;
+	TestFalse(TEXT("Prototype flag cannot exempt an authored biological palette from habitat"),
+		Policy::BuildActivationPlan(Authored, true, false, true).bEnabled);
+
+	TSet<FString> PalettePaths;
+	for (uint8 Value = 0; Value <= APSPlanetTypes::LastValue; ++Value)
+	{
+		auto Profile = Living; Profile.PlanetType = static_cast<EPlanetType>(Value);
+		const bool Supported = UAPSPlanetSurfaceProfileResolver::SupportsWorldScape(Profile.PlanetType);
+		const auto Plan = Policy::BuildActivationPlan(Profile, true, false, true);
+		TestEqual(TEXT("Every supported surface type gets an explicit test recipe; giants stay off"), Plan.bEnabled, Supported);
+		if (Supported && TestEqual(TEXT("Each prototype has one recipe"), Plan.Collections.Num(), 1))
+		{
+			const FString Path = Plan.Collections[0].ToSoftObjectPath().ToString();
+			TestFalse(TEXT("Each type owns a separately replaceable palette"), PalettePaths.Contains(Path));
+			PalettePaths.Add(Path);
+		}
+	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAPSFoliageValidatedRuntimeTest,
+    "APS.Gameplay.World.PlanetSurface.Foliage.ValidatedRuntimeScope",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FAPSFoliageValidatedRuntimeTest::RunTest(const FString& Parameters)
+{
+    using P = FAPSWorldScapeFoliagePolicy;
+    FAPSResolvedPlanetSurfaceProfile Profile;
+    Profile.Biomass = Profile.Biodiversity = 1.0f;
+    for (uint8 V = 0; V <= APSPlanetTypes::LastValue; ++V)
+    {
+        Profile.PlanetType = static_cast<EPlanetType>(V);
+        const bool Expected = Profile.PlanetType == EPlanetType::Frozen || Profile.PlanetType == EPlanetType::Forest;
+        TestEqual(TEXT("Automatic rollout only validated two types"), P::BuildRuntimeActivationPlan(Profile,2,false,false,false).bEnabled, Expected);
+        TestFalse(TEXT("Master-off always wins"), P::BuildRuntimeActivationPlan(Profile,0,false,true,false).bEnabled);
+        TestFalse(TEXT("Manual planets retain previous default"), P::BuildRuntimeActivationPlan(Profile,2,false,true,true).bEnabled);
+        TestFalse(TEXT("No orbital/menu foliage"), P::BuildRuntimeActivationPlan(Profile,2,true,true,false).bEnabled);
+        TestFalse(TEXT("Unknown mode fails closed"), P::BuildRuntimeActivationPlan(Profile,3,false,true,false).bEnabled);
+    }
+    Profile.PlanetType = EPlanetType::Frozen;
+    Profile.Foliage.bEnabled = true;
+    TestFalse(TEXT("Authored enable is not changed by automatic rollout"), P::BuildRuntimeActivationPlan(Profile,2,false,false,false).bEnabled);
+    Profile.Foliage.bEnabled = false;
+    Profile.Foliage.Collections = APSPlanetFoliagePrototype::Settings(EPlanetType::Frozen).Collections;
+    TestFalse(TEXT("Authored collection remains untouched even when disabled"), P::BuildRuntimeActivationPlan(Profile,2,false,false,false).bEnabled);
+    Profile.Foliage.Collections.Reset();
+    Profile.Biomass = Profile.Biodiversity = 0.0f;
+    TestTrue(TEXT("Mineral rock needs no biosphere"), P::BuildRuntimeActivationPlan(Profile,2,false,false,false).bEnabled);
+    Profile.PlanetType = EPlanetType::Forest;
+    TestFalse(TEXT("Automatic vegetation still respects habitat"), P::BuildRuntimeActivationPlan(Profile,2,false,false,false).bEnabled);
+    return true;
 }
 
 #endif

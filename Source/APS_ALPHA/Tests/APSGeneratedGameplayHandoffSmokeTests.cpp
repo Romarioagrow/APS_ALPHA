@@ -1,12 +1,32 @@
-#if WITH_DEV_AUTOMATION_TESTS
+#if WITH_DEV_AUTOMATION_TESTS && WITH_EDITOR
+// Rio 06.10 (packaged build): editor-only material/texture APIs inside; game targets skip this file, editor automation is unchanged.
 
 #include "Misc/AutomationTest.h"
 #include "Tests/AutomationCommon.h"
 #include "APSSharedLavaCoverageProbe.h"
+#include "APSUnifiedLavaPendingDiagnostics.h"
 #include "APSSharedTerrainLodABProbe.h"
+#include "APSWorldScapeLodBoundaryProbe.h"
+#include "APSFrozenDescentProbe.h"
+#include "APSContinuousWarpPixelProbe.h"
+#include "APSAtmosphereTailProbe.h"
+#include "APS_ALPHA/Core/Rendering/APSAtmosphereTailMaterial.h"
+#include "APSPublishedTerrainDescentAudit.h"
+#include "APSPublishedNormalBandwidthProbe.h"
+#include "APSCanonicalReliefChartAB.h"
+#include "APSCanonicalCoverageFlight.h"
+#include "APSCanonicalCoverageFar.h"
+#include "APSCanonicalSlopeAB.h"
 #include "APSWaterNormalABProbe.h"
+#include "APSWaterFlightProbe.h"
+#include "APSCloudFlightProbe.h"
+#include "APSFlightResidencyProbe.h"
+#include "APSFoliageFlightProbe.h"
+#include "APSFoliageLocomotionProbe.h"
 #include "APSLavaCoverageOrbit.h"
 #include "APSUserGreenhouseReference.h"
+#include "APSPlanetFoliageRenderedProbe.h"
+#include "APSGameplayMapReturnProbe.h"
 
 #include "APS_ALPHA/Actors/Astro/Galaxy.h"
 #include "APS_ALPHA/Actors/Astro/Planet.h"
@@ -73,6 +93,12 @@
 #include "Misc/App.h"
 #include "Misc/DefaultValueHelper.h"
 #include "RenderTimer.h"
+#include "RenderCommandFence.h"
+#include "MaterialShared.h"
+#include "LocalVertexFactory.h"
+#if WITH_EDITOR
+#include "ShaderCompiler.h"
+#endif
 #include "EngineUtils.h"
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/SpringArmComponent.h"
@@ -96,6 +122,35 @@
 
 namespace APSGeneratedGameplayHandoffSmokeTests
 {
+	static bool IsGenericPublishedTerrainRoute(bool bPublished, bool bWater, bool bFoliage, bool bCloud, bool bResidency)
+	{
+		return bPublished && !bWater && !bFoliage && !bCloud && !bResidency;
+	}
+
+	static bool UsesGenericPublishedTerrainRoute()
+	{
+		return FParse::Param(FCommandLine::Get(), TEXT("APSProbeSurfaceUnificationFlight"))
+			&& IsGenericPublishedTerrainRoute(APSSharedTerrainLodAB::UsesPublishedFlight(),
+			APSWaterFlight::Requested(), APSFoliageFlightProbe::Requested(),
+			APSCloudFlightProbe::Requested(), APSFlightResidencyProbe::Requested());
+	}
+
+	static bool ResolveGenericPublishedTerrainFamily(const FString& Name, EPlanetType& Out)
+	{
+		const UEnum* Types = StaticEnum<EPlanetType>();
+		if (!Types) return false;
+		for (uint8 Value = 0; Value <= APSPlanetTypes::LastValue; ++Value)
+		{
+			const auto Type = static_cast<EPlanetType>(Value);
+			if (APSPlanetTypes::IsSelectable(Type)
+				&& UAPSPlanetSurfaceProfileResolver::SupportsWorldScape(Type)
+				&& UAPSPlanetSurfaceProfileResolver::GetArchetypeForType(Type) != EAPSPlanetSurfaceArchetype::Magmatic
+				&& Name.Equals(Types->GetNameStringByValue(Value), ESearchCase::IgnoreCase))
+			{ Out = Type; return true; }
+		}
+		return false;
+	}
+
 	// Same read-only SetupView sampling as APSStellarFinalPostprocessTrace, scoped
 	// to this test's actual game world. No camera, exposure or light overrides.
 	class FSurfaceDiagnosticView final : public FWorldSceneViewExtension
@@ -124,6 +179,31 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 	constexpr double WholeTestTimeoutSeconds = 150.0;
 	constexpr double ScreenshotTimeoutSeconds = 10.0;
 	constexpr double PhysicalSurfaceTimeoutSeconds = 30.0;
+	// A cold lava MIC can legitimately spend up to 180s in the production starter
+	// continuation. Observe that one bounded interval separately; it must not eat
+	// the ordinary geometry/capture budget or extend unrelated test steps.
+	struct FUnifiedStarterWaitBudget
+	{
+		static constexpr double TimeoutSeconds = 185.0;
+		void Begin(double Now)
+		{
+			if (!bStarted) { StartSeconds = Now; bStarted = true; }
+		}
+		void Complete(double Now)
+		{
+			if (bStarted && !bCompleted) { EndSeconds = Now; bCompleted = true; }
+		}
+		double Elapsed(double Now) const
+		{
+			return bStarted ? FMath::Max(0.0, (bCompleted ? EndSeconds : Now) - StartSeconds) : 0.0;
+		}
+		double ExcludedFromWholeTest(double Now) const
+		{
+			return FMath::Min(TimeoutSeconds, Elapsed(Now));
+		}
+		bool bStarted{false}, bCompleted{false};
+		double StartSeconds{0.0}, EndSeconds{0.0};
+	};
 	constexpr double CleanupTimeoutSeconds = 20.0;
 	constexpr double MinimumNonBlackPixelRatio = 0.005;
 	constexpr double MinimumBrightnessVariance = 4.0;
@@ -872,10 +952,19 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				TestStartSeconds = Now;
 				StepStartSeconds = Now;
 			}
-			if (Step != EStep::Cleanup && Now - TestStartSeconds > WholeTestTimeoutSeconds)
+			const double ExcludedStarterWait = UnifiedStarterWait.ExcludedFromWholeTest(Now);
+			// Explicit regression travel and WarpPixel preparation get fixed allowances.
+			// Ordinary handoff/physical-surface/cleanup timeout contracts stay intact.
+			const double ActiveTimeout = WholeTestTimeoutSeconds
+				+ (APSCanonicalCoverageFlight::Requested() ? APSCanonicalCoverageFlight::PreparationSeconds : 0.0)
+				+ (bDiagnosticFrozenDescent ? (APSCanonicalReliefChartAB::Requested()
+					? APSCanonicalReliefChartAB::WholeTestAllowanceSeconds : APSFrozenDescentProbe::DurationSeconds) : 0.0)
+				+ APSContinuousWarpPixelProbe::PreparationAllowance(APSContinuousWarpPixelProbe::Requested());
+			if (Step != EStep::Cleanup && Now - TestStartSeconds - ExcludedStarterWait > ActiveTimeout)
 			{
 				return Fail(FString::Printf(
-					TEXT("150-second timeout at step %d"), static_cast<int32>(Step)));
+					TEXT("%.0f-second active timeout at step %d (bounded starter wait excluded %.3fs)"),
+					ActiveTimeout, static_cast<int32>(Step), ExcludedStarterWait));
 			}
 
 			UWorld* World = AutomationCommon::GetAnyGameWorld();
@@ -889,6 +978,12 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				return UpdateWaitForGameplayTravel(World, Now);
 			case EStep::DiagnosticSurfaceFrames:
 				return UpdateDiagnosticSurfaceFrames(World, Now);
+			case EStep::DiagnosticFoliageDetail:
+				return UpdateDiagnosticFoliageDetail(World, Now);
+			case EStep::DiagnosticFoliageLocomotion:
+				return UpdateDiagnosticFoliageLocomotion(World, Now);
+			case EStep::DiagnosticMapReturn:
+				return UpdateDiagnosticMapReturn(World, Now);
 			case EStep::DiagnosticLavaOrbit:
 				return UpdateDiagnosticLavaOrbit(World, Now);
 			case EStep::DiagnosticLavaCoverage:
@@ -934,6 +1029,9 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			WaitForPreview,
 			WaitForGameplayTravel,
 			DiagnosticSurfaceFrames,
+			DiagnosticFoliageDetail,
+			DiagnosticFoliageLocomotion,
+			DiagnosticMapReturn,
 			DiagnosticLavaOrbit,
 			DiagnosticLavaCoverage,
 			DiagnosticOrbitOverview,
@@ -1003,6 +1101,9 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 
 		bool Fail(const FString& Message)
 		{
+			DiagnosticSlopeAB.Release();
+			DiagnosticChartAB.Release();
+			DiagnosticCoverageFlight.Release();
 			if (Step == EStep::ProjectionEvidenceStationaryHold
 				|| Step == EStep::ProjectionEvidenceControlledMove)
 			{
@@ -1029,6 +1130,7 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			}
 			RestoreWetOceanIsolationState();
 			RestoreWetOceanRenderCamera();
+			DiagnosticMapReturn.Restore();
 			if (PendingFailure.IsEmpty())
 			{
 				PendingFailure = EffectiveMessage;
@@ -1086,21 +1188,74 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			Model->PlanetType = ExpectedPlanetType;
 			Model->PlanetRadius = 6371.0;
 			Model->PlanetSurfaceSeed = 424242;
+            if (bCaptureSurfaceDiagnostics && FParse::Param(FCommandLine::Get(), TEXT("APSProbeFoliageHabitable")))
+            {
+                // Ordinary generator input only; never inject biomass into the
+                // resolved profile or invent instances to satisfy foliage tests.
+                Model->PlanetHabitability = EPlanetHabitability::Habitable;
+            }
+            int32 FoliageFixtureSeed = 0;
+            if (bCaptureSurfaceDiagnostics && FParse::Value(FCommandLine::Get(), TEXT("APSProbeFoliageSeed="), FoliageFixtureSeed)
+                && FoliageFixtureSeed >= 0) Model->PlanetSurfaceSeed = FoliageFixtureSeed;
+            if (bCaptureSurfaceDiagnostics && FParse::Param(FCommandLine::Get(), TEXT("APSProbeFoliageHabitatAudit")))
+                UE_LOG(LogTemp, Display, TEXT("APS_FOLIAGE_GENERATOR_FIXTURE seed=%d habitability=%d; ordinary generator fields, no biome/profile injection"),
+                    Model->PlanetSurfaceSeed, int32(Model->PlanetHabitability));
+            if (APSGameplayMapReturnProbe::Requested() || APSWaterNormalAB::WaterReference())
+			{
+				// Explicit test fixture, never an edit of the user's saved world.
+				Model->PlanetRadius = 639.1442;
+                Model->PlanetSurfaceSeed = 487132;
+            }
+            if (APSWaterNormalAB::LavaReference())
+            {
+                // Radius/seed from HIXUZOL log; other generated fields are defaults.
+                Model->PlanetRadius = 5831.706;
+                Model->PlanetSurfaceSeed = 73875;
+            }
 			Model->SurfaceFeatureScale = 1.0;
+			FString CloudFixtureError;
+			if (!APSCloudFlightProbe::ConfigureFeatureScaleFixture(Model->CloudSettings, CloudFixtureError))
+				return Fail(CloudFixtureError);
 			Model->SurfaceReliefScale = 1.0;
 			Model->SurfaceLandCoverageScale = 1.0;
 			Model->SurfaceMountainScale = 1.0;
 			Model->SurfaceCraterScale = 1.0;
 			Model->SurfaceRoughnessScale = 1.0;
-			Model->AtmosphereHeight = 140.0;
-			Model->AtmosphereOpacity = 12.0;
-			Model->AtmosphereMultiScattering = 5.0;
-			Model->AtmosphereRayleighScattering = 8.0;
+			const bool bUseDefaultAtmosphere = bCaptureSurfaceDiagnostics
+				&& FParse::Param(FCommandLine::Get(), TEXT("APSProbeDefaultAtmosphere"));
+			const auto* AtmosphereDefaults = Model->GetClass()->GetDefaultObject<UGeneratedWorld>();
+			// Legacy strong scattering stays available for the lighting regression.
+			// Material-transition acceptance must also use ordinary generated-world
+			// defaults: opacity 12 in the legacy fixture hides most orbital detail.
+			Model->AtmosphereHeight = bUseDefaultAtmosphere ? AtmosphereDefaults->AtmosphereHeight : 140.0;
+			Model->AtmosphereOpacity = bUseDefaultAtmosphere ? AtmosphereDefaults->AtmosphereOpacity : 12.0;
+			Model->AtmosphereMultiScattering = bUseDefaultAtmosphere ? AtmosphereDefaults->AtmosphereMultiScattering : 5.0;
+			Model->AtmosphereRayleighScattering = bUseDefaultAtmosphere ? AtmosphereDefaults->AtmosphereRayleighScattering : 8.0;
+			UE_LOG(LogTemp, Display, TEXT("[APS.Handoff.AtmosphereFixture] source=%s heightKm=%g opacity=%g multi=%g rayleigh=%g"),
+				bUseDefaultAtmosphere ? TEXT("GeneratedWorldCDO") : TEXT("LegacyLightingStress"),
+				Model->AtmosphereHeight, Model->AtmosphereOpacity,
+				Model->AtmosphereMultiScattering, Model->AtmosphereRayleighScattering);
 			if (bCaptureSurfaceDiagnostics && ExpectedPlanetType == EPlanetType::Greenhouse
 				&& APSUserGreenhouseReference::IsRequested())
 			{
 				APSUserGreenhouseReference::ConfigureModel(*Model);
 			}
+
+			FString FrozenDescentError;
+			if (!APSFrozenDescentProbe::ParseCommandLine(FCommandLine::Get(),
+				DiagnosticDescentReference, bDiagnosticFrozenDescent, FrozenDescentError))
+				return Fail(FrozenDescentError);
+			if (bDiagnosticFrozenDescent && (!bCaptureSurfaceDiagnostics
+				|| !APSFrozenDescentProbe::ConfigureModel(*Model, DiagnosticDescentReference, FrozenDescentError)))
+				return Fail(FrozenDescentError.IsEmpty() ? TEXT("Frozen descent is diagnostic-only") : FrozenDescentError);
+			if (!APSFrozenDescentProbe::ParseAtmosphereBoundaryCommandLine(FCommandLine::Get(),
+				bDiagnosticFrozenAtmosphereBoundary, FrozenDescentError)) return Fail(FrozenDescentError);
+			if (bDiagnosticFrozenAtmosphereBoundary
+				&& !APSFrozenDescentProbe::ConfigureAtmosphereBoundaryModel(*Model,
+					DiagnosticDescentReference, FrozenDescentError)) return Fail(FrozenDescentError);
+			if (!APSAtmosphereTailProbe::Parse(FCommandLine::Get(), DiagnosticAtmosphereTailMode, FrozenDescentError,
+				&bDiagnosticFrozenAtmosphereGround))
+				return Fail(FrozenDescentError);
 
 			if (!Controller->OpenAstronomicalGenerationForAutomation(
 				EAstroPreviewFocus::HomePlanet, EAPSGenerationRoute::Civilization))
@@ -1347,6 +1502,7 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			}
 
 			GameplayWorld = World;
+			GameplayTravelCompletedSeconds = Now;
 			UE_LOG(LogTemp, Display,
 				TEXT("[APS.Handoff.Smoke] Travel complete in %.2fs map=%s gameMode=%s"),
 				Now - StepStartSeconds, *World->GetMapName(),
@@ -1487,6 +1643,62 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 					break;
 				}
 			}
+			if (FParse::Param(FCommandLine::Get(), TEXT("APSUnifiedLavaProbe")))
+			{
+				if (bUnifiedStarterObserved && (!IsValid(Generator)
+					|| UnifiedStarterGenerator.Get() != Generator
+					|| UnifiedStarterCommitSerial != Generator->GetGeneratedStarterCommitSerial()))
+					return Fail(TEXT("unified lava starter generator/commit serial changed during handoff"));
+				if (IsValid(Generator))
+				{
+					if (!bUnifiedStarterObserved)
+					{
+						bUnifiedStarterObserved = true;
+						UnifiedStarterGenerator = Generator;
+						UnifiedStarterCommitSerial = Generator->GetGeneratedStarterCommitSerial();
+					}
+					if (Generator->HasGeneratedStarterCommitFailed())
+						return Fail(TEXT("unified lava starter commit failed before the production surface view"));
+					if (Generator->IsGeneratedStarterCommitPending())
+					{
+						bUnifiedStarterSawPending = true;
+						UnifiedStarterWait.Begin(Now);
+#if WITH_EDITOR
+						if (Now >= UnifiedStarterNextDiagnosticSeconds)
+						{
+							APSUnifiedLavaPendingDiagnostics::Log(World->GetFeatureLevel(), UnifiedStarterWait.Elapsed(Now));
+								UnifiedStarterNextDiagnosticSeconds = Now + 5.0;
+						}
+#endif
+						const int32 Headquarters = FindActors<ASpaceHeadquarters>(World).Num();
+						const int32 StationsIncludingHeadquartersAndShipyards = FindActors<ASpaceStation>(World).Num();
+						const int32 Shipyards = FindActors<ASpaceShipyard>(World).Num();
+						const int32 Ships = FindActors<ASpaceship>(World).Num();
+						if (bUnifiedStarterCompletionReported || Headquarters || StationsIncludingHeadquartersAndShipyards
+							|| Shipyards || Ships || Generator->GetGeneratedStartingFleetSize()
+							|| Generator->GetGeneratedInfrastructureCount())
+							return Fail(FString::Printf(TEXT("unified lava pending starter mutated hierarchy HQ=%d stations=%d yards=%d ships=%d fleet=%d infrastructure=%d"),
+								Headquarters, StationsIncludingHeadquartersAndShipyards, Shipyards, Ships,
+								Generator->GetGeneratedStartingFleetSize(), Generator->GetGeneratedInfrastructureCount()));
+						return UnifiedStarterWait.Elapsed(Now) <= FUnifiedStarterWaitBudget::TimeoutSeconds ? false
+							: Fail(TEXT("unified lava starter remained pending beyond the 185-second preparation observation deadline"));
+					}
+					if (!bUnifiedStarterCompletionReported)
+					{
+						const UMainGameplayInstance* GameplayState = World->GetGameInstance()
+							? World->GetGameInstance()->GetSubsystem<UMainGameplayInstance>() : nullptr;
+						const USpawnParameters* Spawn = GameplayState ? GameplayState->SpawnParameters : nullptr;
+						if (!IsValid(Spawn) || Generator->GetGeneratedStartingFleetSize() != Spawn->StartingFleetSize
+							|| Generator->GetGeneratedInfrastructureCount() + 1 != Spawn->GetPlannedInfrastructureActorCount())
+							return Fail(TEXT("unified lava committed fleet/infrastructure counts do not match the frozen spawn fixture"));
+						bUnifiedStarterCompletionReported = true;
+						UnifiedStarterWait.Complete(Now);
+						if (UnifiedStarterWait.bStarted) StepStartSeconds = Now;
+						UE_LOG(LogTemp, Display, TEXT("[APS.UnifiedLava.StarterObserver] commit serial=%llu pendingBranch=%s pendingSeconds=%.3f geometryBudgetSeconds=30; unchanged generator/serial and fixture fleet/infrastructure counts; not a full hierarchy exactly-once proof, geometry checks still required"),
+							UnifiedStarterCommitSerial, bUnifiedStarterSawPending ? TEXT("observed") : TEXT("unobserved (already complete at first poll)"), UnifiedStarterWait.Elapsed(Now));
+					}
+				}
+			}
 			APlanet* Planet = Generator ? Generator->HomePlanet : nullptr;
 			APlanetarySurfaceGenerator* Surface = Planet ? Planet->PlanetaryEnvironmentGenerator : nullptr;
 			AWorldScapeRoot* Root = Surface ? Surface->WorldScapeRootInstance : nullptr;
@@ -1509,6 +1721,22 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			RuntimeHomePlanet = Planet;
 			RuntimeGravityPawn = Pawn;
 			const FVector Outward = (Pawn->GetActorLocation() - Root->GetActorLocation()).GetSafeNormal();
+			if (bDiagnosticFrozenDescent)
+			{
+				// This isolated route measures approach from orbit, not starter-site
+				// suitability or natural character landing. Keep those contracts in
+				// the ordinary tests; never report them as passed by this fixture.
+				FString Error;
+				if (!APSFrozenDescentProbe::ValidateRuntime(Planet, Surface, Root,
+					DiagnosticDescentReference, Error)) return Fail(Error);
+				DiagnosticDescentCaptureDirectory = FPaths::Combine(FPaths::ProjectSavedDir(),
+					TEXT("Screenshots/Windows"), FString::Printf(TEXT("FrozenDescent_%s_%s"),
+						*DiagnosticDescentReference.Name, *FGuid::NewGuid().ToString(EGuidFormats::Digits)));
+				IFileManager::Get().MakeDirectory(*DiagnosticDescentCaptureDirectory, true);
+				UE_LOG(LogTemp, Display, TEXT("[APS.FrozenDescent] start=orbital-fixture naturalLanding=not-tested starterSite=not-tested captures=%s"),
+					*DiagnosticDescentCaptureDirectory);
+				return BeginDiagnosticOrbitOverview(World, Now);
+			}
 			if (DiagnosticCaptureIndex == 0)
 			{
 				FHitResult Hit;
@@ -1534,6 +1762,25 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 					&& FMath::Abs(FootClearance) <= MaximumFootClearanceCm
 					&& Pawn->GetVelocity().Size() <= MaximumSettledSpeedCmPerSecond;
 				NaturalSurfaceSettleFrames = bGrounded ? NaturalSurfaceSettleFrames + 1 : 0;
+				if (!bDiagnosticProfileIdentityLogged || Now - StepStartSeconds > PhysicalSurfaceTimeoutSeconds)
+				{
+					bDiagnosticProfileIdentityLogged = true;
+					const auto ExpectedProfile = UAPSPlanetSurfaceProfileResolver::ResolveForBody(Planet, Surface->SurfaceProfileCatalog);
+					UE_LOG(LogTemp, Display, TEXT("[APS.Handoff.ProfileIdentity] applied=%d current=%d signature=%u storedProfile=%u expectedProfile=%u radiusKm=%.17g integerRadius=%lld scale=%.17g rootRadius=%.17g seed=%d"),
+						Surface->bSurfaceProfileApplied ? 1 : 0, Surface->IsSurfaceProfileCurrent(Planet) ? 1 : 0,
+						Surface->AppliedSurfaceProfileSignature,
+						UAPSPlanetSurfaceProfileResolver::BuildProfileSignature(Surface->ResolvedSurfaceProfile),
+						UAPSPlanetSurfaceProfileResolver::BuildProfileSignature(ExpectedProfile),
+						Planet->RadiusKM, static_cast<int64>(Planet->PlanetRadiusKM), Planet->WorldScapePresentationScale,
+						Root->PlanetScale, Planet->WorldScapeSeed);
+					for (TFieldIterator<FProperty> It(FAPSResolvedPlanetSurfaceProfile::StaticStruct()); It; ++It)
+					{
+						FString Stored, Expected;
+						It->ExportTextItem_Direct(Stored, It->ContainerPtrToValuePtr<void>(&Surface->ResolvedSurfaceProfile), nullptr, nullptr, PPF_None);
+						It->ExportTextItem_Direct(Expected, It->ContainerPtrToValuePtr<void>(&ExpectedProfile), nullptr, nullptr, PPF_None);
+						if (Stored != Expected) UE_LOG(LogTemp, Display, TEXT("[APS.Handoff.ProfileIdentity] field=%s stored=%s expected=%s"), *It->GetName(), *Stored, *Expected);
+					}
+				}
 				if (NaturalSurfaceSettleFrames < RequiredNaturalSettleFrames)
 				{
 					return Now - StepStartSeconds <= PhysicalSurfaceTimeoutSeconds ? false
@@ -1550,12 +1797,32 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				DiagnosticFrameTimesMs.Add(World->GetDeltaSeconds() * 1000.0);
 			}
 			FString NormalRangeError;
+			if (UsesGenericPublishedTerrainRoute())
+			{
+				FString TerrainError;
+				const auto Ready = PollGenericPublishedTerrain(Surface, Root, TerrainError);
+				if (Ready == EGenericTerrainReadiness::Failed) return Fail(TerrainError);
+				if (Ready == EGenericTerrainReadiness::Pending)
+					return Now - StepStartSeconds <= PhysicalSurfaceTimeoutSeconds ? false : Fail(TerrainError);
+			}
 			bool bNormalRangeChanged = false;
 			if (!ApplyDiagnosticNormalRange(Root, NormalRangeError, bNormalRangeChanged)) return Fail(NormalRangeError);
 			if (bNormalRangeChanged) return false;
 			const double Delays[3] = {0.0, 3.0, 8.0};
-			const TCHAR* Phases[3] = {TEXT("First"), TEXT("Plus3s"), TEXT("Plus8s")};
+			const TCHAR* Phases[3] = {TEXT("First"), TEXT("Plus3s"),
+                APSPlanetFoliageRendered::Requested() ? TEXT("Settled") : TEXT("Plus8s")};
+			FString FoliageError;
+            const auto FoliageReady = DiagnosticFoliageReadiness.Poll(World, Root, FoliageError);
+            if (FoliageReady == APSPlanetFoliageRendered::EReadiness::Failed) return Fail(FoliageError);
 			if (DiagnosticCaptureIndex > 0 && Now - DiagnosticFirstCaptureSeconds < Delays[DiagnosticCaptureIndex]) return false;
+            if (DiagnosticCaptureIndex == 2 && FoliageReady == APSPlanetFoliageRendered::EReadiness::Pending)
+            {
+                if (Now - DiagnosticFirstCaptureSeconds < 60.0) return false;
+                return Fail(TEXT("Foliage did not produce instances with complete shaders within 60s; no rendered acceptance"));
+            }
+            if (!APSPlanetFoliageRendered::Snapshot(World, Root, Surface->ResolvedSurfaceProfile,
+                Planet->WorldScapePresentationScale, Phases[DiagnosticCaptureIndex], DiagnosticCaptureIndex == 2, FoliageError))
+				return Fail(FoliageError);
 			if (DiagnosticCaptureIndex == 0 && ExpectedPlanetType == EPlanetType::Greenhouse
 				&& APSUserGreenhouseReference::IsRequested())
 			{
@@ -1596,7 +1863,7 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			}
 			UE_LOG(LogTemp, Display,
 				TEXT("[APS.SurfaceLighting] phase=%s elapsed=%.3fs sinceTravel=%.3fs type=%d pawn=%s viewTarget=%s pawnDrift=%.3fcm cameraDrift=%.3fcm cameraRotationDelta=%s lowerMean=%s finalPPFrameAge=%llu exposureMode=%d min=%g max=%g bias=%g physical=%d eyeFlag=%d localFlag=%d localHighlights=%g localShadows=%g screenshot=%s"),
-				Phases[DiagnosticCaptureIndex], Now - DiagnosticFirstCaptureSeconds, Now - StepStartSeconds,
+				Phases[DiagnosticCaptureIndex], Now - DiagnosticFirstCaptureSeconds, Now - GameplayTravelCompletedSeconds,
 				static_cast<int32>(ExpectedPlanetType), *Pawn->GetPathName(), *GetNameSafe(PC->GetViewTarget()),
 				FVector::Distance(Pawn->GetActorLocation(), DiagnosticInitialPawnLocation),
 				FVector::Distance(PC->PlayerCameraManager->GetCameraLocation(), DiagnosticInitialCameraLocation),
@@ -1645,6 +1912,12 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 					Count, Count ? Sum / Count : 0.0, Count ? DiagnosticFrameTimesMs[FMath::FloorToInt((Count - 1) * 0.95)] : 0.0,
 					Count ? DiagnosticFrameTimesMs.Last() : 0.0, Sum > 0.0 ? 1000.0 * Count / Sum : 0.0);
 				const bool bSharedLiquidCoverage = FParse::Param(FCommandLine::Get(), TEXT("APSSharedLiquidCoverage"));
+				if (APSGameplayMapReturnProbe::Requested())
+				{
+					FString Error;
+					if (!DiagnosticMapReturn.Begin(Generator, Now, Error)) return Fail(Error);
+					Step = EStep::DiagnosticMapReturn; StepStartSeconds = Now; return false;
+				}
 				if (bSharedLiquidCoverage || FParse::Param(FCommandLine::Get(), TEXT("APSLavaCoverage")))
 				{
 					LavaCoverageCommand = bSharedLiquidCoverage
@@ -1658,6 +1931,23 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				{
 					return BeginDiagnosticWalkRunPerf(World, Now);
 				}
+				if (APSPlanetFoliageRendered::Requested())
+				{
+					if (APSFoliageLocomotion::Requested())
+					{
+						if (!DiagnosticFoliageLocomotion.Begin(World, Root, Now, FoliageError)) return Fail(FoliageError);
+						Step = EStep::DiagnosticFoliageLocomotion; StepStartSeconds = Now; return false;
+					}
+					if (APSFoliageWalkingRendered::Requested())
+					{
+						// This mode proves natural-ground capsule contacts, not five
+						// camera close-ups. Keep the ordinary five-shape gate intact.
+						UE_LOG(LogTemp, Display, TEXT("APS_FOLIAGE_CONTACT_COMPLETE three natural camera frames + exact instance/proxy contacts; separate five-shape detail and walking/performance acceptance still required"));
+						Step = EStep::Cleanup; StepStartSeconds = Now; return false;
+					}
+					if (!DiagnosticFoliageDetail.Begin(World, Root, FoliageError)) return Fail(FoliageError);
+					Step = EStep::DiagnosticFoliageDetail; StepStartSeconds = Now; return false;
+				}
 				if (FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticOrbitOverview")))
 				{
 					return BeginDiagnosticOrbitOverview(World, Now);
@@ -1666,6 +1956,71 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				StepStartSeconds = Now;
 			}
 			return false;
+		}
+
+		bool UpdateDiagnosticMapReturn(UWorld* World, double Now)
+		{
+			if (!World || World != GameplayWorld.Get()) return Fail(TEXT("Map return lost gameplay world"));
+			FString Error;
+			const auto Result = DiagnosticMapReturn.Tick(Now,
+				[](AWorldScapeRoot* Root, APawn* Pawn, FString& Pending)
+				{
+					FVisibleWorldScapeRenderLodProof Proof;
+					if (!BuildVisibleWorldScapeRenderLod0Proof(Root, Pawn->GetActorLocation(), Proof, Pending, 0.0)) return false;
+					const FVector Direction = Root->WorldToECEF(Pawn->GetActorLocation()).ToFVector().GetSafeNormal();
+					return APSWorldScapePayloadValidation::HasExactCenteredPayloadSet(Root->WorldScapeLod,
+						Root->MaxLod, false, Direction, true)
+						&& (!Root->bOcean || APSWorldScapePayloadValidation::HasExactCenteredPayloadSet(
+							Root->WorldScapeLodOcean, Root->OceanMaxLod, true, Direction, false));
+				},
+				[this, World](const FString& Label, FString& Failure)
+				{
+					ScreenshotPath = FPaths::ProjectSavedDir()/TEXT("Screenshots/Windows")/(TEXT("APS_MapReturn_")+Label+TEXT(".png"));
+					return CaptureGameplayViewport(World, Failure, false);
+				}, Error);
+			if (Result == APSGameplayMapReturnProbe::EResult::Failed) return Fail(Error);
+			if (Result == APSGameplayMapReturnProbe::EResult::Done)
+			{
+				Step = EStep::Cleanup; StepStartSeconds = Now;
+				UE_LOG(LogTemp, Display, TEXT("[APS.MapReturn] COMPLETE: actual F10 and two scripted pawn unload/return cycles captured. Inspect frames separately; NOT ship-control or FPS acceptance."));
+			}
+			return false;
+		}
+
+		bool UpdateDiagnosticFoliageLocomotion(UWorld* World, double Now)
+		{
+			FString Error;
+			const auto Result = DiagnosticFoliageLocomotion.Tick(Now, [this, World](const TCHAR* Label, FString& Failure)
+			{
+				ScreenshotPath = FPaths::ProjectSavedDir()/TEXT("Screenshots/Windows")/FString::Printf(TEXT("APS_FoliageWalk_%s.png"), Label);
+				return CaptureGameplayViewport(World, Failure, false);
+			}, Error);
+			if (Result == APSFoliageLocomotion::EResult::Failed) return Fail(Error);
+			if (Result == APSFoliageLocomotion::EResult::Done) { DiagnosticFoliageLocomotion.Restore(); Step=EStep::Cleanup; StepStartSeconds=Now; }
+			return false;
+		}
+
+		bool UpdateDiagnosticFoliageDetail(UWorld* World, double Now)
+		{
+			if (Now - StepStartSeconds < 2.0) return false;
+			ScreenshotPath = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("Screenshots/Windows"),
+				FString::Printf(TEXT("APS_Foliage_%d_%s.png"), static_cast<int32>(ExpectedPlanetType),
+					DiagnosticFoliageDetail.CaptureLabel()));
+			if (const int32 Shape = DiagnosticFoliageDetail.ScatterDetailIndex(); Shape > 0)
+				ScreenshotPath = FPaths::GetPath(ScreenshotPath) / FString::Printf(TEXT("APS_Scatter_%d_Shape%d_%s.png"),
+					static_cast<int32>(ExpectedPlanetType), Shape, DiagnosticFoliageDetail.CaptureLabel());
+			FString Error;
+			if (!CaptureGameplayViewport(World, Error, false)) return Error.IsEmpty() ? false : Fail(Error);
+			if (!DiagnosticFoliageDetail.bLOD0Inspection)
+			{
+				if (!DiagnosticFoliageDetail.ForceLOD0(Error)) return Fail(Error);
+				StepStartSeconds = Now; return false;
+			}
+			if (DiagnosticFoliageDetail.AdvanceLeafFade(Error)) { StepStartSeconds = Now; return false; }
+			if (!Error.IsEmpty()) return Fail(Error);
+			if (DiagnosticFoliageDetail.AdvanceScatter(Error)) { StepStartSeconds = Now; return false; }
+			if (!Error.IsEmpty()) return Fail(Error);
+			DiagnosticFoliageDetail.Restore(); Step = EStep::Cleanup; StepStartSeconds = Now; return false;
 		}
 
 		struct FSurfacePerfSample
@@ -1893,6 +2248,24 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			return false;
 		}
 
+		bool SetDiagnosticDaylightAnchor(const FVector& Sun, const FString& Identity)
+		{
+			if (Sun.IsNearlyZero() || Sun.ContainsNaN() || Identity.IsEmpty()) return false;
+			// The immutable original body-relative direction keeps target settling
+			// deterministic. Never rotate a production light or alter exposure.
+			FVector Tangent = FVector::VectorPlaneProject(DiagnosticOrbitOriginalPawnOffset.GetSafeNormal(), Sun).GetSafeNormal();
+			if (Tangent.IsNearlyZero())
+			{
+				FVector Unused;
+				Sun.FindBestAxisVectors(Tangent, Unused);
+			}
+			const double Elevation = FMath::DegreesToRadians(25.0);
+			DiagnosticOrbitOutward = (Sun * FMath::Sin(Elevation) + Tangent * FMath::Cos(Elevation)).GetSafeNormal();
+			DiagnosticOrbitOutward.FindBestAxisVectors(DiagnosticOrbitTangentU, DiagnosticOrbitTangentV);
+			DiagnosticFlightDaylightTarget = Identity;
+			return !DiagnosticOrbitOutward.ContainsNaN() && !DiagnosticOrbitOutward.IsNearlyZero();
+		}
+
 		bool BeginDiagnosticOrbitOverview(UWorld* World, double Now)
 		{
 			APawn* Pawn = RuntimeGravityPawn.Get();
@@ -1908,8 +2281,23 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			DiagnosticOrbitOriginalPawnTransform = Pawn->GetActorTransform();
 			DiagnosticOrbitOriginalPawnOffset = Pawn->GetActorLocation() - Root->GetActorLocation();
 			DiagnosticOrbitOutward = DiagnosticOrbitOriginalPawnOffset.GetSafeNormal();
+			if (FParse::Param(FCommandLine::Get(), TEXT("APSProbeFlightDaylight")))
+			{
+				const bool bFrozenFarDaylight = WITH_EDITOR && FApp::IsUnattended()
+					&& bDiagnosticFrozenDescent && APSCanonicalCoverageFar::Requested();
+				if ((!UsesGenericPublishedTerrainRoute() && !bFrozenFarDaylight) || !APSSharedTerrainLodAB::UsesPublishedFlight())
+					return Fail(TEXT("Daylight observer requires generic published terrain or explicit unattended Frozen CoverageFar"));
+				const auto* Stellar = World->GetSubsystem<UAPSStellarVisualSubsystem>();
+				FVector Target;
+				if (!Stellar || !Stellar->GetActiveStellarTarget(Target, DiagnosticFlightDaylightTarget))
+					return Fail(TEXT("Daylight observer has no actual gameplay stellar target"));
+				const FVector Sun = (Target - Root->GetActorLocation()).GetSafeNormal();
+				if (!SetDiagnosticDaylightAnchor(Sun, DiagnosticFlightDaylightTarget)) return Fail(TEXT("Invalid daylight direction"));
+				UE_LOG(LogTemp, Display, TEXT("[APS.FieldsFlight.Daylight] target=%s outward=%s requestedElevation=25; observer-only relocation, no light/material/exposure overrides"),
+					*DiagnosticFlightDaylightTarget, *DiagnosticOrbitOutward.ToString());
+			}
 			DiagnosticOrbitOutward.FindBestAxisVectors(DiagnosticOrbitTangentU, DiagnosticOrbitTangentV);
-			const bool bWaterAB = APSWaterNormalAB::Enabled();
+			const bool bWaterAB = APSWaterNormalAB::Enabled() || APSWaterFlight::Requested();
 			if (bWaterAB)
 			{
 				FString WaterError;
@@ -1917,7 +2305,7 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				DiagnosticOrbitTangentV = FVector::CrossProduct(DiagnosticOrbitOutward, DiagnosticOrbitTangentU).GetSafeNormal();
 			}
 			FString HeightText;
-			const double MinimumHeightKm = bWaterAB ? 0.002 : FParse::Param(FCommandLine::Get(), TEXT("APSProbeMacroAB")) ? 0.1 : 10.0;
+            const double MinimumHeightKm = (bWaterAB || APSSharedTerrainLodAB::UsesOrbitalFields()) ? 0.002 : (APSSharedTerrainLodAB::UsesPublishedFlight() || FParse::Param(FCommandLine::Get(), TEXT("APSProbeMacroAB")) || APSPlanetBufferViews::Requested() || APSPlanetNormalSources::Requested()) ? 0.1 : 10.0;
 			if (FParse::Value(FCommandLine::Get(), TEXT("APSDiagnosticOrbitHeightKm="), HeightText)
 				&& (!FDefaultValueHelper::ParseDouble(HeightText, DiagnosticOrbitHeightKm)
 					|| !FMath::IsFinite(DiagnosticOrbitHeightKm) || DiagnosticOrbitHeightKm < MinimumHeightKm || DiagnosticOrbitHeightKm > 10000.0))
@@ -1956,13 +2344,30 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			DiagnosticOrbitStableFrames = 0;
 			Step = EStep::DiagnosticOrbitOverview;
 			StepStartSeconds = Now;
-			UE_LOG(LogTemp, Display, TEXT("[APS.SurfaceOrbit] BEGIN optional overview after natural +8s/optional perf; radialHeightAboveLocalGround=%.3fkm nadir then oblique55deg; cameraFOV=%.2f cameraPPWeight=%g copied unchanged; real pawn drives production streaming; no performance acceptance"),
+			UE_LOG(LogTemp, Display, TEXT("[APS.SurfaceOrbit] BEGIN start=%s radialHeightAboveLocalGround=%.3fkm nadir then oblique55deg; cameraFOV=%.2f cameraPPWeight=%g copied unchanged; real pawn drives production streaming; no performance acceptance"),
+				bDiagnosticFrozenDescent ? TEXT("orbital-fixture-natural-landing-not-tested") : TEXT("after-natural-landing"),
 				DiagnosticOrbitHeightKm, NaturalView.FOV, NaturalView.PostProcessBlendWeight);
 			return false;
 		}
 
 		void RestoreDiagnosticOrbitOverview()
 		{
+			DiagnosticSlopeAB.Release();
+			DiagnosticCoverageFlight.Release();
+			DiagnosticChartAB.Release();
+			DiagnosticContinuousWarpPixel.Restore();
+			DiagnosticAtmosphereTail.Restore();
+			for (auto& Light:DiagnosticFlightShadowLights)
+				if (Light.IsValid()) Light->SetCastShadows(true);
+			DiagnosticFlightShadowLights.Reset();
+			for (auto& Mesh:DiagnosticFlightStarShadows)
+				if (Mesh.IsValid()) Mesh->SetCastShadow(true);
+			DiagnosticFlightStarShadows.Reset();
+			if (AAtmoScape* Atmo = DiagnosticFlightHiddenAtmosphere.Get())
+				Atmo->SetActorHiddenInGame(bDiagnosticFlightOriginalAtmosphereHidden);
+			DiagnosticFlightHiddenAtmosphere.Reset();
+			DiagnosticFlightMaterial.Restore();
+			DiagnosticWaterFlight.Restore();
 			DiagnosticWaterAB.Restore();
 			DiagnosticLodAB.Restore();
 			ACameraActor* Camera = DiagnosticOrbitCamera.Get();
@@ -1997,6 +2402,602 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			bDiagnosticOrbitPawnLeased = false;
 		}
 
+		enum class EGenericTerrainReadiness : uint8 { Pending, Ready, Failed };
+
+		EGenericTerrainReadiness PollGenericPublishedTerrain(APlanetarySurfaceGenerator* Surface,
+			AWorldScapeRoot* Root, FString& Error)
+		{
+			auto Reject = [&Error](const TCHAR* Why)
+			{ Error = Why; return EGenericTerrainReadiness::Failed; };
+			if (!IsValid(Surface) || !IsValid(Root) || !Root->GetWorld()
+				|| Surface->ResolvedSurfaceProfile.PlanetType != ExpectedPlanetType)
+				return Reject(TEXT("Generic published terrain lost its actual resolved family/root"));
+			const auto& Profile = Surface->ResolvedSurfaceProfile;
+			const TCHAR* ExpectedParent = APSSharedTerrainMaterial::TemplatePath(Profile);
+			const bool bContinuous = FCString::Strcmp(ExpectedParent, APSTerrainContinuityMaterial::TemplatePath) == 0;
+			auto* Material = Cast<UMaterialInstanceDynamic>(Root->TerrainMaterial.DefaultMaterial);
+			if (!APSTerrainContinuityMaterial::Enabled() || !IsValid(Material)
+				|| Material != Surface->ResolvedTerrainMaterialInstance || !IsValid(Material->Parent.Get())
+				|| Material->Parent->GetPathName() != ExpectedParent || !APSSharedTerrainMaterial::IsSharedStack(Material)
+				|| Material->GetMaterial()->GetPathName() != (bContinuous ? APSTerrainContinuityMaterial::MasterPath : APSSharedTerrainMaterial::MasterPath())
+				|| Root->Terrain_MakeMaterialInstance || !Root->TerrainMaterial.MaterialsLod.IsEmpty())
+				return Reject(TEXT("Generic published terrain lost the policy-selected exact material binding"));
+			if (bContinuous) for (const TCHAR* Name : {TEXT("APS_OrbitalMacroMode"), TEXT("APS_NormalMacroWarpMode")})
+			{
+				const float ExpectedMode = FCString::Strcmp(Name, TEXT("APS_OrbitalMacroMode")) == 0 ? 0.0f : 1.0f;
+				float Mode = 0;
+				if (!Material->GetScalarParameterValue(FHashedMaterialParameterInfo(Name), Mode) || Mode != ExpectedMode)
+					return Reject(TEXT("Generic published terrain lost original colour / accepted normal-detail policy"));
+			}
+			for (const auto* Lod : Root->WorldScapeLod) if (IsValid(Lod) && IsValid(Lod->Mesh))
+				for (int32 Index = 0; Index < Lod->Mesh->GetNumSections(); ++Index)
+					if (Lod->Mesh->GetMaterial(Index) != Material)
+						return Reject(TEXT("Generic published terrain lost the bound material on a regenerated section"));
+			const auto FeatureLevel = Root->GetWorld()->GetFeatureLevel();
+			auto* Resource = Material->GetMaterialResource(FeatureLevel);
+			const auto* Map = Resource ? Resource->GetGameThreadShaderMap() : nullptr;
+#if WITH_EDITOR
+			if (Resource && Resource->GetCompileErrors().Num())
+				return Reject(TEXT("Generic published terrain has actual bound-MID shader compile errors"));
+			// A lazy uncooked map may be renderable but incomplete. Request its
+			// own permutation once; never substitute a master or block the game thread.
+			if (Resource && Map && !Resource->IsGameThreadShaderMapComplete()
+				&& (GenericTerrainWarmMaterial.Get() != Material || GenericTerrainWarmResource != Resource))
+			{
+				GenericTerrainWarmMaterial = Material;
+				GenericTerrainWarmResource = Resource;
+				Resource->SubmitCompileJobs_GameThread(EShaderCompileJobPriority::ForceLocal);
+			}
+#endif
+			if (!Resource || !Map || !Resource->IsGameThreadShaderMapComplete()
+				|| !Map->GetMeshShaderMap(&FLocalVertexFactory::StaticType))
+			{
+				Error = FString::Printf(TEXT("Generic published terrain shader wait: parent=%s resource=%d map=%d complete=%d LocalVF=%d"),
+					ExpectedParent, Resource ? 1 : 0, Map ? 1 : 0,
+					Resource && Resource->IsGameThreadShaderMapComplete() ? 1 : 0,
+					Map && Map->GetMeshShaderMap(&FLocalVertexFactory::StaticType) ? 1 : 0);
+				return EGenericTerrainReadiness::Pending;
+			}
+			if (GenericTerrainFenceMaterial.Get() != Material || GenericTerrainFenceMap != Map)
+			{
+				Error = TEXT("Generic published terrain awaits render publication");
+				if (bGenericTerrainFenceStarted && !GenericTerrainFence.IsFenceComplete()) return EGenericTerrainReadiness::Pending;
+				GenericTerrainFenceMaterial = Material;
+				GenericTerrainFenceMap = Map;
+				bGenericTerrainBindingLogged = false;
+				bGenericTerrainFenceStarted = true;
+				GenericTerrainFence.BeginFence();
+				return EGenericTerrainReadiness::Pending;
+			}
+			if (!GenericTerrainFence.IsFenceComplete())
+			{ Error = TEXT("Generic published terrain awaits render publication"); return EGenericTerrainReadiness::Pending; }
+			if (!bGenericTerrainBindingLogged)
+			{
+				UE_LOG(LogTemp, Display, TEXT("[APS.SurfaceUnification.Binding] type=%d profile=%u candidate=%d parent=%s feature=%d complete=1 LocalVF=1 renderFence=1 noMaterialSubstitution=1"),
+					int32(Profile.PlanetType), UAPSPlanetSurfaceProfileResolver::BuildProfileSignature(Profile),
+					APSPlanetSurfaceMaterialPolicy::UnifiedRoutesEnabled() ? 1 : 0, ExpectedParent, int32(FeatureLevel));
+				bGenericTerrainBindingLogged = true;
+			}
+			return EGenericTerrainReadiness::Ready;
+		}
+
+		bool UpdateDiagnosticFieldsFlight(UWorld* World, double Now)
+		{
+			auto* Planet=RuntimeHomePlanet.Get();
+			auto* Surface=Planet ? Planet->PlanetaryEnvironmentGenerator : nullptr;
+			auto* Root=Surface ? Surface->WorldScapeRootInstance : nullptr;
+			auto* Pawn=RuntimeGravityPawn.Get();
+			auto* Camera=DiagnosticOrbitCamera.Get();
+			auto* PC=World ? World->GetFirstPlayerController() : nullptr;
+			if (!Root || !Pawn || !Camera || !PC || !PC->PlayerCameraManager
+				|| Root->bFreezeGeneration || !Root->IsActorTickEnabled())
+				return Fail(TEXT("Fields flight needs the live production root/observer"));
+			// The surface owner intentionally disables its own tick after setup;
+			// the WorldScape root, not that owner, runs terrain generation.
+			FString Error;
+			const bool bAtmosphereIsolation=FParse::Param(FCommandLine::Get(),TEXT("APSProbeAtmosphereFlight"));
+			const bool bShadowIsolation=FParse::Param(FCommandLine::Get(),TEXT("APSProbeShadowFlight"));
+			const bool bStarShadowIsolation=FParse::Param(FCommandLine::Get(),TEXT("APSProbeStarShadowFlight"));
+			if (int32(bAtmosphereIsolation)+int32(bShadowIsolation)+int32(bStarShadowIsolation)>1)
+				return Fail(TEXT("Isolate one flight variable at a time"));
+			const bool bPublished=APSSharedTerrainLodAB::UsesPublishedFlight();
+			const bool bChartAB=APSCanonicalReliefChartAB::Requested();
+			const bool bCoverageFlight=APSCanonicalCoverageFlight::Requested();
+			const bool bCoverageFar=APSCanonicalCoverageFar::Requested();
+			const bool bSlopeAB=APSCanonicalSlopeAB::Requested();
+			const double FrozenRouteDuration=bCoverageFar?APSCanonicalCoverageFar::DurationSeconds:APSFrozenDescentProbe::DurationSeconds;
+			const bool bWaterFlight=APSWaterFlight::Requested();
+			const bool bResidency=FParse::Param(FCommandLine::Get(),TEXT("APSProbeFlightResidency"));
+			const bool bFlightPerf=APSWaterFlight::Performance() || APSFlightResidencyProbe::Performance() || APSFoliageFlightProbe::Performance() || APSCloudFlightProbe::Performance();
+			if (bWaterFlight && !DiagnosticWaterFlight.Active()
+				&& !DiagnosticWaterFlight.Begin(Surface,Error)) return Fail(Error);
+			const bool bLodBoundary=APSWorldScapeLodBoundaryProbe::Requested();
+			if(bLodBoundary && (!bPublished || FParse::Param(FCommandLine::Get(),TEXT("APSProbeFlightGroundHold"))
+				|| bAtmosphereIsolation || bShadowIsolation || bStarShadowIsolation))return Fail(TEXT("LOD boundary needs isolated published terrain, no ground hold"));
+			if (APSContinuousWarpPixelProbe::Requested())
+			{
+				if (!bDiagnosticFrozenDescent || !bPublished || UsesGenericPublishedTerrainRoute())
+					return Fail(TEXT("Continuous warp-pixel candidate requires isolated Frozen descent"));
+				if (!DiagnosticContinuousWarpPixel.Active())
+				{
+					const auto Ready = DiagnosticContinuousWarpPixel.Prepare(World, Error);
+					if (Ready == APSContinuousWarpPixelProbe::EReadiness::Failed) return Fail(Error);
+					if (Ready == APSContinuousWarpPixelProbe::EReadiness::Pending)
+						return false; // Lease owns the bounded deadline from its first Prepare.
+					if (!DiagnosticContinuousWarpPixel.Begin(Surface, Error)) return Fail(Error);
+				}
+				if (!DiagnosticContinuousWarpPixel.Validate(Surface, Error)) return Fail(Error);
+			}
+			else if (bPublished && UsesGenericPublishedTerrainRoute())
+			{
+				const auto Ready = PollGenericPublishedTerrain(Surface, Root, Error);
+				if (Ready == EGenericTerrainReadiness::Failed) return Fail(Error);
+				if (Ready == EGenericTerrainReadiness::Pending)
+					return Now - StepStartSeconds <= 40.0 ? false : Fail(Error);
+			}
+			else if (bPublished)
+			{
+				auto* Material=Cast<UMaterialInstanceDynamic>(Root->TerrainMaterial.DefaultMaterial);
+				// These families still use SharedTerra in production. A foliage or
+				// ocean test must not silently opt their land into ContinuityV1.
+				const bool bSharedTerra = ((bWaterFlight || APSCloudFlightProbe::Requested() || APSFoliageFlightProbe::Requested())
+					&& ExpectedPlanetType == EPlanetType::Water)
+					|| (APSFoliageFlightProbe::Requested() && (ExpectedPlanetType == EPlanetType::Metallic
+						|| ExpectedPlanetType == EPlanetType::Crystal));
+				const bool bNativeLava = APSWaterFlight::NativeLava() && ExpectedPlanetType == EPlanetType::Volcanic;
+				const TCHAR* ExpectedTerrainParent = bNativeLava
+					? TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Shared/MI_APS_SharedMagma.MI_APS_SharedMagma") : bSharedTerra
+					? TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Shared/MI_APS_SharedTerra.MI_APS_SharedTerra")
+					: APSTerrainContinuityMaterial::TemplatePath;
+				if (!APSTerrainContinuityMaterial::Enabled() || (!bSharedTerra && !bNativeLava && !APSTerrainContinuityMaterial::Allows(ExpectedPlanetType))
+					|| !Material || Material != Surface->ResolvedTerrainMaterialInstance
+					|| !Material->Parent || Material->Parent->GetPathName()!=ExpectedTerrainParent
+					|| !APSSharedTerrainMaterial::IsSharedStack(Material) || Root->Terrain_MakeMaterialInstance
+					|| !Root->TerrainMaterial.MaterialsLod.IsEmpty())return Fail(TEXT("Published flight lost the production material binding"));
+				if (!bSharedTerra && !bNativeLava) for(const TCHAR* Name:{TEXT("APS_OrbitalMacroMode"),TEXT("APS_NormalMacroWarpMode")})
+				{
+					const float ExpectedMode=FCString::Strcmp(Name,TEXT("APS_OrbitalMacroMode"))==0?0.0f:1.0f;
+					float Mode=0;if(!Material->GetScalarParameterValue(FHashedMaterialParameterInfo(Name),Mode) || Mode!=ExpectedMode)
+						return Fail(TEXT("Published material lost original colour / accepted normal-detail policy"));
+				}
+				for(const auto* Lod:Root->WorldScapeLod)if(IsValid(Lod) && IsValid(Lod->Mesh))
+					for(int32 Index=0;Index<Lod->Mesh->GetNumSections();++Index)
+						if(Lod->Mesh->GetMaterial(Index)!=Material)return Fail(TEXT("Published material lost on a regenerated section"));
+				if(DiagnosticFlightStart<0 && DiagnosticOrbitStableFrames==0)
+					UE_LOG(LogTemp,Display,TEXT("[APS.FieldsFlight.Published] type=%d parent=%s noMaterialSubstitution=1"),int32(ExpectedPlanetType),*Material->Parent->GetPathName());
+			}
+			if (DiagnosticFlightPhase==1)
+			{
+				if (bStarShadowIsolation)
+				{
+					if (DiagnosticFlightStarShadows.IsEmpty()) return Fail(TEXT("No isolated photosphere"));
+					for (auto& Mesh:DiagnosticFlightStarShadows)
+						if (!Mesh.IsValid() || Mesh->CastShadow) return Fail(TEXT("Star shadow isolation was overwritten"));
+				}
+				else if (bShadowIsolation)
+				{
+					if (DiagnosticFlightShadowLights.IsEmpty()) return Fail(TEXT("No isolated shadow light"));
+					for (auto& Light:DiagnosticFlightShadowLights)
+						if (!Light.IsValid() || Light->CastShadows) return Fail(TEXT("Shadow isolation was overwritten"));
+				}
+				else if (bAtmosphereIsolation)
+				{
+					if (!DiagnosticFlightHiddenAtmosphere.IsValid() || !DiagnosticFlightHiddenAtmosphere->IsHidden())
+						return Fail(TEXT("Atmosphere isolation lost its hidden actor"));
+				}
+				else if (!DiagnosticFlightMaterial.Validate(Root,Error)) return Fail(Error);
+			}
+			// Continuous log-altitude route, 100km -> 100m -> 100km. Camera/real
+			// pawn move every test tick; screenshots sample at 4Hz, NOT every frame.
+			const double Elapsed=DiagnosticFlightStart<0 ? 0.0 : Now-DiagnosticFlightStart;
+			auto DescentSample = bCoverageFar ? APSCanonicalCoverageFar::Route(Elapsed) : APSFrozenDescentProbe::Route(Elapsed);
+			if (bDiagnosticFrozenDescent && !DescentSample.bValid)
+				return Fail(TEXT("Frozen descent has invalid route time"));
+			const bool bGroundHold=FParse::Param(FCommandLine::Get(),TEXT("APSProbeFlightGroundHold"));
+			// A second identical leg proves repopulation after actual native retirement.
+			const double RouteElapsed = APSFoliageFlightProbe::Reentry() && Elapsed >= 21.0 ? Elapsed - 21.0 : Elapsed;
+			const double TravelElapsed=bGroundHold && RouteElapsed>8.0 ? FMath::Max(8.0,RouteElapsed-4.0) : RouteElapsed;
+			const double Leg=FMath::Clamp(TravelElapsed/8.0,0.0,2.0);
+			const double T=Leg<=1 ? Leg : 2.0-Leg;
+			const double Smooth=T*T*(3.0-2.0*T);
+			// Departure, transit hold, braking/return, then near hold. Real pawn
+			// coordinates drive streaming; this is not the ship dynamics benchmark.
+			const double ResidencyT=Elapsed<10 ? FMath::Clamp(Elapsed/10.,0.,1.) : Elapsed<18 ? 1. : FMath::Clamp(1.-(Elapsed-18.)/10.,0.,1.);
+			// Frozen's fixture can precede the ordinary Star0 -> Star1 selection.
+			// Settle only the TEST observer before any immutable chart/route starts.
+			// Keep the original 40s deadline and reject all later target changes.
+			if (bDiagnosticFrozenDescent && bCoverageFar && !DiagnosticFlightDaylightTarget.IsEmpty()
+				&& DiagnosticFlightStart < 0 && !DiagnosticCoverageFlight.Started())
+			{
+				const auto* Stellar = World->GetSubsystem<UAPSStellarVisualSubsystem>();
+				FVector Target; FString Identity;
+				if (!Stellar || !Stellar->GetActiveStellarTarget(Target, Identity))
+					return Fail(TEXT("Daylight observer lost its target before settlement"));
+				if (Identity != DiagnosticFlightDaylightTarget)
+				{
+					if (++DiagnosticDaylightReanchors > 3
+						|| !SetDiagnosticDaylightAnchor((Target - Root->GetActorLocation()).GetSafeNormal(), Identity))
+						return Fail(TEXT("Daylight observer target did not settle within three reanchors"));
+					DiagnosticOrbitStableFrames = 0;
+					UE_LOG(LogTemp, Display, TEXT("[APS.FieldsFlight.Daylight] prestartReanchor=%d target=%s outward=%s; original deadline retained"),
+						DiagnosticDaylightReanchors, *Identity, *DiagnosticOrbitOutward.ToString());
+				}
+			}
+			const FVector CloudOutward=APSCloudFlightProbe::GroundHorizon()
+				?APSCloudFlightProbe::GroundViewOutward(DiagnosticOrbitOutward,DiagnosticOrbitTangentU,Root->PlanetScale):DiagnosticOrbitOutward;
+			const FVector CloudTangent=FVector::VectorPlaneProject(DiagnosticOrbitTangentU,CloudOutward).GetSafeNormal();
+			const double Ground=bWaterFlight?double(Root->OceanHeight):Root->GetGroundHeight(Root->GetActorLocation()+CloudOutward*Root->PlanetScale,false);
+			if (bDiagnosticFrozenAtmosphereBoundary)
+			{
+				auto* Atmo = Surface->PlanetAtmosphere;
+				if (!IsValid(Atmo) || Atmo->PresentationPlanetRadiusCm > 0.0f
+					|| Atmo->PresentationAtmosphereRadiusCm > 0.0f)
+					return Fail(TEXT("Atmosphere boundary needs a live physical shell, not preview dimensions"));
+				if (DiagnosticAtmosphereTailMode >= 0)
+				{
+					if (!DiagnosticAtmosphereTail.Active())
+					{
+						const auto Ready = DiagnosticAtmosphereTail.Prepare(World, Error);
+						if (Ready == APSAtmosphereTailProbe::EReadiness::Failed) return Fail(Error);
+						if (Ready == APSAtmosphereTailProbe::EReadiness::Pending) return false;
+						if (!DiagnosticAtmosphereTail.Begin(Atmo, Error)) return Fail(Error);
+					}
+					if (!DiagnosticAtmosphereTail.Validate(Atmo, Error)) return Fail(Error);
+				}
+				if (!Atmo->GetActorScale3D().Equals(FVector::OneVector, 1.e-6)
+					|| !Root->GetActorScale3D().Equals(FVector::OneVector, 1.e-6)
+					|| FVector::Distance(Atmo->GetActorLocation(), Root->GetActorLocation()) > 1.0)
+					return Fail(TEXT("Atmosphere boundary needs concentric unit-scale physical actors"));
+				APSFrozenDescentProbe::FAtmosphereBoundaryRoute ActualRoute;
+				if (!APSFrozenDescentProbe::BuildAtmosphereBoundaryRoute(Atmo->PlanetRadius,
+					Atmo->AtmosphereHeight, (Root->PlanetScale + Ground) / 100000.0,
+					ActualRoute, Error)) return Fail(Error);
+				if (DiagnosticAtmosphereBoundaryRoute.WaypointHeightsKm.IsEmpty())
+					DiagnosticAtmosphereBoundaryRoute = ActualRoute;
+				else if (!FMath::IsNearlyEqual(ActualRoute.ShellHeightKm,
+					DiagnosticAtmosphereBoundaryRoute.ShellHeightKm, 0.00001))
+					return Fail(TEXT("Atmosphere shell or ground anchor changed during boundary route"));
+				if (!bDiagnosticFrozenAtmosphereGround)
+					DescentSample = APSFrozenDescentProbe::AtmosphereBoundaryRoute(Elapsed, DiagnosticAtmosphereBoundaryRoute);
+				if (!DescentSample.bValid) return Fail(TEXT("Invalid atmosphere boundary route sample"));
+			}
+			const bool bCloudHorizon=APSCloudFlightProbe::Horizon();
+			// Prepare the immutable coverage anchor at30.5km first. Once ready,
+			// request the static scope's pose BEFORE its first Tick/Started state.
+			const double HeightKm=bSlopeAB ? (DiagnosticCoverageFlight.Ready() ? DiagnosticSlopeAB.HeightKm() : 30.5) : bChartAB ? 9.1 : bDiagnosticFrozenDescent ? DescentSample.HeightKm : bCloudHorizon ? APSCloudFlightProbe::HorizonHeight(Planet,Ground,Elapsed,Root->OceanHeight,Root->bOcean) : bResidency ? FMath::Lerp(100.,8000.,ResidencyT*ResidencyT*(3.-2.*ResidencyT)) : bLodBoundary?APSWorldScapeLodBoundaryProbe::HeightKm(Elapsed):100.0*FMath::Pow(bGroundHold?0.00002:bWaterFlight?APSWaterFlight::NearHeightKm()/100.0:0.001,Smooth);
+			const FVector Position=Root->GetActorLocation()+CloudOutward*(Root->PlanetScale+Ground+HeightKm*100000.0);
+			const double Angle=FMath::DegreesToRadians(bSlopeAB ? APSCanonicalSlopeAB::PitchDegrees : bCoverageFar ? APSCanonicalCoverageFar::PitchDegrees : bCloudHorizon ? -3.0 : bWaterFlight ? APSWaterFlight::ViewPitchDegrees() : bDiagnosticFrozenAtmosphereGround ? 0.0 : bDiagnosticFrozenAtmosphereBoundary ? 15.0 : 55.0);
+			const double CloudYaw=bCloudHorizon ? Elapsed*2.*PI/24. : 0.;
+			const FVector ViewTangent=CloudTangent*FMath::Cos(CloudYaw)+FVector::CrossProduct(CloudOutward,CloudTangent)*FMath::Sin(CloudYaw);
+			const FVector Forward=(ViewTangent*FMath::Cos(Angle)-CloudOutward*FMath::Sin(Angle)).GetSafeNormal();
+			if (bCoverageFar)
+			{
+				double ImpactRadiusRatio=0;
+				if (!APSCanonicalCoverageFar::CenterRayHitsBody(Position-Root->GetActorLocation(),Forward,
+					Root->PlanetScale,ImpactRadiusRatio,Error)) return Fail(Error);
+			}
+			const FRotator Rotation=FRotationMatrix::MakeFromXZ(Forward,CloudOutward).Rotator();
+			FVector PawnPosition=Position-Forward*1000.0;
+			if (APSFoliageFlightProbe::Requested() && APSFoliageFlightProbe::ExpectedCollision() >= 0)
+			{
+				// The old camera-follow anchor held the pawn ~10m above terrain:
+				// real CharacterMovement reached terminal falling speed while the
+				// camera paused at2m. Land the actual capsule for this explicitly
+				// separate collision route. Do not suppress gravity/velocity/ticks.
+				auto* Capsule = FindPawnCapsule(Pawn);
+				if (!Capsule) return Fail(TEXT("Collision landing route requires the real pawn capsule"));
+				const FVector PawnUp = (CloudOutward * Root->PlanetScale - ViewTangent * 1000.).GetSafeNormal();
+				const double PawnGround = Root->GetGroundHeight(Root->GetActorLocation() + PawnUp * Root->PlanetScale, false);
+				const double CapsuleHeight = Capsule->GetScaledCapsuleHalfHeight() + .5;
+				PawnPosition = Root->GetActorLocation() + PawnUp * (Root->PlanetScale + PawnGround
+					+ FMath::Max(0., HeightKm * 100000. - 200.) + CapsuleHeight);
+			}
+			if (auto* Capsule=FindPawnCapsule(Pawn)) Capsule->SetPhysicsLinearVelocity(FVector::ZeroVector);
+			Pawn->SetActorLocation(PawnPosition,false,nullptr,ETeleportType::TeleportPhysics);
+			Camera->SetActorLocationAndRotation(Position,Rotation,false,nullptr,ETeleportType::TeleportPhysics);
+			bool bDaylightReady = true;
+			FVector DaylightKeySun = FVector::ZeroVector;
+			if (!DiagnosticFlightDaylightTarget.IsEmpty())
+			{
+				const auto* Stellar = World->GetSubsystem<UAPSStellarVisualSubsystem>();
+				FVector Target;
+				FString Identity;
+				if (!Stellar || !Stellar->GetActiveStellarTarget(Target, Identity) || Identity != DiagnosticFlightDaylightTarget)
+					return Fail(TEXT("Daylight route changed stellar target; not a valid material comparison"));
+				const FVector Sun = (Target - Position).GetSafeNormal();
+				const UDirectionalLightComponent* Key = nullptr;
+				for (auto* Light : FindActors<ADirectionalLight>(World))
+				{
+					const auto* Component = Cast<UDirectionalLightComponent>(Light->GetLightComponent());
+					if (!Component || !Component->IsVisible() || Component->bHiddenInGame || Light->IsHidden() || Component->Intensity <= 0
+						|| !Component->bAtmosphereSunLight || Component->ForwardShadingPriority != 1
+						|| Light->ActorHasTag(TEXT("APSPreviewFillLight"))
+						|| Light->ActorHasTag(TEXT("APSGameplaySurfaceFillLight"))) continue;
+					if (Key) return Fail(TEXT("Daylight route has multiple gameplay stellar keys"));
+					Key = Component;
+				}
+				const FVector KeySun = Key ? -Key->GetForwardVector() : FVector::ZeroVector;
+				DaylightKeySun = KeySun;
+				const double Incidence = FVector::DotProduct(KeySun, CloudOutward);
+				const double Alignment = FVector::DotProduct(KeySun, Sun);
+				bDaylightReady = Key && Incidence > 0.35 && Alignment > 0.999;
+				if (DiagnosticFlightStart >= 0 && !bDaylightReady)
+					return Fail(TEXT("Daylight flight lost positive settled key lighting"));
+				if (bDaylightReady && (DiagnosticFlightStart < 0 ? DiagnosticOrbitStableFrames == 11 : Now >= DiagnosticFlightNextCapture))
+					UE_LOG(LogTemp, Display, TEXT("[APS.FieldsFlight.Daylight] frame=%d key=%s incidence=%.6f alignment=%.8f intensity=%.6f"),
+						DiagnosticFlightStart < 0 ? -1 : DiagnosticFlightFrame, *GetNameSafe(Key), Incidence, Alignment, Key->Intensity);
+			}
+			int32 Presented=0,Incomplete=0;
+			for (const auto* Lod:Root->WorldScapeLod)
+			{
+				if (DiagnosticFlightStart<0 || Now>=DiagnosticFlightNextCapture)
+					Incomplete+=!APSWorldScapeLodBoundaryProbe::HasPublishedSections(Lod);
+				Presented+=IsValid(Lod) && IsValid(Lod->Mesh) && IsEffectivelyPresented(Lod->Mesh);
+			}
+			if (DiagnosticFlightStart<0)
+			{
+				const bool Ready=bDaylightReady && Planet->bWorldScapeSurfaceReady && !Root->IsHidden() && Presented>0
+					&& !Incomplete && Root->WorldScapeLodInGeneration.IsEmpty();
+				DiagnosticOrbitStableFrames=Ready ? DiagnosticOrbitStableFrames+1 : 0;
+				if ((!bChartAB || !DiagnosticChartAB.Started()) && (!bCoverageFlight || !DiagnosticCoverageFlight.Started()))
+				{
+					if (Now-StepStartSeconds>40.0) return Fail(TEXT("Fields flight initial settlement timed out"));
+					if (Now-StepStartSeconds<3.0 || DiagnosticOrbitStableFrames<12) return false;
+				}
+				if (bDiagnosticFrozenDescent && !APSFrozenDescentProbe::ValidateRuntime(
+					Planet, Surface, Root, DiagnosticDescentReference, Error)) return Fail(Error);
+				if (bChartAB)
+				{
+					const auto Result=DiagnosticChartAB.Tick(Surface,PC->PlayerCameraManager->GetCameraCacheView(),Now,
+						[&](const TCHAR* Phase,int32 Index,FString& CaptureError)
+						{
+							ScreenshotPath=FPaths::Combine(DiagnosticDescentCaptureDirectory,
+								FString::Printf(TEXT("Chart_%s_%02d.png"),Phase,Index));
+							return CaptureGameplayViewport(World,CaptureError,false,false);
+						});
+					if (Result==APSCanonicalReliefChartAB::EResult::Failed) return Fail(DiagnosticChartAB.GetError());
+					if (Result==APSCanonicalReliefChartAB::EResult::Complete)
+					{
+						RestoreDiagnosticOrbitOverview(); Step=EStep::Cleanup; StepStartSeconds=Now;
+					}
+					return false; // Static test ends here; never starts the descent clock.
+				}
+				const bool bNormalBandwidth = FParse::Param(FCommandLine::Get(), TEXT("APSProbeCanonicalNormalBandwidth"));
+				if (bCoverageFlight)
+				{
+					const auto Coverage=DiagnosticCoverageFlight.Prepare(Surface,PC->PlayerCameraManager->GetCameraCacheView(),Now,Error);
+					if(Coverage==APSCanonicalCoverageFlight::EResult::Failed)return Fail(Error);
+					if(Coverage!=APSCanonicalCoverageFlight::EResult::Ready)return false;
+				}
+				if (bSlopeAB)
+				{
+					const auto Result=DiagnosticSlopeAB.Tick(Surface,PC->PlayerCameraManager->GetCameraCacheView(),Now,
+						DiagnosticCoverageFlight,[&](const TCHAR* Height,const TCHAR* Phase,const TCHAR* Buffer,int32 Index,FString& CaptureError)
+						{
+							ScreenshotPath=FPaths::Combine(DiagnosticDescentCaptureDirectory,
+								FString::Printf(TEXT("Slope_%s_%s_%s_%02d.png"),Height,Phase,Buffer,Index));
+							return CaptureGameplayViewport(World,CaptureError,false,false);
+						});
+					if (Result==APSCanonicalSlopeAB::EResult::Failed) return Fail(DiagnosticSlopeAB.GetError());
+					if (Result==APSCanonicalSlopeAB::EResult::Complete)
+					{
+						RestoreDiagnosticOrbitOverview(); Step=EStep::Cleanup; StepStartSeconds=Now;
+					}
+					return false; //24 static frames only; never start the moving descent clock.
+				}
+				if (bNormalBandwidth && !APSPublishedNormalBandwidthProbe::Capture(Root, Error)) return Fail(Error);
+				if (!bDaylightReady) return Fail(TEXT("Daylight lost while preparing the immutable coverage; route not started"));
+				// The bounded CPU measurement is outside the flight timeline, never a performance sample.
+				DiagnosticFlightStart=(bNormalBandwidth || bCoverageFlight) ? FPlatformTime::Seconds() : Now;
+				DiagnosticFlightNextCapture=DiagnosticFlightStart;
+				DiagnosticFlightFrame=0;
+				if(bCloudHorizon)UE_LOG(LogTemp,Display,TEXT("[APS.CloudHorizon] duration24s above/inside/below holds; 360deg horizon view; no ship dynamics"));
+				if(bWaterFlight) DiagnosticWaterFlight.Start(Now);
+				if(bLodBoundary)UE_LOG(LogTemp,Display,TEXT("[APS.LodBoundary] route=2.36km-2.15km-2.36km duration22s capture8Hz; default material and live LOD; not frame-complete/performance evidence"));
+				if(bDiagnosticFrozenDescent)UE_LOG(LogTemp,Display,TEXT("[APS.FrozenDescent] begin duration=%.3f captureInterval=%.3f route=%s pitchDeg=%.1f; live LOD; body fixture, not ship/save/camera replay; sampled frames are not frame-complete proof"),FrozenRouteDuration,APSFrozenDescentProbe::CaptureIntervalSeconds,
+					bCoverageFar ? TEXT("30.5km-100km-300km-1000km-return") : bDiagnosticFrozenAtmosphereGround ? TEXT("production-height-ground-sky-30.5km-2m-30.5km") : bDiagnosticFrozenAtmosphereBoundary ? TEXT("production-height-shell-boundary-down-up") : TEXT("30.5km-2m-30.5km"), bCoverageFar ? APSCanonicalCoverageFar::PitchDegrees : bDiagnosticFrozenAtmosphereGround ? 0.0 : bDiagnosticFrozenAtmosphereBoundary ? 15.0 : 55.0);
+				if(!bLodBoundary && !bDiagnosticFrozenDescent)UE_LOG(LogTemp,Display,TEXT("[APS.FieldsFlight] begin phase=%d groundHold=%d water=%d perf=%d; live LOD, no mesh freeze; route=%s; visual captures4Hz OR no PNG during perf route"),DiagnosticFlightPhase,bGroundHold?1:0,bWaterFlight,bFlightPerf,bResidency?TEXT("100km-8000km-100km"):TEXT("100km-near-100km"));
+				return false;
+			}
+			// Do NOT wait for workers or hide incomplete sections while moving:
+			// their actual presentation is exactly what this route must reveal.
+			if(bCoverageFlight && !DiagnosticCoverageFlight.Validate(Surface,PC->PlayerCameraManager->GetCameraCacheView(),Error))return Fail(Error);
+			if(bWaterFlight) DiagnosticWaterFlight.Tick(Now,Elapsed);
+			if(!DiagnosticCloudFlight.Tick(Planet,Root,Now,Elapsed,Error))return Fail(Error);
+			if(bResidency) DiagnosticResidencyProbe.Tick(Root,Elapsed);
+			if(APSFoliageFlightProbe::Requested() && !DiagnosticFoliageFlightProbe.Tick(Root,Elapsed,HeightKm,Error)) return Fail(Error);
+			if (Now>=DiagnosticFlightNextCapture)
+			{
+				if (bDiagnosticFrozenDescent)
+				{
+					if (!APSFrozenDescentProbe::ValidateRuntime(Planet, Surface, Root, DiagnosticDescentReference, Error)) return Fail(Error);
+					if (!DiagnosticDescentAudit.Tick(Root, PC->PlayerCameraManager->GetCameraLocation(), Elapsed, DescentSample.Phase))
+						return Fail(DiagnosticDescentAudit.GetError());
+					UE_LOG(LogTemp,Display,TEXT("[APS.FrozenDescent.Route] frame=%d t=%.4f phase=%s heightKm=%.8f hold=%d waypoint=%d"),
+						DiagnosticFlightFrame,Elapsed,DescentSample.Phase,HeightKm,DescentSample.bHold,DescentSample.WaypointIndex);
+					const FMinimalViewInfo& View = PC->PlayerCameraManager->GetCameraCacheView();
+					if (bCoverageFar)
+					{
+						double Impact=0;
+						if (!APSCanonicalCoverageFar::CenterRayHitsBody(View.Location-Root->GetActorLocation(),
+							View.Rotation.Vector(),Root->PlanetScale,Impact,Error)) return Fail(Error);
+						if (!Planet->bWorldScapeSurfaceReady || Root->IsHidden() || Root->bFreezeGeneration || !Root->IsActorTickEnabled() || Presented<=0)
+							return Fail(TEXT("Far route lost actually presented native root; no forced residency repair"));
+						UE_LOG(LogTemp,Display,TEXT("[APS.CanonicalCoverageFar] frame=%d rayImpactOverRadius=%.8f rootHidden=%d presented=%d"),DiagnosticFlightFrame,Impact,Root->IsHidden(),Presented);
+						if (!DiagnosticFlightDaylightTarget.IsEmpty())
+						{
+							const FVector Relative = View.Location - Root->GetActorLocation();
+							const FVector Ray = View.Rotation.Vector();
+							const double HitDistance = -FVector::DotProduct(Relative, Ray)
+								- Root->PlanetScale * FMath::Sqrt(FMath::Max(0.0, 1.0 - Impact * Impact));
+							const double CenterIncidence = FVector::DotProduct((Relative + Ray * HitDistance).GetSafeNormal(), DaylightKeySun);
+							if (!FMath::IsFinite(CenterIncidence) || CenterIncidence <= 0.1)
+								return Fail(TEXT("Far daylight central sphere hit is not daylit; no material comparison acceptance"));
+							UE_LOG(LogTemp, Display, TEXT("[APS.FieldsFlight.Daylight.Center] frame=%d incidence=%.6f; actual GT camera sphere intersection, not every pixel/shadow proof"),
+								DiagnosticFlightFrame, CenterIncidence);
+						}
+					}
+					UE_LOG(LogTemp,Display,TEXT("[APS.FrozenDescent.View] frame=%d camera=%s rotation=%s fov=%.6f aspect=%.6f worldShift=%s; GT cache, not GPU view"),
+						DiagnosticFlightFrame,*View.Location.ToString(),*View.Rotation.ToString(),View.FOV,View.AspectRatio,
+						*World->OriginOffsetThisFrame.ToString());
+				}
+				if(bWaterFlight && !DiagnosticWaterFlight.Inspect(Error)) return Fail(Error);
+				if(bResidency)
+				{
+					const bool bTransit=Root->ActorHasTag(TEXT("APS.Surface.Transit"));
+					DiagnosticResidencySawTransit |= bTransit;
+					DiagnosticResidencySawReturn |= DiagnosticResidencySawTransit && !bTransit;
+					if(Incomplete || !Planet->bWorldScapeSurfaceReady || Root->IsHidden()) return Fail(TEXT("Residency exposed incomplete or hidden terrain"));
+					if(HeightKm<=200. && (bTransit || !Root->bGenerateCollision)) return Fail(TEXT("Residency removed near terrain/collision"));
+					UE_LOG(LogTemp,Display,TEXT("[APS.FlightResidency.Route] t=%.3f heightKm=%.3f transit=%d resolution=%d lods=%d workers=%d ramMiB=%.1f"),
+						Elapsed,HeightKm,bTransit,Root->LodResolution,Root->WorldScapeLod.Num(),Root->WorldScapeLodInGeneration.Num(),FPlatformMemory::GetStats().UsedPhysical/1048576.);
+				}
+				ScreenshotPath=FPaths::Combine(FPaths::ProjectSavedDir(),TEXT("Screenshots/Windows"),
+					FString::Printf(TEXT("APS_FieldsFlight_%d_%s_%03d.png"),int32(ExpectedPlanetType),
+						bPublished ? TEXT("Published") : DiagnosticFlightPhase ? (bAtmosphereIsolation ? TEXT("NoAtmosphere") : bStarShadowIsolation ? TEXT("NoStarShadows") : bShadowIsolation ? TEXT("NoKeyShadows") : TEXT("Candidate")) : TEXT("Native"),DiagnosticFlightFrame));
+				if (bDiagnosticFrozenDescent)
+					ScreenshotPath = FPaths::Combine(DiagnosticDescentCaptureDirectory,
+						FString::Printf(TEXT("Frame_%04d.png"), DiagnosticFlightFrame));
+				FString CaptureError;
+				if (!bFlightPerf && !CaptureGameplayViewport(World,CaptureError,false,false))
+					return CaptureError.IsEmpty() ? false : Fail(CaptureError);
+				const double Actual=(FVector::Distance(PC->PlayerCameraManager->GetCameraLocation(),Root->GetActorLocation())-Root->PlanetScale-Ground)/100000.0;
+				const FVector Observer=Root->bOverridePlayerPosition ? Root->OverridedPlayerPosition : Root->PlayerWorldPos.ToFVector();
+				if(bLodBoundary)
+				{
+					double StepCm=0;uint32 Signature=0;
+					if(!APSWorldScapeLodBoundaryProbe::PublishedSpacing(Root,StepCm,Signature))return Fail(TEXT("Cannot measure published LOD0 spacing"));
+					DiagnosticBoundaryMinStep=FMath::Min(DiagnosticBoundaryMinStep,StepCm);
+					DiagnosticBoundaryMaxStep=FMath::Max(DiagnosticBoundaryMaxStep,StepCm);
+					UE_LOG(LogTemp,Display,TEXT("[APS.LodBoundary] frame=%d t=%.3f cameraKm=%.8f observerHeightKm=%.8f actualStepCm=%.5f multiplier=%.5f signature=%u workers=%d presented=%d incomplete=%d"),
+						DiagnosticFlightFrame,Elapsed,Actual,Root->PlayerDistanceToGround/100000.,StepCm,StepCm/Root->TriangleSize,Signature,Root->WorldScapeLodInGeneration.Num(),Presented,Incomplete);
+					if(Incomplete || Presented!=Root->WorldScapeLod.Num())return Fail(TEXT("LOD boundary exposed missing/incomplete terrain; screenshot retained"));
+				}
+				UE_LOG(LogTemp,Display,TEXT("[APS.FieldsFlight] phase=%d frame=%d t=%.3f requestedKm=%.6f renderedCameraKm=%.6f presented=%d incomplete=%d workers=%d observerLagCm=%.2f GPUms=%.4f capture=%d"),
+					DiagnosticFlightPhase,DiagnosticFlightFrame,Elapsed,HeightKm,Actual,Presented,Incomplete,
+						Root->WorldScapeLodInGeneration.Num(),FVector::Distance(Observer,PawnPosition),FPlatformTime::ToMilliseconds(GGPUFrameTime),!bFlightPerf);
+				if (auto* Atmo=Surface->PlanetAtmosphere)
+				{
+					FString Passes;
+					TInlineComponentArray<UStaticMeshComponent*> Meshes;
+					Atmo->GetComponents(Meshes);
+					for (auto* Mesh:Meshes) if (IsEffectivelyPresented(Mesh)) Passes+=Mesh->GetName()+TEXT(";");
+					UE_LOG(LogTemp,Display,TEXT("[APS.FieldsFlight.Atmosphere] hidden=%d radiusKm=%g heightKm=%g opacity=%g multi=%g passes=%s"),
+						Atmo->IsHidden()?1:0,Atmo->PlanetRadius,Atmo->AtmosphereHeight,Atmo->AtmosphereOpacity,Atmo->MultiScatering,*Passes);
+					if (bDiagnosticFrozenAtmosphereBoundary)
+					{
+						const double ShellRadiusKm = double(Atmo->PlanetRadius) + double(Atmo->AtmosphereHeight);
+						const double CameraRadiusKm = FVector::Distance(PC->PlayerCameraManager->GetCameraLocation(), Atmo->GetActorLocation()) / 100000.0;
+						UE_LOG(LogTemp,Display,TEXT("[APS.FrozenAtmosphereBoundary] frame=%d shellRadiusKm=%.9f shellHeightKm=%.9f cameraRadiusKm=%.9f signedOutsideKm=%.9f centerErrorCm=%.3f passes=%s; production-height fixture, NOT exact moon optics/camera replay"),
+							DiagnosticFlightFrame,ShellRadiusKm,DiagnosticAtmosphereBoundaryRoute.ShellHeightKm,
+							CameraRadiusKm,CameraRadiusKm-ShellRadiusKm,FVector::Distance(Atmo->GetActorLocation(), Root->GetActorLocation()),*Passes);
+						for (auto* Mesh : Meshes)
+						{
+							if (!Mesh || (Mesh->GetName() != TEXT("PlanetaryAtmoMesh") && Mesh->GetName() != TEXT("SpacePlanetaryAtmoMesh"))) continue;
+							auto* MID = Cast<UMaterialInstanceDynamic>(Mesh->GetMaterial(0));
+							float ShaderRadiusCm = 0, ShaderOpacity = 0, TailMode = -1;
+							if (!MID || !MID->GetScalarParameterValue(FMaterialParameterInfo(TEXT("AtmosRadius")), ShaderRadiusCm)
+								|| !MID->GetScalarParameterValue(FMaterialParameterInfo(TEXT("AtmosOpacity")), ShaderOpacity))
+								return Fail(TEXT("Cannot read boundary shell material radius/opacity"));
+							MID->GetScalarParameterValue(FMaterialParameterInfo(APSAtmosphereTailAssets::TailParameter), TailMode);
+							float ProductionTail = -1;
+							MID->GetScalarParameterValue(FMaterialParameterInfo(APSAtmosphereTailMaterial::TailParameter), ProductionTail);
+							if (DiagnosticAtmosphereTailMode < 0 && (ProductionTail != 1.0f
+								|| !MID->GetMaterial() || MID->GetMaterial()->GetPathName() != APSAtmosphereTailMaterial::MasterPath))
+								return Fail(TEXT("Ordinary Frozen atmosphere is not bound to the installed tail master"));
+							UE_LOG(LogTemp,Display,TEXT("[APS.AtmosphereTail.Production] frame=%d mesh=%s master=%s tail=%g"),
+								DiagnosticFlightFrame,*Mesh->GetName(),*GetPathNameSafe(MID->GetMaterial()),ProductionTail);
+							UE_LOG(LogTemp,Display,TEXT("[APS.FrozenAtmosphereBoundary.Pass] frame=%d mesh=%s visible=%d hidden=%d presented=%d shaderRadiusCm=%.9g shaderOpacity=%.9g diagnosticTail=%.9g"),
+								DiagnosticFlightFrame,*Mesh->GetName(),Mesh->IsVisible(),Mesh->bHiddenInGame,IsEffectivelyPresented(Mesh),ShaderRadiusCm,ShaderOpacity,TailMode);
+						}
+						if (DiagnosticFlightFrame == 0)
+						for (auto* Mesh : Meshes)
+						{
+							auto* MID = Mesh ? Cast<UMaterialInstanceDynamic>(Mesh->GetMaterial(0)) : nullptr;
+							if (!MID) continue;
+							FString Uniforms;
+							for (const TCHAR* Key : {TEXT("AtmosRadius"),TEXT("EarthRadius"),TEXT("ScaleHeight_R"),TEXT("ScaleHeight_M"),TEXT("AtmosOpacity"),TEXT("CameraSamples"),TEXT("LightSamples"),TEXT("Mie_G"),TEXT("LightIntensity"),TEXT("AirGlowIntensity")})
+							{
+								float Value = 0;
+								if (MID->GetScalarParameterValue(FMaterialParameterInfo(Key), Value))
+									Uniforms += FString::Printf(TEXT(" %s=%.9g"),Key,Value);
+							}
+							for (const TCHAR* Key : {TEXT("coef_R"),TEXT("coef_M"),TEXT("coef_RO"),TEXT("LightPosition")})
+							{
+								FLinearColor Value;
+								if (MID->GetVectorParameterValue(FMaterialParameterInfo(Key), Value))
+									Uniforms += FString::Printf(TEXT(" %s=%s"),Key,*Value.ToString());
+							}
+							UE_LOG(LogTemp,Display,TEXT("[APS.FrozenAtmosphereBoundary.Uniforms] mesh=%s parent=%s actualMID=%s"),*Mesh->GetName(),*GetPathNameSafe(MID->Parent),*Uniforms);
+							if (UStaticMesh* Geometry = Mesh->GetStaticMesh())
+								UE_LOG(LogTemp,Display,TEXT("[APS.FrozenAtmosphereBoundary.Geometry] mesh=%s asset=%s lods=%d lod0Vertices=%d lod0Triangles=%d scale=%s bounds=%s"),
+									*Mesh->GetName(),*Geometry->GetPathName(),Geometry->GetNumLODs(),
+									Geometry->GetNumLODs()>0?Geometry->GetNumVertices(0):0,Geometry->GetNumLODs()>0?Geometry->GetNumTriangles(0):0,
+									*Mesh->GetComponentScale().ToString(),*Geometry->GetBounds().BoxExtent.ToString());
+						}
+					}
+				}
+				++DiagnosticFlightFrame; DiagnosticFlightNextCapture=Now+(bDiagnosticFrozenDescent?APSFrozenDescentProbe::CaptureIntervalSeconds:bFlightPerf?1.0:bLodBoundary?0.125:0.25);
+			}
+			if (Elapsed<(bDiagnosticFrozenDescent?FrozenRouteDuration:bCloudHorizon?24.0:APSFoliageFlightProbe::Reentry()?42.0:bResidency?33.0:bLodBoundary?22.0:bGroundHold?21.0:17.0)) return false;
+			if(bResidency && !APSFlightResidencyProbe::Disabled() && (!DiagnosticResidencySawTransit || !DiagnosticResidencySawReturn)) return Fail(TEXT("Residency route did not complete near-transit-near ownership handoffs"));
+			if(bResidency && APSFlightResidencyProbe::Disabled() && DiagnosticResidencySawTransit) return Fail(TEXT("Residency OFF route entered transit"));
+			if(bResidency && !DiagnosticResidencyProbe.Finish()) return Fail(TEXT("Residency frame data missing"));
+			if(APSFoliageFlightProbe::Requested() && !DiagnosticFoliageFlightProbe.Finish(Error)) return Fail(Error);
+			if(bLodBoundary && DiagnosticBoundaryMaxStep<FMath::Max(1.,DiagnosticBoundaryMinStep)*1.8)
+				return Fail(TEXT("LOD boundary route did not observe the actual spacing change"));
+			if (bWaterFlight && !DiagnosticWaterFlight.Finish(Error)) return Fail(Error);
+			if(!DiagnosticCloudFlight.Finish(Error))return Fail(Error);
+			if (bPublished) { RestoreDiagnosticOrbitOverview(); Step=EStep::Cleanup; return false; }
+			if (DiagnosticFlightPhase==0)
+			{
+				if (bStarShadowIsolation)
+				{
+					for (auto* Star:FindActors<AStar>(World))
+						if (IsValid(Star->StarMesh) && Star->StarMesh->CastShadow)
+						{
+							UE_LOG(LogTemp,Display,TEXT("[APS.FieldsFlight.StarShadow] star=%s distanceKm=%.3f radiusKm=%.3f visible=%d"),
+								*Star->GetName(),FVector::Distance(Star->StarMesh->Bounds.Origin,Position)/100000.0,
+								Star->StarMesh->Bounds.SphereRadius/100000.0,IsEffectivelyPresented(Star->StarMesh)?1:0);
+							DiagnosticFlightStarShadows.Add(Star->StarMesh);
+							Star->StarMesh->SetCastShadow(false);
+						}
+					if (DiagnosticFlightStarShadows.IsEmpty()) return Fail(TEXT("No shadow-casting photosphere to isolate"));
+					UE_LOG(LogTemp,Display,TEXT("[APS.FieldsFlight] second phase suppresses photosphere shadows only; key still casts terrain/object shadows; star appearance unchanged"));
+				}
+				else if (bShadowIsolation)
+				{
+					for (auto* Light:FindActors<ADirectionalLight>(World))
+						if (auto* Component=Cast<UDirectionalLightComponent>(Light->GetLightComponent()))
+						{
+							UE_LOG(LogTemp,Display,TEXT("[APS.FieldsFlight.Shadow] light=%s visible=%d cast=%d dir=%s CSM=%g far=%g DF=%g"),
+								*Light->GetName(),Component->IsVisible()?1:0,Component->CastShadows?1:0,*Component->GetDirection().ToCompactString(),
+								Component->DynamicShadowDistanceMovableLight,Component->FarShadowDistance,Component->DistanceFieldShadowDistance);
+							if (Component->CastShadows && Component->IsVisible())
+							{
+								DiagnosticFlightShadowLights.Add(Component);
+								Component->SetCastShadows(false);
+							}
+						}
+					if (DiagnosticFlightShadowLights.IsEmpty()) return Fail(TEXT("No visible shadow-casting key to isolate"));
+					UE_LOG(LogTemp,Display,TEXT("[APS.FieldsFlight] second phase disables key shadows only; atmosphere, terrain material and light power unchanged; restore on cleanup"));
+				}
+				else if (bAtmosphereIsolation)
+				{
+					auto* Atmo=Surface->PlanetAtmosphere;
+					if (!IsValid(Atmo)) return Fail(TEXT("Atmosphere isolation requires its original actor"));
+					DiagnosticFlightHiddenAtmosphere=Atmo;
+					bDiagnosticFlightOriginalAtmosphereHidden=Atmo->IsHidden();
+					Atmo->SetActorHiddenInGame(true);
+					UE_LOG(LogTemp,Display,TEXT("[APS.FieldsFlight] second phase hides atmosphere only; original terrain material/light retained; restore on cleanup"));
+				}
+				else if (!DiagnosticFlightMaterial.Begin(Root,DiagnosticLodAB.PreparedTemplate(),Error)) return Fail(Error);
+				DiagnosticFlightPhase=1; DiagnosticFlightStart=-1; StepStartSeconds=Now;
+				DiagnosticOrbitStableFrames=0; return false;
+			}
+			RestoreDiagnosticOrbitOverview(); Step=EStep::Cleanup; return false;
+		}
+
 		bool UpdateDiagnosticOrbitOverview(UWorld* World, double Now)
 		{
 			APawn* Pawn = RuntimeGravityPawn.Get();
@@ -2011,18 +3012,31 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				return Fail(TEXT("orbit overview lost its production world/root/pawn or leased camera"));
 			}
 			const bool bLodAB = FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticTerrainLodAB"));
-			const bool bMacroAB = FParse::Param(FCommandLine::Get(), TEXT("APSProbeMacroAB"));
+			// Both color-only probes share capture/timing, not their material phases.
+            const bool bMacroAB = FParse::Param(FCommandLine::Get(), TEXT("APSProbeMacroAB")) || APSSharedTerrainLodAB::UsesOrbitalFields() || APSPlanetBufferViews::Requested() || APSPlanetNormalSources::Requested();
 			const bool bWaterAB = APSWaterNormalAB::Enabled();
 			FString LodABError;
 			const auto LodABReadiness = bLodAB ? DiagnosticLodAB.PrepareCandidate(World, LodABError)
 				: APSSharedTerrainLodAB::ECandidateReadiness::Ready;
 			if (LodABReadiness == APSSharedTerrainLodAB::ECandidateReadiness::Failed) return Fail(LodABError);
+			if (APSSharedTerrainLodAB::UsesFieldsFlight())
+			{
+				if (LodABReadiness==APSSharedTerrainLodAB::ECandidateReadiness::Pending)
+					return Now-StepStartSeconds>40.0 ? Fail(TEXT("Fields flight shader warmup timeout")) : false;
+				return UpdateDiagnosticFieldsFlight(World,Now);
+			}
 			const FVector Position = Root->GetActorLocation() + DiagnosticOrbitOutward * DiagnosticOrbitRadiusCm;
 			const double Angle = FMath::DegreesToRadians(DiagnosticOrbitViewIndex == 2 ? 5.0 : 55.0);
 			const FVector Forward = DiagnosticOrbitViewIndex == 0 ? -DiagnosticOrbitOutward
 				: (DiagnosticOrbitTangentU * FMath::Cos(Angle) - DiagnosticOrbitOutward * FMath::Sin(Angle)).GetSafeNormal();
 			const FVector Up = DiagnosticOrbitViewIndex == 0 ? DiagnosticOrbitTangentV : DiagnosticOrbitOutward;
-			const FRotator Rotation = FRotationMatrix::MakeFromXZ(Forward, Up).Rotator();
+			const FVector CaptureForward = bWaterAB && APSWaterNormalAB::CameraMotion()
+				? Forward.RotateAngleAxis(DiagnosticWaterAB.CameraYawDegrees(), Up) : Forward;
+            const FRotator Rotation = FRotationMatrix::MakeFromXZ(CaptureForward, Up).Rotator();
+            // Move the lens only. Keep the observer and frozen submitted mesh
+            // stationary, isolating camera-origin precision from streaming.
+            const FVector CapturePosition = Position + FVector::CrossProduct(Up, Forward).GetSafeNormal()
+                * (bWaterAB ? DiagnosticWaterAB.CameraTranslationCm() : 0.0);
 			// Keep the real pawn ten metres behind the lens, out of both overview
 			// frames, without changing its visibility or any terrain visibility.
 			const FVector PawnPosition = Position - Forward * 1000.0;
@@ -2036,7 +3050,7 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			{
 				return Fail(TEXT("orbit overview pawn placement failed"));
 			}
-			Camera->SetActorLocationAndRotation(Position, Rotation, false, nullptr, ETeleportType::TeleportPhysics);
+            Camera->SetActorLocationAndRotation(CapturePosition, Rotation, false, nullptr, ETeleportType::TeleportPhysics);
 			const FVector Observer = Root->bOverridePlayerPosition ? Root->OverridedPlayerPosition : Root->PlayerWorldPos.ToFVector();
 			const double ObserverDelta = FVector::Distance(Observer, PawnPosition);
 			int32 IncompleteLods = 0;
@@ -2055,7 +3069,7 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				&& Root->WorldScapeLodInGeneration.Num() == 0 && Root->WorldScapeLod.Num() >= Root->MaxLod
 				&& IncompleteLods == 0 && PresentedLods > 0 && ObserverDelta < 1000.0
 				&& (!bWaterAB || APSWaterNormalAB::IsSettled(Surface))
-				&& FVector::Distance(PC->PlayerCameraManager->GetCameraLocation(), Position) < 1000.0
+                && FVector::Distance(PC->PlayerCameraManager->GetCameraLocation(), CapturePosition) < (APSWaterNormalAB::CameraTranslation() ? 0.1 : 1000.0)
 				&& PC->PlayerCameraManager->GetCameraRotation().Equals(Rotation, 0.1f);
 			DiagnosticOrbitStableFrames = bReady ? DiagnosticOrbitStableFrames + 1 : 0;
 			if (bMacroAB && bReady && DiagnosticLodAB.IsActive() && Now - StepStartSeconds >= 1.0
@@ -2095,6 +3109,10 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 				StepStartSeconds = Now; DiagnosticOrbitStableFrames = 0; return false;
 			}
 			if (bWaterAB && !DiagnosticWaterAB.Validate(LodABError)) return Fail(LodABError);
+			if (bWaterAB && APSWaterNormalAB::CameraMotion())
+                UE_LOG(LogTemp, Display, TEXT("[APS.CoastMotion] phase=%s yawDeg=%.3f translateCm=%.3f pawn=%s camera=%s actualCamera=%s generationFrozen=1 payloadsUnchanged=1 nativeMaterialOnly=1"),
+                    DiagnosticWaterAB.Label(), DiagnosticWaterAB.CameraYawDegrees(), DiagnosticWaterAB.CameraTranslationCm(),
+                    *PawnPosition.ToCompactString(), *CapturePosition.ToCompactString(), *PC->PlayerCameraManager->GetCameraLocation().ToCompactString());
 			FString NormalRangeError;
 			bool bNormalRangeChanged = false;
 			if (!ApplyDiagnosticNormalRange(Root, NormalRangeError, bNormalRangeChanged)) return Fail(NormalRangeError);
@@ -7927,7 +8945,12 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 			if (!bCleanupStarted)
 			{
 				bCleanupStarted = true;
+				// Give worker drain its own bounded interval. A completed flight can
+				// already have spent more than 20 seconds in the preceding step.
+				StepStartSeconds = Now;
 				RestoreDiagnosticNormalRange();
+				DiagnosticFoliageDetail.Restore();
+				DiagnosticFoliageLocomotion.Restore();
 				LavaCoverageCommand.Reset(); // Restore the lease before WorldScape drain, including timeout/failure.
 				LavaOrbitObserver.Restore(); // Ocean/camera lease must restore before its actual observer.
 				ReleaseDiagnosticPerfInput();
@@ -8013,12 +9036,47 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 		bool bLavaCoverageOrbit{false};
 		bool bSharedLiquidCoverageOrbit{false};
 		APSLavaCoverageOrbit::FObserver LavaOrbitObserver;
+		APSGameplayMapReturnProbe::FProbe DiagnosticMapReturn;
 		TSharedPtr<IAutomationLatentCommand> LavaCoverageCommand;
 		APSSharedTerrainLodAB::FLease DiagnosticLodAB;
+		APSSharedTerrainLodAB::FLiveMaterialLease DiagnosticFlightMaterial;
+		TWeakObjectPtr<UMaterialInstanceDynamic> GenericTerrainWarmMaterial, GenericTerrainFenceMaterial;
+		const FMaterialResource* GenericTerrainWarmResource{nullptr};
+		const FMaterialShaderMap* GenericTerrainFenceMap{nullptr};
+		FRenderCommandFence GenericTerrainFence;
+		bool bGenericTerrainFenceStarted{false}, bGenericTerrainBindingLogged{false};
+		TWeakObjectPtr<AAtmoScape> DiagnosticFlightHiddenAtmosphere;
+		TArray<TWeakObjectPtr<UDirectionalLightComponent>> DiagnosticFlightShadowLights;
+		TArray<TWeakObjectPtr<UStaticMeshComponent>> DiagnosticFlightStarShadows;
+		bool bDiagnosticFlightOriginalAtmosphereHidden{false};
+		double DiagnosticFlightStart{-1},DiagnosticFlightNextCapture{0};
+		double DiagnosticBoundaryMinStep{DBL_MAX},DiagnosticBoundaryMaxStep{0};
+		int32 DiagnosticFlightPhase{0},DiagnosticFlightFrame{0};
+		bool bDiagnosticFrozenDescent = false;
+		bool bDiagnosticFrozenAtmosphereBoundary = false;
+		bool bDiagnosticFrozenAtmosphereGround = false;
+		APSFrozenDescentProbe::FAtmosphereBoundaryRoute DiagnosticAtmosphereBoundaryRoute;
+		APSFrozenDescentProbe::FReference DiagnosticDescentReference;
+		APSPublishedTerrainDescentAudit::FAudit DiagnosticDescentAudit;
+		APSContinuousWarpPixelProbe::FLease DiagnosticContinuousWarpPixel;
+		APSCanonicalReliefChartAB::FLease DiagnosticChartAB;
+		APSCanonicalCoverageFlight::FLease DiagnosticCoverageFlight;
+		APSCanonicalSlopeAB::FScope DiagnosticSlopeAB;
+		int32 DiagnosticAtmosphereTailMode = -1;
+		APSAtmosphereTailProbe::FLease DiagnosticAtmosphereTail;
+		FString DiagnosticDescentCaptureDirectory;
 		APSWaterNormalAB::FLease DiagnosticWaterAB;
+		APSWaterFlight::FProbe DiagnosticWaterFlight;
+		APSCloudFlightProbe::FProbe DiagnosticCloudFlight;
+		bool DiagnosticResidencySawTransit=false, DiagnosticResidencySawReturn=false;
+		APSFlightResidencyProbe::FProbe DiagnosticResidencyProbe;
+		APSFoliageFlightProbe::FProbe DiagnosticFoliageFlightProbe;
 		TMap<TWeakObjectPtr<UMaterialInstanceDynamic>, FVector2D> DiagnosticNormalRangeOriginals;
 		TSharedPtr<FSurfaceDiagnosticView, ESPMode::ThreadSafe> DiagnosticView;
 		int32 DiagnosticCaptureIndex{0};
+		APSPlanetFoliageRendered::FReadiness DiagnosticFoliageReadiness;
+		APSPlanetFoliageRendered::FDetailView DiagnosticFoliageDetail;
+		APSFoliageLocomotion::FProbe DiagnosticFoliageLocomotion;
 		int32 DiagnosticOrbitSettleFrames{0};
 		int32 DiagnosticPerfSkipFrames{0};
 		double DiagnosticFirstCaptureSeconds{0.0};
@@ -8034,6 +9092,8 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 		FVector DiagnosticOrbitOutward{FVector::ZeroVector};
 		FVector DiagnosticOrbitTangentU{FVector::ZeroVector};
 		FVector DiagnosticOrbitTangentV{FVector::ZeroVector};
+		FString DiagnosticFlightDaylightTarget;
+		int32 DiagnosticDaylightReanchors{0};
 		double DiagnosticOrbitRadiusCm{0.0};
 		int32 DiagnosticOrbitViewIndex{0};
 		int32 DiagnosticOrbitStableFrames{0};
@@ -8056,11 +9116,19 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 		bool bPerfMoveOwned{false}, bPerfSprintOwned{false};
 		EStep Step{EStep::OpenGenerator};
 		double TestStartSeconds{0.0};
+		double GameplayTravelCompletedSeconds{0.0};
 		double StepStartSeconds{0.0};
 		TWeakObjectPtr<UWorld> MenuWorld;
 		TWeakObjectPtr<UWorld> GameplayWorld;
 		TWeakObjectPtr<AAstroGenerator> PreviewGenerator;
 		TWeakObjectPtr<AAstroGenerator> RuntimeGenerator;
+		TWeakObjectPtr<AAstroGenerator> UnifiedStarterGenerator;
+		uint64 UnifiedStarterCommitSerial{0};
+		bool bUnifiedStarterObserved{false};
+		bool bUnifiedStarterSawPending{false};
+		bool bUnifiedStarterCompletionReported{false};
+		FUnifiedStarterWaitBudget UnifiedStarterWait;
+		double UnifiedStarterNextDiagnosticSeconds{0.0};
 		TWeakObjectPtr<APlanet> RuntimeHomePlanet;
 		TWeakObjectPtr<APawn> RuntimeGravityPawn;
 		TWeakObjectPtr<ASpaceStation> RuntimeStation;
@@ -8189,6 +9257,7 @@ namespace APSGeneratedGameplayHandoffSmokeTests
 		bool bNaturalSurfaceLandingValidated{false};
 		bool bManualApproachObserverValidated{false};
 		int32 NaturalSurfaceSettleFrames{0};
+		bool bDiagnosticProfileIdentityLogged{false};
 		bool bCleanupStarted{false};
 	};
 }
@@ -8230,6 +9299,72 @@ bool FAPSGeneratedCivilizationWetOceanHandoffSmokeTest::RunTest(
 }
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FAPSUnifiedStarterWaitBudgetTest,
+	"APS.Gameplay.World.PlanetSurface.UnifiedLava.StarterObservationBudget",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FAPSUnifiedStarterWaitBudgetTest::RunTest(const FString& Parameters)
+{
+	using namespace APSGeneratedGameplayHandoffSmokeTests;
+	FUnifiedStarterWaitBudget Wait;
+	TestEqual(TEXT("unrelated tests get no extra time"), Wait.ExcludedFromWholeTest(900.0), 0.0);
+	Wait.Complete(50.0);
+	TestFalse(TEXT("completion without pending does not open an interval"), Wait.bStarted);
+	Wait.Begin(100.0);
+	Wait.Begin(130.0);
+	TestEqual(TEXT("polling cannot restart the pending deadline"), Wait.Elapsed(131.0), 31.0);
+	TestEqual(TEXT("only actual pending time is excluded"), Wait.ExcludedFromWholeTest(131.0), 31.0);
+	TestEqual(TEXT("production-length pending fits observation"), Wait.Elapsed(280.0), 180.0);
+	TestTrue(TEXT("stuck pending exceeds its own deadline"), Wait.Elapsed(286.0) > FUnifiedStarterWaitBudget::TimeoutSeconds);
+	TestEqual(TEXT("even a stuck pending cannot extend the whole test indefinitely"), Wait.ExcludedFromWholeTest(900.0), 185.0);
+	Wait.Complete(280.0);
+	Wait.Complete(300.0);
+	Wait.Begin(301.0);
+	TestEqual(TEXT("completion closes exclusion once"), Wait.ExcludedFromWholeTest(900.0), 180.0);
+	TestEqual(TEXT("post-commit time still counts against the original whole-test budget"),
+		450.0 - 100.0 - Wait.ExcludedFromWholeTest(450.0), 170.0);
+	TestTrue(TEXT("ordinary post-commit timeout remains enforced"),
+		450.0 - 100.0 - Wait.ExcludedFromWholeTest(450.0) > WholeTestTimeoutSeconds);
+	TestEqual(TEXT("geometry timeout was not relaxed"), PhysicalSurfaceTimeoutSeconds, 30.0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAPSGenericPublishedTerrainFamilyTest,
+	"APS.Contracts.PlanetSurface.MaterialPolicy.PublishedGameplayFamily",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FAPSGenericPublishedTerrainFamilyTest::RunTest(const FString& Parameters)
+{
+	using namespace APSGeneratedGameplayHandoffSmokeTests;
+	if (!FParse::Param(FCommandLine::Get(), TEXT("APSProbeSurfaceUnificationFlight")))
+		TestFalse(TEXT("Ordinary Published/named fixtures cannot enter the generic trial without its process opt-in"),
+			UsesGenericPublishedTerrainRoute());
+	TestEqual(TEXT("Explicit saved-ID coverage must track new enum additions"), int32(APSPlanetTypes::LastValue), 34);
+	int32 ResolvedCount = 0;
+	for (int32 Value = 0; Value <= 34; ++Value)
+	{
+		const FString Name = StaticEnum<EPlanetType>()->GetNameStringByValue(Value);
+		const bool Expected = Value != 3 && Value != 4 && Value != 5 && Value != 6
+			&& Value != 12 && Value != 19 && Value != 29 && Value != 30;
+		EPlanetType Actual = EPlanetType::Unknown;
+		const bool Resolved = ResolveGenericPublishedTerrainFamily(Name, Actual);
+		TestEqual(Name + TEXT(" generic terrain eligibility"), Resolved, Expected);
+		if (Resolved) { TestEqual(Name + TEXT(" exact type"), int32(Actual), Value); ++ResolvedCount; }
+	}
+	TestEqual(TEXT("Fourteen accepted plus thirteen newly eligible selectable types"), ResolvedCount, 27);
+	for (const TCHAR* Invalid : {TEXT(""), TEXT("Terrrestrial"), TEXT("35"), TEXT("255"), TEXT("EPlanetType::Unknown")})
+	{
+		EPlanetType Actual = EPlanetType::Frozen;
+		TestFalse(Invalid, ResolveGenericPublishedTerrainFamily(Invalid, Actual));
+		TestTrue(TEXT("Rejected family leaves output unchanged"), Actual == EPlanetType::Frozen);
+	}
+	for (int32 NamedMask = 0; NamedMask < 16; ++NamedMask) for (bool bPublished : {false, true})
+		TestEqual(TEXT("Generic terrain cannot broaden any named fixture route"),
+			IsGenericPublishedTerrainRoute(bPublished, (NamedMask & 1) != 0, (NamedMask & 2) != 0,
+				(NamedMask & 4) != 0, (NamedMask & 8) != 0), bPublished && NamedMask == 0);
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 	FAPSGeneratedSurfaceLightingDiagnosticsTest,
 	"APS.Rendered.Gameplay.GeneratedSurfaceLightingDiagnostics",
 	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
@@ -8245,7 +9380,174 @@ bool FAPSGeneratedSurfaceLightingDiagnosticsTest::RunTest(const FString& Paramet
 	const bool bSharedLiquidCoverage = FParse::Param(FCommandLine::Get(), TEXT("APSSharedLiquidCoverage"));
 	const bool bSharedLiquidCoverageOrbit = FParse::Param(FCommandLine::Get(), TEXT("APSSharedLiquidCoverageOrbit"));
 	const bool bWaterNormalAB = APSWaterNormalAB::Enabled();
-	FString UnusedWaterABValue;
+	const bool bOrbitalFields = APSSharedTerrainLodAB::UsesOrbitalFields();
+	const bool bFoliageGround = APSPlanetFoliageRendered::Requested();
+	const bool bPublishedFoliageGround = APSPlanetFoliageRendered::Published();
+	const bool bMapReturn = APSGameplayMapReturnProbe::Requested();
+	if (bMapReturn && (bFoliageGround || bUserGreenhouseReference || bLavaCoverage
+		|| bSharedLiquidCoverage || bSharedLiquidCoverageOrbit || bWaterNormalAB || bOrbitalFields
+		|| FParse::Param(FCommandLine::Get(), TEXT("nullrhi"))
+		|| FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticOrbitOverview"))
+		|| FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticTerrainLodAB"))
+		|| FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticWalkRunPerf"))))
+	{
+		AddError(TEXT("Map return requires rendered natural gameplay, without competing view/material probes"));
+		return false;
+	}
+	if (bPublishedFoliageGround && !bFoliageGround)
+	{ AddError(TEXT("Published foliage ground proof requires the natural ground probe")); return false; }
+	const auto* FoliageEnable = IConsoleManager::Get().FindConsoleVariable(TEXT("aps.WorldScapeFoliage.Enable"));
+	const auto* FoliagePrototype = IConsoleManager::Get().FindConsoleVariable(TEXT("aps.WorldScapeFoliage.Prototype"));
+	const auto* FoliageScatter = IConsoleManager::Get().FindConsoleVariable(TEXT("aps.WorldScapeFoliage.SurfaceScatter"));
+	const bool bSingleFoliageTrial = FoliageEnable && FoliagePrototype && FoliageScatter
+		&& FoliageEnable->GetInt() == 1
+		&& ((FoliagePrototype->GetInt() == 1 && FoliageScatter->GetInt() == 0)
+			|| (FoliagePrototype->GetInt() == 0 && FoliageScatter->GetInt() == 1));
+	const bool bPublishedFoliageSettings = FoliageEnable && FoliagePrototype && FoliageScatter
+		&& FoliageEnable->GetInt() == 2 && FoliagePrototype->GetInt() == 0 && FoliageScatter->GetInt() == 2;
+	if (bFoliageGround && (bOrbitalFields || bWaterNormalAB || bLavaCoverage || bSharedLiquidCoverage
+		|| bSharedLiquidCoverageOrbit || FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticOrbitOverview"))
+		|| (bPublishedFoliageGround ? !bPublishedFoliageSettings : !bSingleFoliageTrial)))
+	{ AddError(TEXT("Foliage ground proof needs isolated natural ground: trial Enable/Prototype/Scatter=1/1/0 or 1/0/1; explicit published proof=2/0/2")); return false; }
+	const bool bNormalHexFlight = FParse::Param(FCommandLine::Get(), TEXT("APSProbeNormalHex"))
+		&& FParse::Param(FCommandLine::Get(), TEXT("APSProbeMacroAB"))
+		&& FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticTerrainLodAB"))
+		&& FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticOrbitOverview"));
+	const bool bPublishedFlight=APSSharedTerrainLodAB::UsesPublishedFlight();
+	APSFrozenDescentProbe::FReference FrozenReference;
+	bool bFrozenDescentRequested = false;
+	FString FrozenDescentError;
+	if (!APSFrozenDescentProbe::ParseCommandLine(FCommandLine::Get(), FrozenReference,
+		bFrozenDescentRequested, FrozenDescentError))
+	{ AddError(FrozenDescentError); return false; }
+	if (APSContinuousWarpPixelProbe::Requested() && !bFrozenDescentRequested)
+	{ AddError(TEXT("Continuous warp-pixel is an explicit Frozen descent candidate only")); return false; }
+	bool bFrozenAtmosphereBoundaryRequested = false;
+	if (!APSFrozenDescentProbe::ParseAtmosphereBoundaryCommandLine(FCommandLine::Get(),
+		bFrozenAtmosphereBoundaryRequested, FrozenDescentError))
+	{ AddError(FrozenDescentError); return false; }
+	if (bFrozenAtmosphereBoundaryRequested && APSContinuousWarpPixelProbe::Requested())
+	{ AddError(TEXT("Atmosphere boundary and warp-pixel are separate diagnostic comparisons")); return false; }
+	int32 AtmosphereTailMode = -1;
+	if (!APSAtmosphereTailProbe::Parse(FCommandLine::Get(), AtmosphereTailMode, FrozenDescentError))
+	{ AddError(FrozenDescentError); return false; }
+	if (APSCanonicalReliefChartAB::Requested() && (!WITH_EDITOR || !FApp::IsUnattended()
+		|| APSCanonicalCoverageFlight::Requested()
+		|| !bFrozenDescentRequested || !FrozenReference.Name.Equals(TEXT("Lidim"),ESearchCase::IgnoreCase)
+		|| APSContinuousWarpPixelProbe::Requested() || bFrozenAtmosphereBoundaryRequested || AtmosphereTailMode>=0
+		|| FParse::Param(FCommandLine::Get(),TEXT("APSProbeCanonicalNormalBandwidth"))
+		|| FParse::Param(FCommandLine::Get(),TEXT("APSProbeFarNormalAB"))
+		|| FParse::Param(FCommandLine::Get(),TEXT("APSProbeNormalHex"))))
+	{ AddError(TEXT("Canonical chart needs explicit unattended static Lidim published flight, no other material/normal/atmosphere diagnostic")); return false; }
+	if (APSCanonicalCoverageFlight::Requested() && (!WITH_EDITOR || !FApp::IsUnattended()
+		|| !bFrozenDescentRequested || !FrozenReference.Name.Equals(TEXT("Lidim"),ESearchCase::IgnoreCase)
+		|| APSCanonicalReliefChartAB::Requested() || APSContinuousWarpPixelProbe::Requested()
+		|| bFrozenAtmosphereBoundaryRequested || AtmosphereTailMode>=0
+		|| FParse::Param(FCommandLine::Get(),TEXT("APSProbeCanonicalNormalBandwidth"))
+		|| FParse::Param(FCommandLine::Get(),TEXT("APSProbeFarNormalAB"))
+		|| FParse::Param(FCommandLine::Get(),TEXT("APSProbeNormalHex"))))
+	{ AddError(TEXT("Canonical coverage requires isolated unattended Lidim published descent")); return false; }
+	bool bCoverageFarRequested=false;
+	if (!APSCanonicalCoverageFar::Parse(FCommandLine::Get(),bCoverageFarRequested,FrozenDescentError))
+	{ AddError(FrozenDescentError); return false; }
+	if (bCoverageFarRequested && (!WITH_EDITOR || !FApp::IsUnattended()
+		|| !bFrozenDescentRequested || !FrozenReference.Name.Equals(TEXT("Lidim"),ESearchCase::IgnoreCase)
+		|| APSCanonicalReliefChartAB::Requested() || APSContinuousWarpPixelProbe::Requested()
+		|| bFrozenAtmosphereBoundaryRequested || AtmosphereTailMode>=0
+		|| FParse::Param(FCommandLine::Get(),TEXT("APSProbeCanonicalNormalBandwidth"))
+		|| FParse::Param(FCommandLine::Get(),TEXT("APSProbeFarNormalAB"))
+		|| FParse::Param(FCommandLine::Get(),TEXT("APSProbeNormalHex"))))
+	{ AddError(TEXT("Coverage far route requires isolated unattended original/canonical Lidim published flight")); return false; }
+	bool bSlopeABRequested=false;
+	if (!APSCanonicalSlopeAB::Parse(FCommandLine::Get(),bSlopeABRequested,FrozenDescentError))
+	{ AddError(FrozenDescentError); return false; }
+	if (bSlopeABRequested && (!WITH_EDITOR || !FApp::IsUnattended()
+		|| !APSCanonicalCoverageFlight::Requested() || !bPublishedFlight
+		|| !bFrozenDescentRequested || !FrozenReference.Name.Equals(TEXT("Lidim"),ESearchCase::IgnoreCase)
+		|| bCoverageFarRequested || APSCanonicalReliefChartAB::Requested() || APSContinuousWarpPixelProbe::Requested()
+		|| bFrozenAtmosphereBoundaryRequested || AtmosphereTailMode>=0
+		|| APSPlanetBufferViews::Requested() || APSPlanetNormalSources::Requested()
+		|| FParse::Param(FCommandLine::Get(),TEXT("APSProbeCanonicalNormalBandwidth"))
+		|| FParse::Param(FCommandLine::Get(),TEXT("APSProbeFarNormalAB"))
+		|| FParse::Param(FCommandLine::Get(),TEXT("APSProbeNormalHex"))
+		|| FParse::Param(FCommandLine::Get(),TEXT("APSProbeAtmosphereFlight"))
+		|| FParse::Param(FCommandLine::Get(),TEXT("APSProbeShadowFlight"))
+		|| FParse::Param(FCommandLine::Get(),TEXT("APSProbeStarShadowFlight"))))
+	{ AddError(TEXT("Canonical slope A/B needs isolated unattended Lidim published coverage, no far/moving/other diagnostic modes")); return false; }
+	if (bFrozenDescentRequested && (!bPublishedFlight
+		|| !TypeName.Equals(TEXT("Frozen"), ESearchCase::IgnoreCase)
+		|| bMapReturn || bFoliageGround || bUserGreenhouseReference || bLavaCoverage
+		|| bSharedLiquidCoverage || bSharedLiquidCoverageOrbit || bWaterNormalAB
+		|| APSWaterFlight::Requested() || APSFoliageFlightProbe::Requested()
+		|| APSCloudFlightProbe::Requested() || APSFlightResidencyProbe::Requested()
+		|| APSWorldScapeLodBoundaryProbe::Requested()
+		|| FParse::Param(FCommandLine::Get(), TEXT("nullrhi"))
+		|| FParse::Param(FCommandLine::Get(), TEXT("APSProbeFlightGroundHold"))
+		|| FParse::Param(FCommandLine::Get(), TEXT("APSProbeSurfaceUnificationFlight"))
+		|| FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticWalkRunPerf"))))
+	{ AddError(TEXT("Frozen descent requires its isolated published Frozen flight with ordinary atmosphere, no competing route or material fixture")); return false; }
+	if (APSFoliageFlightProbe::Requested())
+	{
+		auto* Enable = IConsoleManager::Get().FindConsoleVariable(TEXT("aps.WorldScapeFoliage.Enable"));
+		auto* Prototype = IConsoleManager::Get().FindConsoleVariable(TEXT("aps.WorldScapeFoliage.Prototype"));
+		const bool bDefaultFoliage = FParse::Param(FCommandLine::Get(),TEXT("APSProbeFoliageFlightDefault"));
+		const bool bScatterFlight = APSFoliageFlightProbe::SurfaceScatter();
+		if (!bPublishedFlight || bFoliageGround || bWaterNormalAB || APSWaterFlight::Requested()
+			|| APSFlightResidencyProbe::Requested() || APSWorldScapeLodBoundaryProbe::Requested()
+			|| !FParse::Param(FCommandLine::Get(),TEXT("APSProbeFlightGroundHold"))
+			|| !Enable || !Prototype || !FoliageScatter || (bDefaultFoliage && bScatterFlight)
+			|| Enable->GetInt() != (bDefaultFoliage ? 2 : int32(!APSFoliageFlightProbe::Off()))
+			|| Prototype->GetInt() != int32(!APSFoliageFlightProbe::Off() && !bDefaultFoliage && !bScatterFlight)
+			|| FoliageScatter->GetInt() != (bDefaultFoliage ? 2 : int32(bScatterFlight))
+			|| !(TypeName.Equals(TEXT("Frozen"),ESearchCase::IgnoreCase) || TypeName.Equals(TEXT("Forest"),ESearchCase::IgnoreCase)
+				|| ((bDefaultFoliage || bScatterFlight) && (TypeName.Equals(TEXT("Water"),ESearchCase::IgnoreCase)
+                    || TypeName.Equals(TEXT("Oasis"),ESearchCase::IgnoreCase)
+                    || TypeName.Equals(TEXT("Metallic"),ESearchCase::IgnoreCase)
+                    || TypeName.Equals(TEXT("Crystal"),ESearchCase::IgnoreCase)
+                    || TypeName.Equals(TEXT("Terrestrial"),ESearchCase::IgnoreCase)))))
+		{ AddError(TEXT("Foliage flight needs Forest/Frozen or reviewed default/scatter family ground-hold route with isolated ON/OFF gates")); return false; }
+	}
+	if (APSWaterFlight::Requested() && (!bPublishedFlight || bWaterNormalAB || bFoliageGround
+		|| APSWorldScapeLodBoundaryProbe::Requested() || FParse::Param(FCommandLine::Get(),TEXT("APSProbeFlightGroundHold"))
+		|| !(TypeName.Equals(TEXT("Water"),ESearchCase::IgnoreCase) || TypeName.Equals(TEXT("Terrestrial"),ESearchCase::IgnoreCase) || TypeName.Equals(TEXT("Oasis"),ESearchCase::IgnoreCase)
+            || (APSWaterFlight::NativeLava() && TypeName.Equals(TEXT("Volcanic"),ESearchCase::IgnoreCase)))))
+	{ AddError(TEXT("Water flight needs explicit Water/Terrestrial/Oasis with published terrain; no other route experiment")); return false; }
+	if (bPublishedFlight && (!APSSharedTerrainLodAB::UsesFieldsFlight() || !APSTerrainContinuityMaterial::Enabled()
+		|| !FParse::Param(FCommandLine::Get(),TEXT("APSDiagnosticOrbitOverview"))
+		|| !FParse::Param(FCommandLine::Get(),TEXT("APSProbeDefaultAtmosphere"))
+		|| FParse::Param(FCommandLine::Get(),TEXT("APSDiagnosticTerrainLodAB"))
+		|| bOrbitalFields || bNormalHexFlight || bWaterNormalAB || bFoliageGround
+		|| FParse::Param(FCommandLine::Get(),TEXT("APSProbeAtmosphereFlight"))
+		|| FParse::Param(FCommandLine::Get(),TEXT("APSProbeShadowFlight"))
+		|| FParse::Param(FCommandLine::Get(),TEXT("APSProbeStarShadowFlight"))))
+	{ AddError(TEXT("Published flight requires unmodified production terrain and ordinary atmosphere"));return false; }
+	if (APSSharedTerrainLodAB::UsesFieldsFlight() && !bOrbitalFields && !bNormalHexFlight && !bPublishedFlight)
+	{
+		AddError(TEXT("Live material flight requires isolated orbital-fields or normal-hex candidate")); return false;
+	}
+	if (bOrbitalFields && (!FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticTerrainLodAB"))
+		|| !FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticOrbitOverview"))
+		|| FParse::Param(FCommandLine::Get(), TEXT("APSProbeMacroAB"))
+		|| FParse::Param(FCommandLine::Get(), TEXT("APSProbeFarNormalAB"))
+		|| FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticWalkRunPerf"))
+		|| bWaterNormalAB || bLavaCoverage || bSharedLiquidCoverage || bSharedLiquidCoverageOrbit || bUserGreenhouseReference))
+	{
+		AddError(TEXT("Orbital color fields require isolated terrain/orbit A/B; no other candidate, liquid, normal or perf override"));
+		return false;
+	}
+    FString UnusedWaterABValue;
+    if (APSWaterNormalAB::LavaReference() && (!(bWaterNormalAB && APSWaterNormalAB::GeometryOnly()) && !APSWaterFlight::NativeLava()
+        || !TypeName.Equals(TEXT("Volcanic"), ESearchCase::IgnoreCase) || APSWaterNormalAB::WaterReference()))
+    {
+        AddError(TEXT("Lava73875 reference needs Volcanic native geometry capture or native liquid flight, not Water or saved-world replay"));
+        return false;
+    }
+    if (APSWaterNormalAB::WaterReference() && (!(bWaterNormalAB && APSWaterNormalAB::GeometryOnly()) && !(APSWaterFlight::Requested() && !APSWaterFlight::NativeLava())
+        || !TypeName.Equals(TEXT("Water"), ESearchCase::IgnoreCase)))
+    {
+        AddError(TEXT("Water487132 reference needs native coastline capture or live Water flight; radius/seed match, other fields are defaults, no saved-world replay"));
+        return false;
+    }
 	if (bWaterNormalAB && (!FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticOrbitOverview"))
 		|| FParse::Param(FCommandLine::Get(), TEXT("APSDiagnosticTerrainLodAB"))
 		|| FParse::Param(FCommandLine::Get(), TEXT("APSProbeMacroAB"))
@@ -8259,7 +9561,8 @@ bool FAPSGeneratedSurfaceLightingDiagnosticsTest::RunTest(const FString& Paramet
 		|| bLavaCoverage || bSharedLiquidCoverage || bSharedLiquidCoverageOrbit || bUserGreenhouseReference
 		|| !(TypeName.Equals(TEXT("Water"), ESearchCase::IgnoreCase)
 			|| TypeName.Equals(TEXT("Terrestrial"), ESearchCase::IgnoreCase)
-			|| TypeName.Equals(TEXT("Oasis"), ESearchCase::IgnoreCase))))
+            || TypeName.Equals(TEXT("Oasis"), ESearchCase::IgnoreCase)
+            || (APSWaterNormalAB::GeometryOnly() && TypeName.Equals(TEXT("Volcanic"), ESearchCase::IgnoreCase)))))
 	{
 		AddError(TEXT("Water normal A/B requires isolated Water/Terrestrial/Oasis orbit route; no depth, terrain, lighting, coverage or perf overrides"));
 		return false;
@@ -8293,14 +9596,45 @@ bool FAPSGeneratedSurfaceLightingDiagnosticsTest::RunTest(const FString& Paramet
 		}
 		AddInfo(TEXT("[APS.GreenhouseReference] Exact user-model fixture and read-only coordinate diagnostics; natural production spawn, no relocation to reference outward, no material/geometry/light repair."));
 	}
-	if (TypeName.Equals(TEXT("Ice"), ESearchCase::IgnoreCase)) Type = EPlanetType::Ice;
-	else if ((bWaterNormalAB || FParse::Param(FCommandLine::Get(), TEXT("APSProbeMacroAB"))) && TypeName.Equals(TEXT("Oasis"), ESearchCase::IgnoreCase)) Type = EPlanetType::Oasis;
-	else if ((bWaterNormalAB || FParse::Param(FCommandLine::Get(), TEXT("APSProbeMacroAB"))) && TypeName.Equals(TEXT("Terrestrial"), ESearchCase::IgnoreCase)) Type = EPlanetType::Terrestrial;
+	if (APSGeneratedGameplayHandoffSmokeTests::UsesGenericPublishedTerrainRoute())
+	{
+		if (!APSGeneratedGameplayHandoffSmokeTests::ResolveGenericPublishedTerrainFamily(TypeName, Type))
+		{
+			AddError(TEXT("Generic published terrain flight requires a selectable nonmagmatic solid type; named liquid/foliage routes retain their own eligibility"));
+			return false;
+		}
+	}
+	else if (bFoliageGround || bMapReturn || APSFoliageFlightProbe::Requested())
+	{
+		const UEnum* Types = StaticEnum<EPlanetType>();
+		const int64 Value = Types ? Types->GetValueByNameString(TypeName) : INDEX_NONE;
+		if (Value < 0 || Value > APSPlanetTypes::LastValue
+			|| !UAPSPlanetSurfaceProfileResolver::SupportsWorldScape(EPlanetType(Value)))
+		{
+			AddError(TEXT("Foliage diagnostic requires a supported solid planet type"));
+			return false;
+		}
+		Type = EPlanetType(Value);
+	}
+	else if (bPublishedFlight && TypeName.Equals(TEXT("Terrestrial"), ESearchCase::IgnoreCase)) Type = EPlanetType::Terrestrial;
+	else if ((bFoliageGround || bNormalHexFlight || bPublishedFlight) && TypeName.Equals(TEXT("Forest"), ESearchCase::IgnoreCase)) Type = EPlanetType::Forest;
+	else if (TypeName.Equals(TEXT("Ice"), ESearchCase::IgnoreCase)) Type = EPlanetType::Ice;
+	else if ((bNormalHexFlight || bPublishedFlight) && TypeName.Equals(TEXT("Tundra"), ESearchCase::IgnoreCase)) Type = EPlanetType::Tundra;
+	else if ((bNormalHexFlight || bPublishedFlight) && TypeName.Equals(TEXT("Nordic"), ESearchCase::IgnoreCase)) Type = EPlanetType::Nordic;
+	else if ((bNormalHexFlight || bPublishedFlight) && TypeName.Equals(TEXT("Rocky"), ESearchCase::IgnoreCase)) Type = EPlanetType::Rocky;
+	else if ((bNormalHexFlight || bPublishedFlight) && TypeName.Equals(TEXT("Desert"), ESearchCase::IgnoreCase)) Type = EPlanetType::Desert;
+	else if ((bNormalHexFlight || bPublishedFlight) && TypeName.Equals(TEXT("Sand"), ESearchCase::IgnoreCase)) Type = EPlanetType::Sand;
+	else if ((bNormalHexFlight || bPublishedFlight) && TypeName.Equals(TEXT("HighMountain"), ESearchCase::IgnoreCase)) Type = EPlanetType::HighMountain;
+	else if ((bNormalHexFlight || bPublishedFlight) && TypeName.Equals(TEXT("Savanna"), ESearchCase::IgnoreCase)) Type = EPlanetType::Savanna;
+	else if ((bNormalHexFlight || bPublishedFlight) && TypeName.Equals(TEXT("SuperEarth"), ESearchCase::IgnoreCase)) Type = EPlanetType::SuperEarth;
+	else if ((bNormalHexFlight || bPublishedFlight) && TypeName.Equals(TEXT("Pangea"), ESearchCase::IgnoreCase)) Type = EPlanetType::Pangea;
+	else if ((bPublishedFlight || bWaterNormalAB || bOrbitalFields || FParse::Param(FCommandLine::Get(), TEXT("APSProbeMacroAB"))) && TypeName.Equals(TEXT("Oasis"), ESearchCase::IgnoreCase)) Type = EPlanetType::Oasis;
+    else if ((bWaterNormalAB || bOrbitalFields || FParse::Param(FCommandLine::Get(), TEXT("APSProbeMacroAB")) || APSPlanetBufferViews::Requested() || APSPlanetNormalSources::Requested()) && TypeName.Equals(TEXT("Terrestrial"), ESearchCase::IgnoreCase)) Type = EPlanetType::Terrestrial;
 	else if (TypeName.Equals(TEXT("Frozen"), ESearchCase::IgnoreCase)) Type = EPlanetType::Frozen;
 	else if (bUserGreenhouseReference && TypeName.Equals(TEXT("Greenhouse"), ESearchCase::IgnoreCase)) Type = EPlanetType::Greenhouse;
 	else if (bLavaCoverage && TypeName.Equals(TEXT("Melted"), ESearchCase::IgnoreCase)) Type = EPlanetType::Melted;
 	else if (bLavaCoverage && FParse::Param(FCommandLine::Get(), TEXT("APSUnifiedLavaProbe")) && TypeName.Equals(TEXT("Lava"), ESearchCase::IgnoreCase)) Type = EPlanetType::Lava;
-	else if (bLavaCoverage && TypeName.Equals(TEXT("Volcanic"), ESearchCase::IgnoreCase)) Type = EPlanetType::Volcanic;
+    else if ((bLavaCoverage || APSWaterFlight::NativeLava() || (bWaterNormalAB && APSWaterNormalAB::GeometryOnly())) && TypeName.Equals(TEXT("Volcanic"), ESearchCase::IgnoreCase)) Type = EPlanetType::Volcanic;
 	else if ((bSharedLiquidCoverage || bSharedLiquidCoverageOrbit) && TypeName.Equals(TEXT("Ammonia"), ESearchCase::IgnoreCase)) Type = EPlanetType::Ammonia;
 	else if (!TypeName.Equals(TEXT("Water"), ESearchCase::IgnoreCase))
 	{

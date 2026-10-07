@@ -7,12 +7,17 @@
 #include "APS_ALPHA/Actors/Astro/Planet.h"
 #include "APS_ALPHA/Actors/Astro/PlanetaryBody.h"
 #include "APS_ALPHA/Actors/Astro/Star.h"
+#include "APS_ALPHA/Actors/Tech/Colony.h"
 #include "APS_ALPHA/Actors/Tech/SpaceHeadquarters.h"
+#include "APS_ALPHA/Core/Instances/MainGameplayInstance.h"
+#include "APS_ALPHA/Core/Model/SpawnParameters.h"
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationIdentityComponent.h"
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationJournalSubsystem.h"
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationMaterializationSubsystem.h"
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationRuntimeManifest.h"
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationStarterActors.h"
+#include "APS_ALPHA/Gameplay/Civilizations/APSStarterDressing.h"
+#include "APS_ALPHA/Gameplay/Civilizations/Civilization.h"
 #include "APS_ALPHA/Gameplay/Production/APSProductionSubsystem.h"
 #include "APS_ALPHA/Pawns/Characters/CustomGravityCharacter.h"
 #include "Camera/CameraActor.h"
@@ -21,6 +26,7 @@
 #include "HAL/IConsoleManager.h"
 #include "Math/RotationMatrix.h"
 #include "Misc/Paths.h"
+#include "ProceduralMeshComponent.h"
 #include "UnrealClient.h"
 
 #define LOCTEXT_NAMESPACE "APSColonyConstruction"
@@ -119,6 +125,136 @@ namespace APSColonyConstruction
 	}
 
 	/**
+	 * A round leg from Top straight down into the ground (the pad's stilts, the base's towers), in Material when given.
+	 * False when the ground there is close enough, too far, or not loaded.
+	 */
+	bool SpawnLeg(UWorld& World, AActor& Owner, APlanetaryBody& Body, const UAPSSpawnPlacementSubsystem& Spawner,
+		const FVector& Top, const FQuat& Rotation, const double DiameterCm, UMaterialInterface* Material = nullptr)
+	{
+		const double Drop = Spawner.GroundDropBelow(&Body, Top);
+		if (!(Drop > MinimumLegDropCm) || Drop > MaximumLegDropCm)
+		{
+			return false;
+		}
+		const double Height = Drop + PlinthBuryCm;
+		const FTransform LegTransform(Rotation, Top - Rotation.GetUpVector() * (Height * 0.5 + 1.0),
+			FVector(DiameterCm * 0.01, DiameterCm * 0.01, Height * 0.01));
+		AAPSColonyPlinth* Plinth = World.SpawnActorDeferred<AAPSColonyPlinth>(AAPSColonyPlinth::StaticClass(),
+			LegTransform, nullptr, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+		if (!Plinth)
+		{
+			return false;
+		}
+		Plinth->Configure(true);
+		Plinth->FinishSpawning(LegTransform);
+		if (UStaticMeshComponent* Leg = Material ? Plinth->FindComponentByClass<UStaticMeshComponent>() : nullptr)
+		{
+			Leg->SetMaterial(0, Material);
+		}
+		Plinth->AttachToActor(&Owner, FAttachmentTransformRules::KeepWorldTransform);
+		return true;
+	}
+
+	/**
+	 * The pad's access ramp (Rio 02.10: "the stairs to it are crooked, without texture and hang in the air"): a solid
+	 * wedge instead of a thin slab. Its top runs from the deck edge (EdgeFrame's origin) down Rise over Run along -X to
+	 * the ground where it lands; its body reaches below the lowest ground under it, so no stretch of it hangs over a dip
+	 * or a sideways slope. Floor panels tile it by the metre. False while the ground under it is not loaded.
+	 */
+	bool BuildRampWedge(AAPSCivilizationLandingPad& Pad, APlanetaryBody& Body, const UAPSSpawnPlacementSubsystem& Spawner,
+		const FTransform& EdgeFrame, const double Run, const double Rise)
+	{
+		static const FName WedgeTag(TEXT("APS.Pad.RampWedge"));
+		const double HalfWidth = RampWidthCm * 0.5;
+		// The lowest ground under the ramp: every 3 m along it, at both sides and the middle.
+		const int32 Steps = FMath::Clamp(FMath::CeilToInt(Run / 300.0), 2, 30);
+		double LowestGround = -Rise;
+		for (int32 Step = 0; Step <= Steps; ++Step)
+		{
+			const double Along = static_cast<double>(Step) / Steps;
+			for (const double Y : {-HalfWidth, 0.0, HalfWidth})
+			{
+				const FVector Point = EdgeFrame.TransformPosition(FVector(-Run * Along, Y, -Rise * Along));
+				const double Drop = Spawner.GroundDropBelow(&Body, Point);
+				if (Drop <= -TNumericLimits<double>::Max())
+				{
+					return false;
+				}
+				LowestGround = FMath::Min(LowestGround, -Rise * Along - Drop);
+			}
+		}
+		const double Bottom = LowestGround - PlinthBuryCm;
+
+		UProceduralMeshComponent* Wedge = nullptr;
+		Pad.ForEachComponent<UProceduralMeshComponent>(false, [&Wedge](UProceduralMeshComponent* Component)
+		{
+			if (Component->ComponentHasTag(WedgeTag))
+			{
+				Wedge = Component;
+			}
+		});
+		if (!Wedge)
+		{
+			Wedge = NewObject<UProceduralMeshComponent>(&Pad, TEXT("RampWedge"));
+			Wedge->ComponentTags.Add(WedgeTag);
+			Wedge->SetupAttachment(Pad.GetRootComponent());
+			Wedge->SetUsingAbsoluteScale(true);
+			Wedge->SetMobility(EComponentMobility::Movable);
+			Wedge->bUseComplexAsSimpleCollision = true;
+			Wedge->SetCollisionProfileName(UCollisionProfile::BlockAll_ProfileName);
+			Wedge->SetCanEverAffectNavigation(true);
+			Wedge->RegisterComponent();
+			Pad.AddInstanceComponent(Wedge);
+		}
+		Wedge->SetWorldLocationAndRotation(EdgeFrame.GetLocation(), EdgeFrame.GetRotation(), false, nullptr,
+			ETeleportType::TeleportPhysics);
+
+		// Six faces, each with its own normal; UVs in 4 m tiles. Every triangle is also laid the other way round, so the
+		// solid shows from outside whatever the winding convention (its inside is never seen).
+		TArray<FVector> Vertices;
+		TArray<int32> Triangles;
+		TArray<FVector> Normals;
+		TArray<FVector2D> UVs;
+		TArray<FProcMeshTangent> Tangents;
+		constexpr double TileCm = 400.0;
+		const auto Face = [&](const TArray<FVector>& Corners, const FVector& Normal, const FVector& UAxis, const FVector& VAxis)
+		{
+			const int32 First = Vertices.Num();
+			for (const FVector& Corner : Corners)
+			{
+				Vertices.Add(Corner);
+				Normals.Add(Normal);
+				UVs.Add(FVector2D(FVector::DotProduct(Corner, UAxis) / TileCm, FVector::DotProduct(Corner, VAxis) / TileCm));
+				Tangents.Add(FProcMeshTangent(UAxis, false));
+			}
+			Triangles.Append({First, First + 1, First + 2, First, First + 2, First + 3});
+			Triangles.Append({First, First + 2, First + 1, First, First + 3, First + 2});
+		};
+		const FVector TopNear(0.0, -HalfWidth, 0.0);
+		const FVector TopNearR(0.0, HalfWidth, 0.0);
+		const FVector TopFar(-Run, -HalfWidth, -Rise);
+		const FVector TopFarR(-Run, HalfWidth, -Rise);
+		const FVector BottomNear(0.0, -HalfWidth, Bottom);
+		const FVector BottomNearR(0.0, HalfWidth, Bottom);
+		const FVector BottomFar(-Run, -HalfWidth, Bottom);
+		const FVector BottomFarR(-Run, HalfWidth, Bottom);
+		const FVector Down = FVector(-Run, 0.0, -Rise).GetSafeNormal();
+		Face({TopNear, TopNearR, TopFarR, TopFar}, FVector(-Rise, 0.0, Run).GetSafeNormal(), Down, FVector::YAxisVector);
+		Face({TopNear, TopFar, BottomFar, BottomNear}, -FVector::YAxisVector, FVector::XAxisVector, FVector::ZAxisVector);
+		Face({TopNearR, BottomNearR, BottomFarR, TopFarR}, FVector::YAxisVector, FVector::XAxisVector, FVector::ZAxisVector);
+		Face({TopFar, TopFarR, BottomFarR, BottomFar}, -FVector::XAxisVector, FVector::YAxisVector, FVector::ZAxisVector);
+		Face({TopNear, BottomNear, BottomNearR, TopNearR}, FVector::XAxisVector, FVector::YAxisVector, FVector::ZAxisVector);
+		Face({BottomNear, BottomFar, BottomFarR, BottomNearR}, -FVector::ZAxisVector, FVector::XAxisVector,
+			FVector::YAxisVector);
+		Wedge->CreateMeshSection(0, Vertices, Triangles, Normals, UVs, TArray<FColor>(), Tangents, true);
+		UMaterialInterface* Floor = LoadObject<UMaterialInterface>(nullptr,
+			TEXT("/Game/missiontominerva/Materials/KB3D_MTM_FloorPanelsSpots.KB3D_MTM_FloorPanelsSpots"), nullptr,
+			LOAD_NoWarn | LOAD_Quiet);
+		Wedge->SetMaterial(0, Floor ? Floor : APSStarterDressing::Material(&Pad, APSStarterDressing::Metal, 0.0f));
+		return true;
+	}
+
+	/**
 	 * The landing pad on stilts: legs from the deck's underside down to the ground (the centre, 6 inner and 12 outer),
 	 * and the access ramp from the deck edge on the base side (-X) down to the ground. DeckFootprint is the deck in the
 	 * pad's own space. Returns the number of legs; OutRampRunCm and OutRampDegrees describe the ramp (zero when the
@@ -126,7 +262,7 @@ namespace APSColonyConstruction
 	 */
 	int32 BuildPadSupports(UWorld& World, AAPSCivilizationLandingPad& Pad, APlanetaryBody& Body,
 		const UAPSSpawnPlacementSubsystem& Spawner, const FBox& DeckFootprint, double& OutRampRunCm,
-		double& OutRampDegrees)
+		double& OutRampDegrees, const bool bLegs = true)
 	{
 		OutRampRunCm = 0.0;
 		OutRampDegrees = 0.0;
@@ -137,25 +273,11 @@ namespace APSColonyConstruction
 		int32 Legs = 0;
 		const auto Leg = [&](const double LocalX, const double LocalY)
 		{
-			const FVector Top = Transform.TransformPosition(FVector(LocalX, LocalY, DeckFootprint.Min.Z));
-			const double Drop = Spawner.GroundDropBelow(&Body, Top);
-			if (!(Drop > MinimumLegDropCm) || Drop > MaximumLegDropCm)
+			if (bLegs && SpawnLeg(World, Pad, Body, Spawner,
+				Transform.TransformPosition(FVector(LocalX, LocalY, DeckFootprint.Min.Z)), Transform.GetRotation(), LegDiameterCm))
 			{
-				return;
+				++Legs;
 			}
-			const double Height = Drop + PlinthBuryCm;
-			const FTransform LegTransform(Transform.GetRotation(), Top - Up * (Height * 0.5 + 1.0),
-				FVector(LegDiameterCm * 0.01, LegDiameterCm * 0.01, Height * 0.01));
-			AAPSColonyPlinth* Plinth = World.SpawnActorDeferred<AAPSColonyPlinth>(AAPSColonyPlinth::StaticClass(),
-				LegTransform, nullptr, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
-			if (!Plinth)
-			{
-				return;
-			}
-			Plinth->Configure(true);
-			Plinth->FinishSpawning(LegTransform);
-			Plinth->AttachToActor(&Pad, FAttachmentTransformRules::KeepWorldTransform);
-			++Legs;
 		};
 		Leg(0.0, 0.0);
 		for (int32 Index = 0; Index < 6; ++Index)
@@ -192,6 +314,15 @@ namespace APSColonyConstruction
 				RampMinimumRunCm, RampMaximumRunCm);
 		}
 		const double Degrees = FMath::RadiansToDegrees(FMath::Atan2(Rise, Run));
+		const FTransform EdgeFrame(Transform.GetRotation(), Transform.TransformPosition(FVector(EdgeX, 0.0, DeckTop)));
+		if (BuildRampWedge(Pad, Body, Spawner, EdgeFrame, Run, Rise))
+		{
+			Ramp->SetVisibility(false);
+			Ramp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			OutRampRunCm = Run;
+			OutRampDegrees = Degrees;
+			return Legs;
+		}
 		const double Length = FMath::Sqrt(Run * Run + Rise * Rise);
 		Ramp->SetRelativeLocationAndRotation(
 			FVector(EdgeX - Run * 0.5 / Scale.X, 0.0, (DeckTop - (Rise + RampThicknessCm) * 0.5) / Scale.Z),
@@ -212,6 +343,47 @@ bool UAPSColonyConstructionSubsystem::DoesSupportWorldType(const EWorldType::Typ
 TStatId UAPSColonyConstructionSubsystem::GetStatId() const
 {
 	RETURN_QUICK_DECLARE_CYCLE_STAT(UAPSColonyConstructionSubsystem, STATGROUP_Tickables);
+}
+
+void UAPSColonyConstructionSubsystem::Initialize(FSubsystemCollectionBase& Collection)
+{
+	Super::Initialize(Collection);
+	// C19: decided as the world starts, while the game instance still tells a new game from a load (the controller clears
+	// its loading flag once the save is applied, and a loaded colony brings its own modules).
+	const UWorld* World = GetWorld();
+	const UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+	const UMainGameplayInstance* Gameplay = GameInstance ? GameInstance->GetSubsystem<UMainGameplayInstance>() : nullptr;
+	if (Gameplay && Gameplay->bSpawnGeneratedCivilization && !Gameplay->bIsLoadingMode && !Gameplay->bPendingSavedWorldReplay
+		&& IsValid(Gameplay->SpawnParameters))
+	{
+		USpawnParameters::GetColonyStartModules(Gameplay->SpawnParameters->ColonyStartPackage, StartPackage);
+	}
+}
+
+void UAPSColonyConstructionSubsystem::OrderStartPackage()
+{
+	if (bStartPackageOrdered || StartPackage.IsEmpty() || !bColonyGrounded || !IsSiteReady(EAPSSpawnSite::Surface)
+		|| !GetPlayerPawn())
+	{
+		return;
+	}
+	bStartPackageOrdered = true;
+	int32 Ordered = 0;
+	for (const FName ModuleId : StartPackage)
+	{
+		FText Failure;
+		if (RequestBuild(ModuleId, Failure))
+		{
+			++Ordered;
+		}
+		else
+		{
+			UE_LOG(LogAPSColonyConstruction, Warning, TEXT("[APS.Colony.Build] founding package: %s refused: %s"),
+				*ModuleId.ToString(), *Failure.ToString());
+		}
+	}
+	UE_LOG(LogAPSColonyConstruction, Log, TEXT("[APS.Colony.Build] founding package: %d of %d modules ordered"), Ordered,
+		StartPackage.Num());
 }
 
 void UAPSColonyConstructionSubsystem::Deinitialize()
@@ -237,6 +409,7 @@ void UAPSColonyConstructionSubsystem::Tick(const float DeltaTime)
 	PollAccumulator = 0.0f;
 	UpdateSites();
 	GroundColonyStructures();
+	OrderStartPackage();
 	MaterializeFinishedJobs();
 	TickTestAutomation();
 }
@@ -271,7 +444,14 @@ void UAPSColonyConstructionSubsystem::EnsureDefinitions(UAPSProductionSubsystem&
 	{
 		return;
 	}
-	const double TimeScale = FMath::Max(0.0f, APSColonyConstruction::CVarBuildTimeScale.GetValueOnGameThread());
+	double TimeScale = FMath::Max(0.0f, APSColonyConstruction::CVarBuildTimeScale.GetValueOnGameThread());
+	// Civil affairs runs the colony's works (Rio, 01.10: "the divisions should change the game"): 15% faster a level.
+	const UGameInstance* GameInstance = GetWorld() ? GetWorld()->GetGameInstance() : nullptr;
+	const UMainGameplayInstance* State = GameInstance ? GameInstance->GetSubsystem<UMainGameplayInstance>() : nullptr;
+	if (const UCivilization* Civ = State ? State->CurrentCivilization.Get() : nullptr)
+	{
+		TimeScale /= 1.0 + 0.15 * FMath::Max(Civ->Divisions.CivilAffairs, 0);
+	}
 	for (const FAPSColonyModuleSpec& Spec : FAPSColonyModuleCatalogue::Get())
 	{
 		FString Failure;
@@ -409,18 +589,28 @@ void UAPSColonyConstructionSubsystem::GroundColonyStructures()
 			return;
 		}
 	}
+	// C19: the pad on stilts (as before) or on a solid plinth like the base's, chosen in the generation menu.
+	const UGameInstance* GameInstance = World->GetGameInstance();
+	const UMainGameplayInstance* Gameplay = GameInstance ? GameInstance->GetSubsystem<UMainGameplayInstance>() : nullptr;
+	const bool bPadOnPlinth = Gameplay && IsValid(Gameplay->SpawnParameters)
+		&& Gameplay->SpawnParameters->LaunchPadStart == EAPSLaunchPadStart::Plinth;
 	TMap<const AActor*, FString> Supports;
 	for (const FMeasured& Entry : Measured)
 	{
 		if (AAPSCivilizationLandingPad* Pad = Cast<AAPSCivilizationLandingPad>(Entry.Structure))
 		{
-			// The pad stands on stilts with a ramp down to the ground, not on a solid plinth.
+			// The pad stands on stilts with a ramp down to the ground; on a plinth it keeps the ramp.
 			double RampRun = 0.0;
 			double RampDegrees = 0.0;
-			const int32 Legs = BuildPadSupports(*World, *Pad, *Body, *Spawner, Entry.Footprint, RampRun, RampDegrees);
-			Supports.Add(Pad, FString::Printf(TEXT(", %d stilts, ramp %.0f m at %.0f deg"), Legs, RampRun * 0.01,
-				RampDegrees));
-			continue;
+			const int32 Legs = BuildPadSupports(*World, *Pad, *Body, *Spawner, Entry.Footprint, RampRun, RampDegrees,
+				!bPadOnPlinth);
+			Supports.Add(Pad, bPadOnPlinth
+				? FString::Printf(TEXT(", on a plinth, ramp %.0f m at %.0f deg"), RampRun * 0.01, RampDegrees)
+				: FString::Printf(TEXT(", %d stilts, ramp %.0f m at %.0f deg"), Legs, RampRun * 0.01, RampDegrees));
+			if (!bPadOnPlinth)
+			{
+				continue;
+			}
 		}
 		if (Entry.Gap < MinimumPlinthGapCm)
 		{
@@ -445,6 +635,29 @@ void UAPSColonyConstructionSubsystem::GroundColonyStructures()
 		Plinth->Configure(Entry.bRound);
 		Plinth->FinishSpawning(PlinthTransform);
 		Plinth->AttachToActor(Entry.Structure, FAttachmentTransformRules::KeepWorldTransform);
+	}
+	// Rio 02.10 ("parts of the objects spawned by default hang in the air"): the base's three towers stand 19 m out,
+	// beyond its 30 m foundation and the plinth under it; each gets a pier of its own width and colour into the ground.
+	if (AColony* Base = Cast<AColony>(Site.Anchor.Get()))
+	{
+		TArray<UStaticMeshComponent*> Parts;
+		Base->GetComponents(Parts);
+		for (UStaticMeshComponent* Tower : Parts)
+		{
+			// The headquarters look (Rio 03.10) hides the towers: no piers under what is not there.
+			const UStaticMesh* Mesh = Tower->GetName().StartsWith(TEXT("SettlementTower")) && Tower->IsVisible()
+				? Tower->GetStaticMesh() : nullptr;
+			if (!Mesh)
+			{
+				continue;
+			}
+			const FBox MeshBox = Mesh->GetBounds().GetBox();
+			const FTransform TowerTransform = Tower->GetComponentTransform();
+			const FVector Bottom = TowerTransform.TransformPosition(FVector(0.0, 0.0, MeshBox.Min.Z));
+			const double Diameter = MeshBox.GetSize().X * TowerTransform.GetScale3D().GetAbs().X;
+			SpawnLeg(*World, *Base, *Body, *Spawner, Bottom + TowerTransform.GetUnitAxis(EAxis::Z) * 2.0,
+				TowerTransform.GetRotation(), Diameter, Tower->GetMaterial(0));
+		}
 	}
 	bColonyGrounded = true;
 	for (const FMeasured& Entry : Measured)

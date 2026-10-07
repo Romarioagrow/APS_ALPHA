@@ -30,11 +30,20 @@ public:
 
 private:
 	void UpdateObjectFill(const FVector& CameraLocation, const FRotator& CameraRotation, bool bInsideStation);
+	/**
+	 * Rio 04.10 evening ("from orbit the night side is an absolutely black body, it looks like a bug: let a silhouette
+	 * show, beautifully"): above a world, past the near-surface fill's reach, a faint cool light travelling towards the
+	 * star lights only what faces away from it, so a night side reads as a dim moonlit globe with its relief. What the
+	 * star lights keeps exactly its look. aps.Planet.NightFill sets its lux (0 = off).
+	 */
+	void UpdateNightFill(float DeltaTime);
 	void RefreshObjects();
 	void ApplyStationLightScale();
 	void UpdateExposure();
 
 	TWeakObjectPtr<ADirectionalLight> ObjectFillLight;
+	TWeakObjectPtr<ADirectionalLight> NightFillLight;
+	float NightFillIntensity{0.0f};
 	TWeakObjectPtr<APostProcessVolume> ExposureVolume;
 	/** Actors already opted into the fill channel. */
 	TSet<TWeakObjectPtr<AActor>> OptedInActors;

@@ -5,6 +5,7 @@
 class UGameSave;
 class UGeneratedWorld;
 class USpawnParameters;
+struct FPlanetData;
 
 /** Serialization and legacy migration for the actor-free procedural world model. */
 namespace APSWorldSaveSnapshot
@@ -25,4 +26,13 @@ namespace APSWorldSaveSnapshot
 
 	/** Restores a version-tolerant, Outer-owned civilization recipe. */
 	USpawnParameters* RestoreSpawnParameters(const UGameSave* Save, UObject* Outer);
+
+	/** One inhabited world, however many times a replay recorded it: the same order, orbit and radius. */
+	bool IsSameInhabitedPlanet(const FPlanetData& A, const FPlanetData& B);
+
+	/** Records Planet once: a replay of a loaded world refreshes its entry instead of appending another. */
+	void RecordInhabitedPlanet(TArray<FPlanetData>& Planets, const FPlanetData& Planet);
+
+	/** Drops repeated entries (saves before 03.10 gained one home planet per load and save), keeping the first. */
+	void RemoveDuplicateInhabitedPlanets(TArray<FPlanetData>& Planets);
 }

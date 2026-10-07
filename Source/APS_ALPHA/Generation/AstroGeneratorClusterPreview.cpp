@@ -1,4 +1,5 @@
 #include "AstroGenerator.h"
+#include "APS_ALPHA/Generation/APSPreviewClusterSpacing.h"
 
 #include "MoonGenerator.h"
 #include "PlanetGenerator.h"
@@ -20,7 +21,8 @@
 namespace APSGeneratedBodyIdentity
 {
 	FRandomStream Stream(int32 WorldSeed, const FString& Address, const TCHAR* Channel);
-	FName Name(int32 WorldSeed, const FString& Address, const FString& Kind);
+	FName Name(int32 WorldSeed, const FString& Address, const FString& Kind, int32 Style);
+	int32 Style(const UGeneratedWorld* World);
 }
 
 AStarSystem* AAstroGenerator::GetContinuousPreviewOwningSystem(const AActor* Actor) const
@@ -50,7 +52,9 @@ FVector AAstroGenerator::GetContinuousPreviewSystemCenter(const AStarSystem* Sys
 		if (const FClusterStarSystemRecord* Record = GeneratedStarCluster->FindPotentialSystem(Entry.Key))
 		{
 			const FAPSCanonicalStellarProjectionFrame& Frame = GeneratedStarCluster->CanonicalProjectionFrame;
-			return Frame.GetCanonicalRootPositionCm(Record->ClusterLocalLocation) - Frame.CanonicalAnchorCm;
+			// Rio 03.10: the same presentation spacing as the system's catalogue points (zero unless enabled).
+			return Frame.GetCanonicalRootPositionCm(Record->ClusterLocalLocation) - Frame.CanonicalAnchorCm
+				+ APSPreviewClusterSpacing::GetOffsetCm(this, Entry.Key);
 		}
 	}
 	return FVector::ZeroVector;
@@ -101,7 +105,8 @@ bool AAstroGenerator::CapturePreviewStarOrbitLayout(FAPSPreviewStarEditOverride&
 		Edit.PlanetOrbitRangeMinAu = Star->MinOrbit;
 		Edit.PlanetOrbitRangeMaxAu = Star->MaxOrbit;
 	}
-	Edit.bCompactOrbitEnvelope = true;
+	// Rio 05.10 (real scale experiment): a REAL SCALE layout was captured uncompacted, so a later OFF build compacts it.
+	Edit.bCompactOrbitEnvelope = !UsesRealScale();
 	return true;
 }
 
@@ -195,7 +200,10 @@ bool AAstroGenerator::BuildContinuousPreviewSystemLayout(const FClusterStarSyste
 		Families->SetGenerationSeed(APSGeneratedBodyIdentity::Stream(Seed, StarAddress, TEXT("planets")).GetInitialSeed());
 		const FAPSPreviewStarEditOverride* StellarOrbitEdit = IsValid(GeneratedWorldModel)
 			? GeneratedWorldModel->FindPreviewStarEditOverride(StarAddress) : nullptr;
-		Families->GenerateCustomPlanetarySystemModel(FamilyModel, StarModel, PlanetGenerator, MoonGenerator, StellarOrbitEdit, true);
+		// Rio 05.10 (real scale experiment): REAL SCALE systems keep their real AU orbits (compacted when OFF, as before).
+		const bool bCompactOrbits = !UsesRealScale();
+		Families->GenerateCustomPlanetarySystemModel(FamilyModel, StarModel, PlanetGenerator, MoonGenerator, StellarOrbitEdit,
+			bCompactOrbits);
 		ApplyPreviewBodyEditOverridesToModels(GeneratedWorldModel, StarIndex, *FamilyModel, Address);
 		bool bEditedMoonHierarchy = false;
 		for (int32 PlanetIndex = 0; PlanetIndex < FamilyModel->PlanetsList.Num(); ++PlanetIndex)
@@ -217,7 +225,7 @@ bool AAstroGenerator::BuildContinuousPreviewSystemLayout(const FClusterStarSyste
 		// bodies which the newly sized star or neighbouring planet actually overlaps.
 		if (IsValid(GeneratedWorldModel))
 			if (const FAPSPreviewStarEditOverride* Edit = GeneratedWorldModel->FindPreviewStarEditOverride(StarAddress))
-				Edit->ApplyToPlanetOrbits(*FamilyModel, true, StarModel->Radius);
+				Edit->ApplyToPlanetOrbits(*FamilyModel, bCompactOrbits, StarModel->Radius);
 		if (IsValid(GeneratedWorldModel)) GeneratedWorldModel->ApplyPlanetOrbitEdits(*FamilyModel, StarAddress, StarModel->Radius);
 		UPlanetarySystemGenerator::EnforcePlanetSurfaceClearance(*FamilyModel);
 		double Envelope = StarModel->RadiusKM * 1.0e5 * 1.35;
@@ -330,7 +338,8 @@ AStarSystem* AAstroGenerator::MaterializeContinuousPreviewSystem(const int32 Ins
 		System->AddNewStar(Star);
 		if (StarIndex == 0) System->MainStar = Star;
 		Star->FullSpectralName = Star->GenerateFullSpectralName();
-		Star->AstroName = APSGeneratedBodyIdentity::Name(Seed, StarAddress, Star->FullSpectralName.ToString());
+		Star->AstroName = APSGeneratedBodyIdentity::Name(Seed, StarAddress, Star->FullSpectralName.ToString(),
+			APSGeneratedBodyIdentity::Style(GeneratedWorldModel));
 		Family->SetStarFullSpectralName(Star->FullSpectralName);
 		Stars->ApplySpectralMaterial(Star, StarModel);
 		for (int32 PlanetIndex = 0; PlanetIndex < FamilyModel->PlanetsList.Num(); ++PlanetIndex)
@@ -355,7 +364,8 @@ AStarSystem* AAstroGenerator::MaterializeContinuousPreviewSystem(const int32 Ins
 			Planet->bStreamWorldScapeSurface = true;
 			Planet->bGenerateByDefault = false;
 			PlanetGenerator->ApplyModel(Planet, Model);
-			Planet->AstroName = APSGeneratedBodyIdentity::Name(Seed, PlanetAddress, TEXT("Planet"));
+			Planet->AstroName = APSGeneratedBodyIdentity::Name(Seed, PlanetAddress, TEXT("Planet"),
+				APSGeneratedBodyIdentity::Style(GeneratedWorldModel));
 			Star->AddPlanet(Planet);
 			Planet->SetParentStar(Star);
 			Planet->SetActorScale3D(FVector(Model->Radius * 12742000.0));
@@ -385,7 +395,8 @@ AStarSystem* AAstroGenerator::MaterializeContinuousPreviewSystem(const int32 Ins
 				Moon->bGenerateByDefault = false;
 				MoonGenerator->ApplyModel(Moon, MoonData->MoonModel);
 				MoonGenerator->ConnectMoonWithPlanet(Moon, Planet);
-				Moon->AstroName = APSGeneratedBodyIdentity::Name(Seed, MoonAddress, TEXT("Moon"));
+				Moon->AstroName = APSGeneratedBodyIdentity::Name(Seed, MoonAddress, TEXT("Moon"),
+					APSGeneratedBodyIdentity::Style(GeneratedWorldModel));
 				Moon->SetParentPlanet(Planet);
 				Planet->AddMoon(Moon);
 				Planet->MoonOrbitsList.Add(MoonOrbit);

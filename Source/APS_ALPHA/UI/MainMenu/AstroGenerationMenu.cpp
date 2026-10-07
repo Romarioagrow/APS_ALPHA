@@ -59,6 +59,8 @@ void UAstroGenerationMenu::EnsureGenerationViewModel()
 	if (!NewGeneratedWorld)
 	{
 		NewGeneratedWorld = NewObject<UGeneratedWorld>(this, UGeneratedWorld::StaticClass());
+		// Rio 06.10: a new world starts at real distances (as MainMenuController's menu world).
+		NewGeneratedWorld->bRealScale = true;
 	}
 
 	if (!WorldGenerationViewModel)

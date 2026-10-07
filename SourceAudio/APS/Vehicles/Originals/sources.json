@@ -1,0 +1,37 @@
+[
+  {
+    "file": "A_PF_ElectricEnergy_Loop.wav",
+    "source": "https://www.fab.com/listings/497d53e3-be95-4174-8786-433558a8a849",
+    "license": "License associated with owner acquisition of Energy Fields SFX Pack",
+    "asset_path": "/Game/EnergyFieldsSFX/WAV/A_PF_ElectricEnergy_Loop",
+    "sha256": "afa6530e768275564ebdde2c5dc7536a74034c4d5c34a8a12d5599c09f2545d3"
+  },
+  {
+    "file": "A_PF_MovingAviaBlades_Loop.wav",
+    "source": "https://www.fab.com/listings/497d53e3-be95-4174-8786-433558a8a849",
+    "license": "License associated with owner acquisition of Energy Fields SFX Pack",
+    "asset_path": "/Game/EnergyFieldsSFX/WAV/A_PF_MovingAviaBlades_Loop",
+    "sha256": "78033810094cfe50f569627cf85a20c19ee062c56a22fc05d1f7fe865fb223bc"
+  },
+  {
+    "file": "A_PF_Moving_Loop.wav",
+    "source": "https://www.fab.com/listings/497d53e3-be95-4174-8786-433558a8a849",
+    "license": "License associated with owner acquisition of Energy Fields SFX Pack",
+    "asset_path": "/Game/EnergyFieldsSFX/WAV/A_PF_Moving_Loop",
+    "sha256": "dd8a074a6957da686c61d5580a8beb7b50eb5b7d0dfeefb1475db13715a8551e"
+  },
+  {
+    "file": "Car_Loop.wav",
+    "source": "https://opengameart.org/content/racing-car-engine-sound-loops",
+    "license": "CC0-1.0",
+    "asset_path": null,
+    "sha256": "69d74b106509037ce547429e4c3f9ae906b0fffe88d0bb8b3b5a8b0cfc239048"
+  },
+  {
+    "file": "Car_Start.wav",
+    "source": "https://opengameart.org/content/car-engine-start-01",
+    "license": "CC0-1.0",
+    "asset_path": null,
+    "sha256": "fa9c199daf6b06a53267f32d764fb19522fc364304ad009bf8b6e392adbe5654"
+  }
+]

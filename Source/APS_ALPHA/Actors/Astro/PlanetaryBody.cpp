@@ -15,6 +15,7 @@
 #include "APS_ALPHA/Core/Enums/Planetary/SeismicActivityLevel.h"
 #include "APS_ALPHA/Core/Enums/Planetary/WindSpeed.h"
 #include "APS_ALPHA/Core/Planetary/APSPlanetSurfaceProfile.h"
+#include "APS_ALPHA/Core/Planetary/APSPlanetSurfaceRadius.h"
 #include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
 
 APlanetaryBody::APlanetaryBody()
@@ -138,7 +139,7 @@ double APlanetaryBody::GetWorldScapeActivationRadiusCm() const
 
 double APlanetaryBody::GetWorldScapeBodyRadiusCm() const
 {
-	double BodyRadiusCm = FMath::Max(RadiusKM, static_cast<double>(PlanetRadiusKM)) * 100000.0;
+	double BodyRadiusCm = APSPlanetSurfaceRadius::Kilometres(RadiusKM, PlanetRadiusKM) * 100000.0;
 	if (BodyRadiusCm <= UE_DOUBLE_SMALL_NUMBER)
 	{
 		FVector Origin;

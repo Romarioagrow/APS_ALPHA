@@ -1,5 +1,25 @@
 # Isolated physical WorldScape water-depth integration, 2026-09-27
 
+## Current minimal native integration, 2026-09-30
+
+`native-worker-20260930.patch` is a new NINE-file native-only diff, preserving
+the current collision/worker-ownership/seam fixes. It does NOT contain the
+old project's ripple/fill/light experiments below. Seven native tests pass;
+the old worker-test pending-map assertion was adapted to current GT ownership.
+It applies at a WorldScape plugin root (not the APS project root).
+
+`InstallNativePayload.ps1` installs matching Editor modules, import libraries,
+public source and UHT generated headers, backs up all targets and rebuilds APS.
+The successful transaction is `before-installed-v3`; do not swap Core alone.
+This is a Development Editor build, not a packaged/DebugGame validation.
+`RunNativePayloadTests.ps1` reproduces the isolated seven-test suite.
+The canonical process opt-in is `-APSWaterDepthPayload`; ordinary-game water
+selection is NOT enabled yet. The new rendered probe is
+`RunPlanetWaterNormalAB.ps1 -NativeColumn -ColumnArtPalette`.
+See Docs/Diagnostics/2026-09-30-native-water-column.md for current evidence,
+rollback, deployment failures recovered safely, and remaining performance work.
+The older sections below are historical experiments, not current instructions.
+
 Later optional v22/v23 current and physical-column experiments are recorded in
 [CURRENTS.md](CURRENTS.md). They are not production-installed or visually accepted;
 the existing v21 integration package below remains their reproducible baseline.

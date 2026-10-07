@@ -51,6 +51,24 @@ enum class EAPSSocietyType : uint8
 	Traditional   UMETA(DisplayName = "Traditional")
 };
 
+/** C19 (Rio 02.10, "for the ground start choose the base colony, the ground vehicles, the launch pad"): what the colony
+ * on the home world orders with the founding, built over the first minutes. */
+UENUM(BlueprintType)
+enum class EAPSColonyStartPackage : uint8
+{
+	Outpost     UMETA(DisplayName = "Outpost"),
+	Standard    UMETA(DisplayName = "Standard"),
+	Settlement  UMETA(DisplayName = "Settlement")
+};
+
+/** C19: what the colony's landing pad stands on. */
+UENUM(BlueprintType)
+enum class EAPSLaunchPadStart : uint8
+{
+	Stilts  UMETA(DisplayName = "On stilts"),
+	Plinth  UMETA(DisplayName = "On a plinth")
+};
+
 UCLASS()
 class APS_ALPHA_API USpawnParameters : public UObject
 {
@@ -70,6 +88,12 @@ public:
 
 	UFUNCTION(BlueprintPure, Category = "Civilization")
 	int32 GetPlannedInfrastructureActorCount() const;
+
+	/** Controllable units the start creates: the fleet's ships and the colony's ground vehicles (menu manifest). */
+	int32 GetPlannedUnitCount() const;
+
+	/** Structures the start creates: HQ, shipyard, stations and outposts, and the colony's founding modules. */
+	int32 GetPlannedStructureCount() const;
 
 	/** Persistent civilization setup shared by generation UI and generated gameplay level. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Civilization")
@@ -143,6 +167,15 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Player Spawn")
 	EAPSStartStation StartStation{EAPSStartStation::Headquarters};
 
+	/**
+	 * Rio 04.10 evening ("again the night side: sunlit from the side, with the star in view"): how far, in degrees about
+	 * the home body's axis, the home complex stands turned from its old place (world +Y of the body). A new world picks
+	 * it and its save keeps it; loading replays it, so the generation frame of the saved positions stays exact. Saves
+	 * from before have none (0) and keep the old place.
+	 */
+	UPROPERTY()
+	double StarterComplexTurnDegrees{0.0};
+
 	UPROPERTY(EditAnywhere, Category = "Player Spawn")
 	TSubclassOf<APawn> BP_CharacterClass;
 
@@ -157,4 +190,18 @@ public:
 
 	UPROPERTY(EditAnywhere, Category = "Player Spawn")
 	TSubclassOf<ASpaceHeadquarters> BP_HomeSpaceHeadquarters;
+
+	/** C19: the colony's founding package (Outpost: the base alone, as before). */
+	UPROPERTY(EditAnywhere, Category = "Player Spawn|Ground Start")
+	EAPSColonyStartPackage ColonyStartPackage{EAPSColonyStartPackage::Outpost};
+
+	UPROPERTY(EditAnywhere, Category = "Player Spawn|Ground Start")
+	EAPSLaunchPadStart LaunchPadStart{EAPSLaunchPadStart::Stilts};
+
+	/** C19: the ground vehicles parked at the colony, as bits: 1 rover, 2 hover, 4 drone (all three by default). */
+	UPROPERTY(EditAnywhere, Category = "Player Spawn|Ground Start", meta = (ClampMin = "0", ClampMax = "7"))
+	int32 GroundVehicleMask{7};
+
+	/** The colony modules the package orders, in order (catalogue ids, APSColonyModuleCatalogue). */
+	static void GetColonyStartModules(EAPSColonyStartPackage Package, TArray<FName>& OutModules);
 };

@@ -1,0 +1,176 @@
+// Rio 03.10 (galaxy phase 3): GPU star points. A compute rasterizer: every point is projected,
+// depth-tested against the scene, culled by brightness (the glow carries the faint ones) and written
+// as the brightest star of its pixel with a 64-bit (or 32-bit fallback) atomic max.
+
+#include "/Plugin/APSStarRenderer/Private/APSStarCommon.ush"
+
+#ifndef APS_ATOMIC64
+#define APS_ATOMIC64 0
+#endif
+
+uint2 TargetSize;
+
+#if APS_ATOMIC64
+RWTexture2D<UlongType> OutStarBuffer64;
+#else
+RWTexture2D<uint> OutStarBuffer32;
+#endif
+
+void ApsClearPixel(uint2 Pixel)
+{
+#if APS_ATOMIC64
+	OutStarBuffer64[Pixel] = PackUlongType(uint2(0u, 0u));
+#else
+	OutStarBuffer32[Pixel] = 0u;
+#endif
+}
+
+[numthreads(8, 8, 1)]
+void ClearCS(uint3 DispatchThreadId : SV_DispatchThreadID)
+{
+	if (DispatchThreadId.x >= TargetSize.x || DispatchThreadId.y >= TargetSize.y)
+	{
+		return;
+	}
+	ApsClearPixel(DispatchThreadId.xy);
+}
+
+// --- Raster --------------------------------------------------------------------------------------
+
+float4x4 LocalRotation;
+float4x4 TranslatedWorldToClip;
+float3 BoundsMin;
+float SetBrightness;
+float3 BoundsStep;
+float MinPixelValue;
+float3 CameraLocal;
+float MaxPixelValue;
+float3 ObserverTranslated;
+float MinDistanceSq;
+// Rio 03.10 (gameplay sky): local centre xyz, radius^2 w; the home system and other materialized systems.
+float4 ExclusionSpheres[8];
+float2 TargetSizeF;
+float CompressA;
+float CompressB;
+uint PointOffset;
+uint PointCount;
+uint ThreadCount;
+uint bWriteStats;
+uint NumExclusionSpheres;
+StructuredBuffer<uint2> Points;
+Texture2D SceneDepthTexture;
+RWStructuredBuffer<uint> OutStats;
+
+groupshared uint GroupStats[4];
+
+#define APS_RASTER_GROUP_SIZE 64
+
+[numthreads(APS_RASTER_GROUP_SIZE, 1, 1)]
+void RasterCS(uint3 GroupThreadId : SV_GroupThreadID, uint3 DispatchThreadId : SV_DispatchThreadID)
+{
+	if (GroupThreadId.x < 4u)
+	{
+		GroupStats[GroupThreadId.x] = 0u;
+	}
+	GroupMemoryBarrierWithGroupSync();
+
+	uint Tested = 0u;
+	uint InFrustum = 0u;
+	uint Visible = 0u;
+	uint Written = 0u;
+
+	const uint4 DepthRect = View.ViewRectMinAndSize;
+	const float PreExposure = View.PreExposure;
+
+	LOOP
+	for (uint PointIndex = DispatchThreadId.x; PointIndex < PointCount; PointIndex += ThreadCount)
+	{
+		++Tested;
+		const uint2 Packed = Points[PointOffset + PointIndex];
+		const uint IntensityCode = Packed.y >> 24;
+		if (IntensityCode == 0u)
+		{
+			continue;
+		}
+		const float3 Quantized = float3(float(Packed.x & 0xFFFFu), float(Packed.x >> 16), float(Packed.y & 0xFFFFu));
+		const float3 Local = BoundsMin + Quantized * BoundsStep;
+		bool bExcluded = false;
+		LOOP
+		for (uint SphereIndex = 0u; SphereIndex < NumExclusionSpheres; ++SphereIndex)
+		{
+			const float3 FromExclusion = Local - ExclusionSpheres[SphereIndex].xyz;
+			if (dot(FromExclusion, FromExclusion) <= ExclusionSpheres[SphereIndex].w)
+			{
+				bExcluded = true;
+				break;
+			}
+		}
+		if (bExcluded)
+		{
+			continue;
+		}
+
+		const float3 Rel = Local - CameraLocal;
+		const float DistSq = dot(Rel, Rel);
+		const float3 Translated = ApsPresentPosition(Rel, sqrt(DistSq), LocalRotation, CompressA, CompressB,
+			ObserverTranslated);
+		const float4 Clip = mul(float4(Translated, 1.0), TranslatedWorldToClip);
+		if (!(Clip.w > 0.0))
+		{
+			continue;
+		}
+		const float2 Ndc = Clip.xy / Clip.w;
+		if (!(abs(Ndc.x) < 1.0) || !(abs(Ndc.y) < 1.0))
+		{
+			continue;
+		}
+		++InFrustum;
+
+		const float2 ViewportUV = float2(Ndc.x * 0.5 + 0.5, 0.5 - Ndc.y * 0.5);
+		const float2 Screen = ViewportUV * TargetSizeF;
+		const uint2 Pixel = min(uint2(Screen), TargetSize - 1u);
+		const float2 Sub = saturate(Screen - float2(Pixel));
+
+		// Reverse Z: a larger device Z is nearer. Planets, ships and stations in front hide the star. Rio 04.10 evening ("a
+		// black rim around every planet"): only the scene under the star's own pixel decides here; a nearer object within a
+		// render pixel no longer drops it, the composite fades its light over the edge instead.
+		const float StarDeviceZ = Clip.z / Clip.w;
+		const float SceneDeviceZ = ApsSceneDeviceZ(SceneDepthTexture, DepthRect, ViewportUV);
+		if (SceneDeviceZ > StarDeviceZ)
+		{
+			continue;
+		}
+		++Visible;
+
+		const float Brightness = ApsDecodeIntensity(IntensityCode) * SetBrightness / max(DistSq, MinDistanceSq)
+			* PreExposure;
+		if (!(Brightness >= MinPixelValue))
+		{
+			continue;
+		}
+		++Written;
+		const float Clamped = min(Brightness, MaxPixelValue);
+		const uint ColorIndex = (Packed.y >> 16) & 0xFFu;
+#if APS_ATOMIC64
+		ImageInterlockedMaxUInt64(OutStarBuffer64, Pixel, PackUlongType(ApsEncodeKey64(Clamped, Sub, ColorIndex)));
+#else
+		InterlockedMax(OutStarBuffer32[Pixel], ApsEncodeKey32(Clamped, Sub, ColorIndex));
+#endif
+	}
+
+	if (bWriteStats != 0u)
+	{
+		InterlockedAdd(GroupStats[0], Tested);
+		InterlockedAdd(GroupStats[1], InFrustum);
+		InterlockedAdd(GroupStats[2], Visible);
+		InterlockedAdd(GroupStats[3], Written);
+	}
+	GroupMemoryBarrierWithGroupSync();
+	if (bWriteStats != 0u && GroupThreadId.x == 0u)
+	{
+		InterlockedAdd(OutStats[0], GroupStats[0]);
+		InterlockedAdd(OutStats[1], GroupStats[1]);
+		InterlockedAdd(OutStats[2], GroupStats[2]);
+		InterlockedAdd(OutStats[3], GroupStats[3]);
+	}
+}

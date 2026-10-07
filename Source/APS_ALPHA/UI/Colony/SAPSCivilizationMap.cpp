@@ -1,4 +1,6 @@
 #include "SAPSCivilizationMap.h"
+#include "APS_ALPHA/UI/Style/APSUITheme.h"
+#include "APS_ALPHA/UI/Style/APSUINumber.h"
 
 #include "APS_ALPHA/Actors/Astro/CelestialBody.h"
 #include "APS_ALPHA/Actors/Astro/Moon.h"
@@ -17,17 +19,52 @@
 #include "APS_ALPHA/Gameplay/Fleet/APSFleetCommand.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
 #include "APS_ALPHA/UI/Style/APSMenuChrome.h"
+#include "APS_ALPHA/UI/Style/APSSlateLineGuard.h"
 #include "Brushes/SlateRoundedBoxBrush.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
+#include "Fonts/FontMeasure.h"
+#include "Framework/Application/SlateApplication.h"
 #include "GameFramework/PlayerController.h"
+#include "HAL/IConsoleManager.h"
 #include "Rendering/DrawElements.h"
+#include "Rendering/SlateRenderer.h"
+#include "Styling/AppStyle.h"
+#include "Widgets/Input/SButton.h"
+#include "Widgets/Layout/SBorder.h"
+#include "Widgets/Layout/SBox.h"
+#include "Widgets/SBoxPanel.h"
+#include "Widgets/Text/STextBlock.h"
 
 #define LOCTEXT_NAMESPACE "APSCivilizationMap"
 
 namespace APSCivilizationMapPrivate
 {
 	using namespace APSChrome;
+
+	/**
+	 * Rio 06.10 ("the system map moves with the ship in flight; it is 2D, why?"): Refresh() keeps every object's place
+	 * for a few frames, but under a fast ship the floating origin shifts the whole world every frame, while the
+	 * projection measures from the live centre (the star or the focused planet). The kept places slid with the ship and
+	 * jumped back at the next refresh. Every object is read where it is now; the kept place only stands in for an actor
+	 * that went away.
+	 */
+	FVector LivePlace(const SAPSCivilizationMap::FObject& Object)
+	{
+		const AActor* Actor = Object.Actor.Get();
+		return Actor ? Actor->GetActorLocation() : Object.Location;
+	}
+
+	/**
+	 * Rio 06.10 (audit: a clicked terminal button kept keyboard focus): aps.UI.TerminalButtonsNoFocus is registered with the
+	 * terminal buttons elsewhere and looked up by name here; when it is not found or 0 the buttons stay focusable (the
+	 * previous path).
+	 */
+	bool TerminalButtonsNoFocus()
+	{
+		const IConsoleVariable* Variable = IConsoleManager::Get().FindConsoleVariable(TEXT("aps.UI.TerminalButtonsNoFocus"));
+		return Variable && Variable->GetInt() != 0;
+	}
 
 	const FSlateBrush* Disc()
 	{
@@ -122,8 +159,38 @@ namespace APSCivilizationMapPrivate
 			const double Angle = UE_TWO_PI * Index / Segments;
 			Points.Add(Centre + FVector2D(FMath::Cos(Angle), FMath::Sin(Angle)) * Radius);
 		}
-		FSlateDrawElement::MakeLines(Out, Layer, Geometry.ToPaintGeometry(), Points, ESlateDrawEffect::None, Colour,
-			true, Thickness);
+		if (APSSlateLineGuard::IsDrawable(Points))
+		{
+			FSlateDrawElement::MakeLines(Out, Layer, Geometry.ToPaintGeometry(), Points, ESlateDrawEffect::None, Colour,
+				true, Thickness);
+		}
+	}
+
+	/** A dashed circle: a boundary, not an orbit. */
+	void DashedCircle(FSlateWindowElementList& Out, const int32 Layer, const FGeometry& Geometry, const FVector2D& Centre,
+		const double Radius, const FLinearColor& Colour, const float Thickness)
+	{
+		if (Radius < 1.0)
+		{
+			return;
+		}
+		const int32 Dashes = FMath::Clamp(FMath::RoundToInt(Radius * 0.25), 24, 96);
+		for (int32 Index = 0; Index < Dashes; ++Index)
+		{
+			const double From = UE_TWO_PI * Index / Dashes;
+			const double To = From + UE_TWO_PI * 0.55 / Dashes;
+			TArray<FVector2D> Points;
+			for (int32 Step = 0; Step <= 3; ++Step)
+			{
+				const double Angle = FMath::Lerp(From, To, Step / 3.0);
+				Points.Add(Centre + FVector2D(FMath::Cos(Angle), FMath::Sin(Angle)) * Radius);
+			}
+			if (APSSlateLineGuard::IsDrawable(Points))
+			{
+				FSlateDrawElement::MakeLines(Out, Layer, Geometry.ToPaintGeometry(), Points, ESlateDrawEffect::None, Colour,
+					true, Thickness);
+			}
+		}
 	}
 
 	void Dot(FSlateWindowElementList& Out, const int32 Layer, const FGeometry& Geometry, const FVector2D& Centre,
@@ -138,8 +205,11 @@ namespace APSCivilizationMapPrivate
 	void Polyline(FSlateWindowElementList& Out, const int32 Layer, const FGeometry& Geometry,
 		const TArray<FVector2D>& Points, const FLinearColor& Colour, const float Thickness)
 	{
-		FSlateDrawElement::MakeLines(Out, Layer, Geometry.ToPaintGeometry(), Points, ESlateDrawEffect::None, Colour,
-			true, Thickness);
+		if (APSSlateLineGuard::IsDrawable(Points))
+		{
+			FSlateDrawElement::MakeLines(Out, Layer, Geometry.ToPaintGeometry(), Points, ESlateDrawEffect::None, Colour,
+				true, Thickness);
+		}
 	}
 
 	void Label(FSlateWindowElementList& Out, const int32 Layer, const FGeometry& Geometry, const FVector2D& Position,
@@ -148,6 +218,17 @@ namespace APSCivilizationMapPrivate
 		FSlateDrawElement::MakeText(Out, Layer, Geometry.ToPaintGeometry(FVector2f(260.0f, 18.0f),
 			FSlateLayoutTransform(FVector2f(static_cast<float>(Position.X), static_cast<float>(Position.Y)))),
 			Text, FontInfo, ESlateDrawEffect::None, Colour);
+	}
+
+	/** A dark rounded plate under a map name, so it reads over the orbits and the star's glow (Rio 02.10). */
+	void Plate(FSlateWindowElementList& Out, const int32 Layer, const FGeometry& Geometry, const FVector2D& TopLeft,
+		const FVector2D& Size)
+	{
+		static const FSlateRoundedBoxBrush Brush(FLinearColor::White, 3.0f);
+		FSlateDrawElement::MakeBox(Out, Layer, Geometry.ToPaintGeometry(
+			FVector2f(static_cast<float>(Size.X), static_cast<float>(Size.Y)),
+			FSlateLayoutTransform(FVector2f(static_cast<float>(TopLeft.X), static_cast<float>(TopLeft.Y)))),
+			&Brush, ESlateDrawEffect::None, APSUITheme::Retint(FLinearColor(0.0f, 0.014f, 0.024f, 0.74f)));
 	}
 
 	/** Four corner brackets around a point, as the ship HUD marks its course target. */
@@ -327,7 +408,9 @@ void SAPSCivilizationMap::Refresh()
 		}
 		const FText Detail = It->IsA<ASpaceHeadquarters>() ? LOCTEXT("HeadquartersDetail", "HEADQUARTERS")
 			: It->IsA<ASpaceShipyard>() ? LOCTEXT("ShipyardDetail", "SHIPYARD") : LOCTEXT("StationDetail", "STATION");
-		Add(*It, EKind::Station, Detail, Cyan(), 0.0, AnchorOf(It->GetActorLocation()), true);
+		// Rio 02.10: the headquarters stands out in gold (its own marker and legend entry); stations and shipyards cyan.
+		Add(*It, EKind::Station, Detail, It->IsA<ASpaceHeadquarters>() ? FLinearColor(1.0f, 0.85f, 0.38f) : Cyan(), 0.0,
+			AnchorOf(It->GetActorLocation()), true);
 	}
 	for (TActorIterator<AColony> It(LiveWorld); It; ++It)
 	{
@@ -344,6 +427,18 @@ void SAPSCivilizationMap::Refresh()
 		if (bOwnColony)
 		{
 			Colony.Name = LOCTEXT("ColonyName", "HOME COLONY");
+		}
+	}
+	// Anomaly beacons at located sites (fleet command, Rio 01.10): a course can be set to them.
+	for (TActorIterator<AActor> It(LiveWorld); It; ++It)
+	{
+		if (IsValid(*It) && It->ActorHasTag(TEXT("APS.Fleet.Anomaly")))
+		{
+			// The ancient sites (Gameplay/Ancients) carry the anomaly tag too; they read as what they are, in pale cyan.
+			const bool bAncient = It->ActorHasTag(TEXT("APS.Ancient.Site"));
+			Add(*It, EKind::Outpost, bAncient ? LOCTEXT("AncientDetail", "ANCIENT SITE") : LOCTEXT("AnomalyDetail", "ANOMALY SITE"),
+				bAncient ? FLinearColor(0.25f, 0.9f, 1.0f) : FLinearColor(1.0f, 0.62f, 0.2f), 0.0,
+				AnchorOf(It->GetActorLocation()), true);
 		}
 	}
 	for (TActorIterator<AAutonomousOutpost> It(LiveWorld); It; ++It)
@@ -369,6 +464,7 @@ void SAPSCivilizationMap::Refresh()
 		const FAPSFleetUnit* Unit = Fleet ? Fleet->FindUnit(Ship) : nullptr;
 		FObject& Object = Add(Ship, EKind::Ship, Unit
 			? FText::Format(LOCTEXT("UnitDetail", "CLASS {0}  /  {1}"), EnumText(Ship->SizeClass), APSFleet::DivisionName(Unit->Division))
+			: Ship->IsGroundVehicle() ? LOCTEXT("VehicleDetail", "GROUND VEHICLE")
 			: FText::Format(LOCTEXT("ShipDetail", "CLASS {0} SHIP"), EnumText(Ship->SizeClass)),
 			Unit ? APSFleet::DivisionColour(Unit->Division) : bOwn ? FLinearColor(0.36f, 1.0f, 0.58f) : White(), 0.0,
 			AnchorOf(Ship->GetActorLocation()), bOwn);
@@ -389,6 +485,12 @@ void SAPSCivilizationMap::Refresh()
 
 void SAPSCivilizationMap::Focus(AActor* Planet)
 {
+	// Refresh() re-focuses the same view every few frames: only a new view (system or a planet's space) starts whole.
+	if (FocusPlanet.Get() != Planet)
+	{
+		MapZoom = 1.0;
+		MapOffset = FVector2D::ZeroVector;
+	}
 	FocusPlanet = Planet;
 	const AActor* Centre = Planet ? Planet : Star.Get();
 	RangeCm = 1.0;
@@ -405,14 +507,18 @@ void SAPSCivilizationMap::Focus(AActor* Planet)
 	};
 	if (const APlanetaryBody* Body = Cast<APlanetaryBody>(Planet))
 	{
-		// Local view: the planet's neighbourhood, from its surface out to its farthest moon, station or ship.
+		// Local view: the planet's neighbourhood, from its surface out to its farthest moon or station. Rio 02.10 ("a ship
+		// leaving on an order must not zoom the planet out unless that one ship is picked"): ships widen the view only
+		// when exactly one is picked and it is that ship.
 		const double PlanetRadius = FMath::Max(Body->GetWorldScapeBodyRadiusCm(), 1.0);
 		double Farthest = PlanetRadius * 5.0;
+		const AActor* FollowedShip = HighlightedShips.Num() == 1 ? HighlightedShips[0].Get() : nullptr;
 		for (const FObject& Object : Objects)
 		{
-			if (Object.Anchor.Get() == Planet && Object.Actor.Get() != Planet)
+			if (Object.Anchor.Get() == Planet && Object.Actor.Get() != Planet
+				&& (Object.Kind != EKind::Ship || Object.Actor.Get() == FollowedShip))
 			{
-				Farthest = FMath::Max(Farthest, InPlane(Object.Location));
+				Farthest = FMath::Max(Farthest, InPlane(APSCivilizationMapPrivate::LivePlace(Object)));
 			}
 		}
 		RangeCm = Farthest * 1.12;
@@ -427,7 +533,7 @@ void SAPSCivilizationMap::Focus(AActor* Planet)
 		{
 			if (Object.Kind == EKind::Planet)
 			{
-				const double Distance = InPlane(Object.Location);
+				const double Distance = InPlane(APSCivilizationMapPrivate::LivePlace(Object));
 				Nearest = FMath::Min(Nearest, Distance);
 				Farthest = FMath::Max(Farthest, Distance);
 			}
@@ -526,22 +632,26 @@ int32 SAPSCivilizationMap::OnPaint(const FPaintArgs& Args, const FGeometry& Allo
 {
 	using namespace APSCivilizationMapPrivate;
 	const FVector2D Size = AllottedGeometry.GetLocalSize();
-	const FVector2D Centre = Size * 0.5;
-	const double PixelRadius = FMath::Max(FMath::Min(Size.X, Size.Y) * 0.5 - 38.0, 40.0);
+	// The whole projection scales with the radius, so the wheel zoom is a larger radius and the pan a moved centre.
+	const FVector2D Centre = Size * 0.5 + MapOffset;
+	const double PixelRadius = FMath::Max(FMath::Min(Size.X, Size.Y) * 0.5 - 38.0, 40.0) * MapZoom;
 	const FSlateFontInfo LabelFont = Font(TEXT("Bold"), 9);
 	const FSlateFontInfo SmallFont = Font(TEXT("Regular"), 9);
 	PaintedPositions.Init(Unpainted, Objects.Num());
 	PaintedDiscRadius = 0.0;
 	const FAPSFleetCommand* Fleet = APSFleetFind(World.Get());
 
-	// Guide rings: a quarter, half and three quarters of the view.
-	for (int32 Ring = 1; Ring <= 4; ++Ring)
-	{
-		Circle(OutDrawElements, LayerId, AllottedGeometry, Centre, PixelRadius * Ring / 4.0,
-			FLinearColor(0.26f, 0.84f, 0.93f, Ring == 4 ? 0.10f : 0.05f), 1.0f);
-	}
-
+	// Only real orbits are drawn as rings (Rio, 01.10: the quarter-view guide rings read as orbits nobody has); the edge
+	// of the view, just past the outermost planet or the planet's farthest moon, station or ship, is a dashed boundary.
 	const AActor* Planet = FocusPlanet.Get();
+	{
+		const FLinearColor EdgeColour(0.26f, 0.84f, 0.93f, 0.30f);
+		DashedCircle(OutDrawElements, LayerId, AllottedGeometry, Centre, PixelRadius, EdgeColour, 1.0f);
+		const FVector2D EdgeLabel = Centre + FVector2D(0.70710678, -0.70710678) * PixelRadius + FVector2D(6.0, -14.0);
+		Label(OutDrawElements, LayerId + 1, AllottedGeometry, EdgeLabel,
+			Planet ? LOCTEXT("PlanetSpaceEdge", "EDGE OF LOCAL SPACE") : LOCTEXT("SystemEdge", "EDGE OF THE SYSTEM"), SmallFont,
+			EdgeColour * FLinearColor(1.0f, 1.0f, 1.0f, 2.2f));
+	}
 	const AActor* ViewCentre = Planet ? Planet : Star.Get();
 	const auto InPlaneDistance = [this, ViewCentre](const FVector& Location)
 	{
@@ -558,7 +668,7 @@ int32 SAPSCivilizationMap::OnPaint(const FPaintArgs& Args, const FGeometry& Allo
 			if (bOrbit)
 			{
 				Circle(OutDrawElements, LayerId + 1, AllottedGeometry, Centre,
-					ProjectRadius(InPlaneDistance(Object.Location), PixelRadius),
+					ProjectRadius(InPlaneDistance(LivePlace(Object)), PixelRadius),
 					FLinearColor(Object.Color.R, Object.Color.G, Object.Color.B, 0.22f), 1.0f);
 			}
 		}
@@ -610,12 +720,13 @@ int32 SAPSCivilizationMap::OnPaint(const FPaintArgs& Args, const FGeometry& Allo
 		PlacedLabels.Add(Rect);
 		return true;
 	};
+	const TSharedRef<FSlateFontMeasure> FontMeasure = FSlateApplication::Get().GetRenderer()->GetFontMeasureService();
 	// YOU is always written: its place is taken first.
 	for (const FObject& Object : Objects)
 	{
 		if (Object.Kind == EKind::Pilot && IsShown(Object))
 		{
-			PlaceLabel(Project(Object.Location, Centre, PixelRadius) + FVector2D(14.0, -20.0), Object.Name, 1.0);
+			PlaceLabel(Project(LivePlace(Object), Centre, PixelRadius) + FVector2D(14.0, -20.0), Object.Name, 1.0);
 		}
 	}
 	for (int32 Index = 0; Index < Objects.Num(); ++Index)
@@ -625,7 +736,7 @@ int32 SAPSCivilizationMap::OnPaint(const FPaintArgs& Args, const FGeometry& Allo
 		{
 			continue;
 		}
-		const FVector2D Position = Project(Object.Location, Centre, PixelRadius);
+		const FVector2D Position = Project(LivePlace(Object), Centre, PixelRadius);
 		PaintedPositions[Index] = Position;
 		const FLinearColor& Colour = Object.Color;
 		switch (Object.Kind)
@@ -654,11 +765,38 @@ int32 SAPSCivilizationMap::OnPaint(const FPaintArgs& Args, const FGeometry& Allo
 			break;
 		case EKind::Station:
 		{
-			const double Half = 5.0;
-			Polyline(OutDrawElements, LayerId + 4, AllottedGeometry, {Position + FVector2D(-Half, -Half),
-				Position + FVector2D(Half, -Half), Position + FVector2D(Half, Half), Position + FVector2D(-Half, Half),
-				Position + FVector2D(-Half, -Half)}, Colour, 1.6f);
-			Dot(OutDrawElements, LayerId + 4, AllottedGeometry, Position, 1.8, Colour);
+			const AActor* Station = Object.Actor.Get();
+			if (Station && Station->IsA<ASpaceHeadquarters>())
+			{
+				// Rio 02.10 ("where the HQ is"): the headquarters as a house in a soft halo, larger than a station.
+				const double Half = 7.0;
+				Dot(OutDrawElements, LayerId + 3, AllottedGeometry, Position, 13.0,
+					FLinearColor(Colour.R, Colour.G, Colour.B, 0.16f));
+				Polyline(OutDrawElements, LayerId + 4, AllottedGeometry, {Position + FVector2D(-Half, -1.0),
+					Position + FVector2D(0.0, -Half - 2.0), Position + FVector2D(Half, -1.0), Position + FVector2D(Half, Half),
+					Position + FVector2D(-Half, Half), Position + FVector2D(-Half, -1.0)}, Colour, 1.8f);
+				Polyline(OutDrawElements, LayerId + 4, AllottedGeometry, {Position + FVector2D(-2.2, Half),
+					Position + FVector2D(-2.2, 2.0), Position + FVector2D(2.2, 2.0), Position + FVector2D(2.2, Half)},
+					Colour, 1.4f);
+			}
+			else if (Station && Station->IsA<ASpaceShipyard>())
+			{
+				// A shipyard: an open dock under its gantry.
+				const double Half = 6.0;
+				Polyline(OutDrawElements, LayerId + 4, AllottedGeometry, {Position + FVector2D(-Half, -Half),
+					Position + FVector2D(-Half, Half), Position + FVector2D(Half, Half), Position + FVector2D(Half, -Half)},
+					Colour, 1.6f);
+				Polyline(OutDrawElements, LayerId + 4, AllottedGeometry, {Position + FVector2D(-Half - 2.5, -Half),
+					Position + FVector2D(Half + 2.5, -Half)}, Colour, 1.6f);
+			}
+			else
+			{
+				const double Half = 5.0;
+				Polyline(OutDrawElements, LayerId + 4, AllottedGeometry, {Position + FVector2D(-Half, -Half),
+					Position + FVector2D(Half, -Half), Position + FVector2D(Half, Half), Position + FVector2D(-Half, Half),
+					Position + FVector2D(-Half, -Half)}, Colour, 1.6f);
+				Dot(OutDrawElements, LayerId + 4, AllottedGeometry, Position, 1.8, Colour);
+			}
 			break;
 		}
 		case EKind::Colony:
@@ -697,7 +835,7 @@ int32 SAPSCivilizationMap::OnPaint(const FPaintArgs& Args, const FGeometry& Allo
 			const FVector2D Badge = Position + FVector2D(9.0, -9.0);
 			Dot(OutDrawElements, LayerId + 5, AllottedGeometry, Badge, 4.0, FLinearColor(0.36f, 1.0f, 0.58f));
 			Label(OutDrawElements, LayerId + 6, AllottedGeometry, Badge + FVector2D(5.0, -8.0),
-				FText::AsNumber(*Count), SmallFont, FLinearColor(0.36f, 1.0f, 0.58f));
+				APSUINumber::Number(*Count), SmallFont, FLinearColor(0.36f, 1.0f, 0.58f));
 		}
 		// Names: always for the star and planets, and for everything in a local view.
 		const bool bNamed = Object.Kind == EKind::Star || Object.Kind == EKind::Planet || Planet != nullptr;
@@ -706,15 +844,27 @@ int32 SAPSCivilizationMap::OnPaint(const FPaintArgs& Args, const FGeometry& Allo
 		if (bNamed && Object.Kind != EKind::Pilot
 			&& PlaceLabel(Position + FVector2D(-30.0, Below + 3.0), Object.Name, bSurveyTag ? 2.0 : 1.0))
 		{
-			Label(OutDrawElements, LayerId + 6, AllottedGeometry, Position + FVector2D(-30.0, Below + 3.0), Object.Name,
+			// Rio 02.10 ("labels hard to read"): a dark plate under the name and its survey line.
+			const double PlateWidth = FMath::Max(FontMeasure->Measure(Object.Name, LabelFont).X, bSurveyTag
+				? FontMeasure->Measure(APSFleet::SurveyName(Fleet->GetSurvey(Object.Actor.Get())), SmallFont).X : 0.0);
+			Plate(OutDrawElements, LayerId + 5, AllottedGeometry, Position + FVector2D(-34.0, Below + 2.0),
+				FVector2D(PlateWidth + 8.0, bSurveyTag ? 28.0 : 15.0));
+			// Rio 03.10: each line sits on the plate by its capitals' middle (7.5 px from the plate's top; the survey
+			// line 12.5 px under it), not by Slate's line box.
+			const auto LineTop = [&FontMeasure](const FSlateFontInfo& LineFont, const double CapsMiddle)
+			{
+				return CapsMiddle - FontMeasure->GetMaxCharacterHeight(LineFont) * 0.5 + CapsCenterOffset(LineFont);
+			};
+			Label(OutDrawElements, LayerId + 6, AllottedGeometry,
+				Position + FVector2D(-30.0, LineTop(LabelFont, Below + 9.5)), Object.Name,
 				LabelFont, FLinearColor(Colour.R, Colour.G, Colour.B, 0.95f));
 			// What the civilization knows of the world: its survey under the name.
 			if (bSurveyTag)
 			{
 				const APSFleet::ESurvey Survey = Fleet->GetSurvey(Object.Actor.Get());
-				Label(OutDrawElements, LayerId + 6, AllottedGeometry, Position + FVector2D(-30.0, Below + 15.0),
+				Label(OutDrawElements, LayerId + 6, AllottedGeometry, Position + FVector2D(-30.0, LineTop(SmallFont, Below + 22.0)),
 					APSFleet::SurveyName(Survey), SmallFont, Survey == APSFleet::ESurvey::Unknown
-						? FLinearColor(0.55f, 0.62f, 0.66f, 0.7f) : Survey == APSFleet::ESurvey::Surveyed ? Cyan()
+						? APSUITheme::Retint(FLinearColor(0.55f, 0.62f, 0.66f, 0.7f)) : Survey == APSFleet::ESurvey::Surveyed ? Cyan()
 						: APSFleet::DivisionColour(APSFleet::EDivision::Science));
 			}
 		}
@@ -822,6 +972,7 @@ int32 SAPSCivilizationMap::OnPaint(const FPaintArgs& Args, const FGeometry& Allo
 	};
 	TArray<FLegend> Legend = {
 		{LOCTEXT("LegendColony", "COLONY"), FLinearColor(0.36f, 1.0f, 0.58f)},
+		{LOCTEXT("LegendHeadquarters", "HQ"), FLinearColor(1.0f, 0.85f, 0.38f)},
 		{LOCTEXT("LegendStation", "STATION"), Cyan()},
 		{LOCTEXT("LegendOutpost", "OUTPOST"), Amber()},
 		{LOCTEXT("LegendCourse", "COURSE"), Amber()},
@@ -887,19 +1038,152 @@ int32 SAPSCivilizationMap::HitTest(const FVector2D& LocalPosition) const
 
 FReply SAPSCivilizationMap::OnMouseMove(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
 {
-	HoverIndex = HitTest(MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition()));
+	const FVector2D Local = MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition());
+	if (bPressed)
+	{
+		bPanning |= FVector2D::Distance(Local, PressPosition) > 4.0;
+		if (bPanning)
+		{
+			MapOffset = PressOffset + (Local - PressPosition);
+			return FReply::Handled();
+		}
+	}
+	HoverIndex = HitTest(Local);
 	return FReply::Unhandled();
 }
 
 FReply SAPSCivilizationMap::OnMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
 {
-	if (MouseEvent.GetEffectingButton() != EKeys::LeftMouseButton)
+	if (MouseEvent.GetEffectingButton() != EKeys::LeftMouseButton && MouseEvent.GetEffectingButton() != EKeys::RightMouseButton)
 	{
 		return FReply::Unhandled();
 	}
-	const int32 Index = HitTest(MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition()));
-	SelectedId = Objects.IsValidIndex(Index) ? Objects[Index].StableId : FString();
-	OnSelectionChanged.ExecuteIfBound();
+	bPressed = true;
+	bPanning = false;
+	PressPosition = MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition());
+	PressOffset = MapOffset;
+	// Rio 06.10 (review of the capture-lost fix): the second button of an overlapping press keeps the capture the map holds.
+	// Capturing again releases it first, so OnMouseCaptureLost would clear the press just made and the map would keep the
+	// capture for good (its button-up returns early without a press). The state above is set as before.
+	return HasMouseCapture() ? FReply::Handled() : FReply::Handled().CaptureMouse(SharedThis(this));
+}
+
+FReply SAPSCivilizationMap::OnMouseButtonUp(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
+{
+	if (!bPressed)
+	{
+		return FReply::Unhandled();
+	}
+	bPressed = false;
+	if (!bPanning && MouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
+	{
+		const FVector2D Local = MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition());
+		// Rio 02.10 ("objects right on top of each other: a click opens a little list beside them, pick one there"): two
+		// or more drawn objects under the cursor (the focused planet's disc aside) open a list of them by the cursor.
+		TArray<int32> Stack;
+		for (int32 Index = 0; Index < PaintedPositions.Num() && Index < Objects.Num(); ++Index)
+		{
+			const bool bFocusDisc = Objects[Index].Kind == EKind::Planet && Objects[Index].Actor.Get() == FocusPlanet.Get();
+			if (!bFocusDisc && Objects[Index].Kind != EKind::Pilot && APSCivilizationMapPrivate::IsPainted(PaintedPositions[Index])
+				&& FVector2D::Distance(PaintedPositions[Index], Local) <= 12.0)
+			{
+				Stack.Add(Index);
+			}
+		}
+		if (Stack.Num() > 1)
+		{
+			const TWeakPtr<SAPSCivilizationMap> WeakMap = SharedThis(this);
+			TSharedRef<SVerticalBox> List = SNew(SVerticalBox);
+			for (const int32 Index : Stack)
+			{
+				const FObject& Object = Objects[Index];
+				const FString Id = Object.StableId;
+				List->AddSlot().AutoHeight().Padding(0.0f, 1.0f)
+				[
+					SNew(SButton)
+					.IsFocusable(!APSCivilizationMapPrivate::TerminalButtonsNoFocus())
+					.ButtonColorAndOpacity(APSUITheme::Retint(FLinearColor(0.03f, 0.10f, 0.13f, 1.0f)))
+					.ContentPadding(FMargin(14.0f, 5.0f))
+					.OnClicked_Lambda([WeakMap, Id]()
+					{
+						if (const TSharedPtr<SAPSCivilizationMap> MapWidget = WeakMap.Pin())
+						{
+							MapWidget->SelectedId = Id;
+							MapWidget->OnSelectionChanged.ExecuteIfBound();
+						}
+						FSlateApplication::Get().DismissAllMenus();
+						return FReply::Handled();
+					})
+					[
+						SNew(SVerticalBox)
+						+ SVerticalBox::Slot().AutoHeight()
+						[
+							SNew(STextBlock).Text(Object.Name).Font(APSChrome::Font(TEXT("Bold"), 10))
+							.ColorAndOpacity(FSlateColor(Object.Color))
+						]
+						+ SVerticalBox::Slot().AutoHeight()
+						[
+							SNew(STextBlock).Text(Object.Detail).Font(APSChrome::Font(TEXT("Regular"), 9))
+							.ColorAndOpacity(FSlateColor(APSUITheme::Retint(FLinearColor(0.64f, 0.75f, 0.80f, 1.0f))))
+						]
+					]
+				];
+			}
+			FSlateApplication::Get().PushMenu(SharedThis(this), FWidgetPath(),
+				SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+				.BorderBackgroundColor(APSUITheme::Retint(FLinearColor(0.0f, 0.016f, 0.026f, 0.96f))).Padding(6.0f)
+				[
+					SNew(SBox).MinDesiredWidth(220.0f)
+					[
+						List
+					]
+				],
+				MouseEvent.GetScreenSpacePosition() + FVector2D(14.0, -10.0),
+				FPopupTransitionEffect(FPopupTransitionEffect::ContextMenu));
+		}
+		else
+		{
+			const int32 Index = HitTest(Local);
+			SelectedId = Objects.IsValidIndex(Index) ? Objects[Index].StableId : FString();
+			OnSelectionChanged.ExecuteIfBound();
+		}
+	}
+	bPanning = false;
+	return FReply::Handled().ReleaseMouseCapture();
+}
+
+FReply SAPSCivilizationMap::OnMouseWheel(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
+{
+	const FVector2D Size = MyGeometry.GetLocalSize();
+	const FVector2D ScreenCentre = Size * 0.5;
+	// Zoom about the selected object when one is drawn, else about the cursor.
+	FVector2D Anchor = MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition());
+	bool bSelectedAnchor = false;
+	for (int32 Index = 0; Index < Objects.Num(); ++Index)
+	{
+		if (!SelectedId.IsEmpty() && Objects[Index].StableId == SelectedId && PaintedPositions.IsValidIndex(Index)
+			&& PaintedPositions[Index].X > -1000.0 && PaintedPositions[Index].X < Size.X + 1000.0)
+		{
+			Anchor = PaintedPositions[Index];
+			bSelectedAnchor = true;
+			break;
+		}
+	}
+	const double Previous = MapZoom;
+	MapZoom = FMath::Clamp(MapZoom * FMath::Pow(1.25, MouseEvent.GetWheelDelta()), 1.0, 80.0);
+	if (MapZoom <= 1.0001)
+	{
+		MapOffset = FVector2D::ZeroVector;
+		return FReply::Handled();
+	}
+	const FVector2D CentreNow = ScreenCentre + MapOffset;
+	FVector2D CentreNew = Anchor - (Anchor - CentreNow) * (MapZoom / Previous);
+	if (bSelectedAnchor && MapZoom > Previous)
+	{
+		// Zooming in brings the selected object toward the middle of the view.
+		CentreNew += (ScreenCentre - Anchor) * 0.35;
+	}
+	MapOffset = CentreNew - ScreenCentre;
 	return FReply::Handled();
 }
 
@@ -919,6 +1203,14 @@ void SAPSCivilizationMap::OnMouseLeave(const FPointerEvent& MouseEvent)
 {
 	SLeafWidget::OnMouseLeave(MouseEvent);
 	HoverIndex = INDEX_NONE;
+}
+
+void SAPSCivilizationMap::OnMouseCaptureLost(const FCaptureLostEvent& CaptureLostEvent)
+{
+	// Rio 06.10 (audit: Alt-Tab during a drag; the next move panned without a held button), as SAPSStrategicMapView does.
+	bPressed = false;
+	bPanning = false;
+	SLeafWidget::OnMouseCaptureLost(CaptureLostEvent);
 }
 
 FCursorReply SAPSCivilizationMap::OnCursorQuery(const FGeometry& MyGeometry, const FPointerEvent& CursorEvent) const

@@ -1,0 +1,226 @@
+diff --git a/F:/ChatGPT/APOSFERA/work/planet_continuity_20260929/collision-height-install-v2/plugin/Source/WorldScapeCore/Private/WorldScapeRoot_Main.cpp "b/F:\\ChatGPT\\APOSFERA\\work\\surface_detail_20260915\\PluginBuild\\Plugins\\WorldScape\\Source\\WorldScapeCore\\Private\\WorldScapeRoot_Main.cpp"
+index 9c342bae..2ae264c1 100644
+--- a/F:/ChatGPT/APOSFERA/work/planet_continuity_20260929/collision-height-install-v2/plugin/Source/WorldScapeCore/Private/WorldScapeRoot_Main.cpp
++++ "b/F:\\ChatGPT\\APOSFERA\\work\\surface_detail_20260915\\PluginBuild\\Plugins\\WorldScape\\Source\\WorldScapeCore\\Private\\WorldScapeRoot_Main.cpp"
+@@ -378,6 +378,7 @@ void AWorldScapeRoot::Tick(float DeltaTime) {
+ 		Prev_bDisplayCollision = bDisplayCollision;
+ 		for (int32 i = 0; i < CollisionLods.Num(); i++)
+ 		{
++			if (bDisplayCollision) RestoreCollisionSampleColors(CollisionLods[i]);
+ 			CollisionLods[i]->Mesh->SetVisibility(bDisplayCollision);
+ 		}
+ 
+diff --git a/F:/ChatGPT/APOSFERA/work/planet_continuity_20260929/collision-height-install-v2/plugin/Source/WorldScapeCore/Private/WorldScapeRoot_Collision.cpp "b/F:\\ChatGPT\\APOSFERA\\work\\surface_detail_20260915\\PluginBuild\\Plugins\\WorldScape\\Source\\WorldScapeCore\\Private\\WorldScapeRoot_Collision.cpp"
+index 22a4e129..70307915 100644
+--- a/F:/ChatGPT/APOSFERA/work/planet_continuity_20260929/collision-height-install-v2/plugin/Source/WorldScapeCore/Private/WorldScapeRoot_Collision.cpp
++++ "b/F:\\ChatGPT\\APOSFERA\\work\\surface_detail_20260915\\PluginBuild\\Plugins\\WorldScape\\Source\\WorldScapeCore\\Private\\WorldScapeRoot_Collision.cpp"
+@@ -5,12 +5,47 @@
+ 
+ namespace
+ {
++	TAutoConsoleVariable<int32> CVarCollisionHeightOnly(
++		TEXT("worldscape.CollisionHeightOnly"), 0,
++		TEXT("Opt-in immutable APS spherical collision height sampler. 0 keeps full noise. Does not reduce collision density or defer readiness."),
++		ECVF_Default);
+ 	TAutoConsoleVariable<int32> CVarCollisionSampleTasks(
+ 		TEXT("worldscape.CollisionSampleTasks"), 4,
+ 		TEXT("Maximum parallel collision sample tasks (1..4), only for roots tagged APS.Collision.ParallelSamples. 1 restores serial sampling."),
+ 		ECVF_Default);
+ }
+ 
++void AWorldScapeRoot::RestoreCollisionSampleColors(UWorldScapeLod* CollisionLod)
++{
++	check(IsInGameThread());
++	if (!IsValid(CollisionLod) || CollisionLod->CollisionHeightOnlyPositions.IsEmpty()) return;
++	check(CollisionLod->CollisionHeightOnlyPositions.Num() == CollisionLod->Vertices.Num());
++	TArray<FHeightMapVolumeDataCopy> Heights;
++	TArray<FNoiseVolumeData> Noises;
++	TArray<FTerrainHoleVolumeData> Holes;
++	TArray<FTransform> Transforms;
++	GetVolumesData(Heights, Noises, Holes, CollisionLod->GetFBox());
++	for (const auto& Height : Heights) Transforms.Add(Height.VolumeLocation);
++	CollisionLod->VertexColors.SetNumUninitialized(CollisionLod->Vertices.Num());
++	for (int32 I = 0; I < CollisionLod->Vertices.Num(); ++I)
++	{
++		const FNoiseData Data = GetNoise(CollisionLod->CollisionHeightOnlyPositions[I], Noises, Heights, Holes, Transforms);
++		CollisionLod->VertexColors[I] = FLinearColor(Data.HeightNormalize, Data.Temperature, Data.Humidity, Data.FoliageMask);
++	}
++	// UpdateMeshSection requires full positions and then refits physics. Instead
++	// change only the public CPU section colours and recreate its render proxy;
++	// leave positions/topology and the cooked body intact, including while frozen.
++	if (IsValid(CollisionLod->Mesh))
++	{
++		FWorldScapeMeshSection* Section = CollisionLod->Mesh->GetProcMeshSection(0);
++		if (!ensure(Section && Section->PlanetVertexBuffer.Num() == CollisionLod->VertexColors.Num())) return;
++		for (int32 I = 0; I < CollisionLod->VertexColors.Num(); ++I)
++			Section->PlanetVertexBuffer[I].Color = CollisionLod->VertexColors[I].ToFColor(false);
++		CollisionLod->Mesh->MarkRenderStateDirty();
++	}
++	CollisionLod->CollisionHeightOnlyPositions.Empty();
++}
++
+ void AWorldScapeRoot::CheckCollisionDeletion(FVector HardenNormal, bool ResetCollisions)
+ {
+ 	TRACE_CPUPROFILER_EVENT_SCOPE(WS_CheckCollisionDeletion);
+@@ -386,6 +421,14 @@ void ColisionGeneration::CalculateNoise()
+ 		&& TerrainHoleVolumeListVar.IsEmpty();
+ 	const int32 MaxTasks = bSafeParallel
+ 		? FMath::Clamp(CVarCollisionSampleTasks.GetValueOnGameThread(), 1, 4) : 1;
++	const bool bHeightOnly = bSafeParallel && CVarCollisionHeightOnly.GetValueOnGameThread() != 0
++		&& !RootRef->bFlatWorld && RootRef->GenerationType == EWorldScapeType::Planet
++		&& !RootRef->bDisplayCollision && !RootRef->bPlanetaryInvertMapBlend
++		&& !RootRef->OnCollisionLodsUpdate.IsBound()
++		&& IsValid(RootRef->WorldScapeNoise) && RootRef->WorldScapeNoise->SupportsCollisionHeightOnly();
++	if (bHeightOnly) WorldScapeLodRef->CollisionHeightOnlyPositions.SetNumUninitialized(NumVertices);
++	else WorldScapeLodRef->CollisionHeightOnlyPositions.Empty();
++	TArray<DVector>& HeightOnlyPositions = WorldScapeLodRef->CollisionHeightOnlyPositions;
+ 	// Allocate once before task launch. Every task writes only its own vertex/color;
+ 	// no shared Add(), resize, component access or UObject mutation in the body.
+ 	MainPatch.VertexColors.SetNumUninitialized(NumVertices);
+@@ -394,17 +437,35 @@ void ColisionGeneration::CalculateNoise()
+ 		const DVector ECEFVertexPosition = MainPatch.Vertices[i] + RelativePosition;
+ 
+ 
+-		FNoiseData Data = RootRef->GetNoise(ECEFVertexPosition, NoiseVolumeListVar, VolumeListVar, TerrainHoleVolumeListVar, VolumeTransformArray);
++		FNoiseData Data;
++		if (bHeightOnly)
++		{
++			HeightOnlyPositions[i] = ECEFVertexPosition;
++			Data.Height = RootRef->WorldScapeNoise->SampleCollisionHeight(RootRef->PlanetNoise,
++				ECEFVertexPosition + RootRef->NoiseOffset, RootRef->PlanetLocation,
++				RootRef->NoiseScale, RootRef->NoiseIntensity, RootRef->PlanetScaleCode,
++				static_cast<float>(RootRef->GetLattitude(ECEFVertexPosition)));
++		}
++		else Data = RootRef->GetNoise(ECEFVertexPosition, NoiseVolumeListVar, VolumeListVar, TerrainHoleVolumeListVar, VolumeTransformArray);
+ 		MainPatch.VertexColors[i] = FLinearColor(Data.HeightNormalize, Data.Temperature, Data.Humidity, Data.FoliageMask);
+ 
+ 		MainPatch.Vertices[i] = WorldScapeWorld::GetVertexTransformation(Data.Height, MainPatch.Vertices[i], bFlatWorld, ECEFVertexPosition).ToFVector();
+ 
+ 	};
+-	if (MaxTasks > 1 && NumVertices >= 1024)
+-		ParallelFor(TEXT("WS_CollisionSampleBatch"), NumVertices,
+-			FMath::DivideAndRoundUp(NumVertices, MaxTasks), SampleVertex);
+-	else
+-		for (int32 i = 0; i < NumVertices; ++i) SampleVertex(i);
++	auto SampleAll = [&]()
++	{
++		if (MaxTasks > 1 && NumVertices >= 1024)
++			ParallelFor(TEXT("WS_CollisionSampleBatch"), NumVertices,
++				FMath::DivideAndRoundUp(NumVertices, MaxTasks), SampleVertex);
++		else
++			for (int32 i = 0; i < NumVertices; ++i) SampleVertex(i);
++	};
++	if (bHeightOnly)
++	{
++		TRACE_CPUPROFILER_EVENT_SCOPE(WS_CollisionHeightOnlySamples);
++		SampleAll();
++	}
++	else SampleAll();
+ }
+ 
+ void ColisionGeneration::SetPointPosition()
+diff --git a/F:/ChatGPT/APOSFERA/work/planet_continuity_20260929/collision-height-install-v2/plugin/Source/WorldScapeCore/Private/Tests/APSWorldScapeCollisionSamplingTests.cpp "b/F:\\ChatGPT\\APOSFERA\\work\\surface_detail_20260915\\PluginBuild\\Plugins\\WorldScape\\Source\\WorldScapeCore\\Private\\Tests\\APSWorldScapeCollisionSamplingTests.cpp"
+index 6aaeed1d..cca77b70 100644
+--- a/F:/ChatGPT/APOSFERA/work/planet_continuity_20260929/collision-height-install-v2/plugin/Source/WorldScapeCore/Private/Tests/APSWorldScapeCollisionSamplingTests.cpp
++++ "b/F:\\ChatGPT\\APOSFERA\\work\\surface_detail_20260915\\PluginBuild\\Plugins\\WorldScape\\Source\\WorldScapeCore\\Private\\Tests\\APSWorldScapeCollisionSamplingTests.cpp"
+@@ -14,6 +14,9 @@ bool FAPSWorldScapeCollisionSamplingTest::RunTest(const FString& Parameters)
+     auto* Tasks = IConsoleManager::Get().FindConsoleVariable(TEXT("worldscape.CollisionSampleTasks"));
+     if (!TestNotNull(TEXT("Bounded sampling switch"), Tasks)) return false;
+     const int32 SavedTasks = Tasks->GetInt();
++    auto* HeightOnly = IConsoleManager::Get().FindConsoleVariable(TEXT("worldscape.CollisionHeightOnly"));
++    if (!TestNotNull(TEXT("Height-only sampling switch"), HeightOnly)) return false;
++    const int32 SavedHeightOnly = HeightOnly->GetInt();
+     UWorld* World = UWorld::CreateWorld(EWorldType::Game, false);
+     if (!TestNotNull(TEXT("Collision parity world"), World)) return false;
+     auto* Root = World->SpawnActor<AWorldScapeRoot>();
+@@ -41,6 +44,7 @@ bool FAPSWorldScapeCollisionSamplingTest::RunTest(const FString& Parameters)
+             Radius, DVector(0), false, true);
+         Root->Tags.AddUnique(Tag);
+         Tasks->Set(1, ECVF_SetByCode);
++        HeightOnly->Set(0, ECVF_SetByCode);
+         ColisionGeneration Serial(Lod, Root, Position, DVector(0), FVector2D::ZeroVector,
+             Radius, 0, 200.0f, Resolution, 0, FVector::UpVector, bFlat);
+         const TArray<FVector> ExpectedVertices = Lod->Vertices;
+@@ -49,18 +53,21 @@ bool FAPSWorldScapeCollisionSamplingTest::RunTest(const FString& Parameters)
+         // Repeat both opt-in and opt-out with a >1 task setting. Untagged noise
+         // stays serial; all variants retain exactly the same complete payload.
+         Tasks->Set(4, ECVF_SetByCode);
++        HeightOnly->Set(1, ECVF_SetByCode);
+         for (bool bOptIn : {true, false})
+         {
+             if (bOptIn) Root->Tags.AddUnique(Tag); else Root->Tags.Remove(Tag);
+             ColisionGeneration Actual(Lod, Root, Position, DVector(0), FVector2D::ZeroVector,
+                 Radius, 0, 200.0f, Resolution, 0, FVector::UpVector, bFlat);
+             TestTrue(TEXT("Exact collision vertex parity"), Lod->Vertices == ExpectedVertices);
++            TestTrue(TEXT("Unknown generator retains full sampling"), Lod->CollisionHeightOnlyPositions.IsEmpty());
+             TestTrue(TEXT("Exact semantic color parity"), Lod->VertexColors == ExpectedColors);
+             TestTrue(TEXT("Topology and resolution retained"), Lod->Triangles == ExpectedTriangles);
+             Checked += Lod->Vertices.Num();
+         }
+     }
+     Tasks->Set(SavedTasks, ECVF_SetByCode);
++    HeightOnly->Set(SavedHeightOnly, ECVF_SetByCode);
+     Lod->Mesh->DestroyComponent();
+     Lod->DestroyComponent();
+     World->DestroyWorld(false);
+diff --git a/F:/ChatGPT/APOSFERA/work/planet_continuity_20260929/collision-height-install-v2/plugin/Source/WorldScapeCore/Public/WorldScapeLod.h "b/F:\\ChatGPT\\APOSFERA\\work\\surface_detail_20260915\\PluginBuild\\Plugins\\WorldScape\\Source\\WorldScapeCore\\Public\\WorldScapeLod.h"
+index c757aba6..498648ee 100644
+--- a/F:/ChatGPT/APOSFERA/work/planet_continuity_20260929/collision-height-install-v2/plugin/Source/WorldScapeCore/Public/WorldScapeLod.h
++++ "b/F:\\ChatGPT\\APOSFERA\\work\\surface_detail_20260915\\PluginBuild\\Plugins\\WorldScape\\Source\\WorldScapeCore\\Public\\WorldScapeLod.h"
+@@ -73,6 +73,11 @@ public:
+ 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "MeshInfo")
+ 	TArray<FLinearColor> VertexColors;
+ 
++	// Only hidden opt-in collision chunks retain their exact pre-displacement
++	// samples. Used once to recover full semantic colours before debug display;
++	// released on restoration, full resampling or component destruction.
++	TArray<DVector> CollisionHeightOnlyPositions;
++
+ 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "MeshInfo")
+ 	TArray<FVector> Normals;
+ 
+diff --git a/F:/ChatGPT/APOSFERA/work/planet_continuity_20260929/collision-height-install-v2/plugin/Source/WorldScapeCore/Public/WorldScapeRoot.h "b/F:\\ChatGPT\\APOSFERA\\work\\surface_detail_20260915\\PluginBuild\\Plugins\\WorldScape\\Source\\WorldScapeCore\\Public\\WorldScapeRoot.h"
+index 8cf4449b..1a668166 100644
+--- a/F:/ChatGPT/APOSFERA/work/planet_continuity_20260929/collision-height-install-v2/plugin/Source/WorldScapeCore/Public/WorldScapeRoot.h
++++ "b/F:\\ChatGPT\\APOSFERA\\work\\surface_detail_20260915\\PluginBuild\\Plugins\\WorldScape\\Source\\WorldScapeCore\\Public\\WorldScapeRoot.h"
+@@ -1931,6 +1931,7 @@ public:
+ 	void CreateInstancedMesh(FFoliagesSector* Sector, const UWorldScapeFoliagesInterface* Foliage);
+ 	
+ 	void CollisionLodHandler(const FVector HardenNormal, const  double AltitudeMultiplier, const bool ResetCollisions, const double GroundHeight);
++	void RestoreCollisionSampleColors(UWorldScapeLod* CollisionLod);
+ 	void CheckCollisionDeletion(const FVector HardenNormal, const bool ResetCollisions);
+ 	int32 CreateNewColisionMesh(const DVector RelativePosition);
+ 
+@@ -2087,7 +2088,7 @@ public:
+ };
+ 
+ 
+-class ColisionGeneration
++class WORLDSCAPECORE_API ColisionGeneration
+ {
+ public:
+ 	ColisionGeneration(UWorldScapeLod* pWorldScapeLod, AWorldScapeRoot* pRoot, DVector pRelativePosition, DVector pPlanetLocation, FVector2D pSubPosition,
+diff --git a/F:/ChatGPT/APOSFERA/work/planet_continuity_20260929/collision-height-install-v2/plugin/Source/WorldScapeNoise/Public/WorldScapeNoiseClass.h "b/F:\\ChatGPT\\APOSFERA\\work\\surface_detail_20260915\\PluginBuild\\Plugins\\WorldScape\\Source\\WorldScapeNoise\\Public\\WorldScapeNoiseClass.h"
+index 7dd360ef..f373e0a4 100644
+--- a/F:/ChatGPT/APOSFERA/work/planet_continuity_20260929/collision-height-install-v2/plugin/Source/WorldScapeNoise/Public/WorldScapeNoiseClass.h
++++ "b/F:\\ChatGPT\\APOSFERA\\work\\surface_detail_20260915\\PluginBuild\\Plugins\\WorldScape\\Source\\WorldScapeNoise\\Public\\WorldScapeNoiseClass.h"
+@@ -45,6 +45,19 @@ public:
+ 		return FNoiseData();
+ 	};
+ 
++	// Optional immutable, spherical collision sampler. Unknown implementations
++	// retain the complete GetNoise path. The owner still gates volumes/heightmaps.
++	virtual bool SupportsCollisionHeightOnly() const { return false; }
++	virtual double SampleCollisionHeight(CustomNoise& NoiseClass, const DVector& Position,
++		const DVector& PlanetPosition, double NoiseScale, double NoiseIntensity,
++		double PlanetScale, double Latitude) const
++	{
++		DVector NoisePosition;
++		return const_cast<UWorldScapeNoiseClass*>(this)->GetNoise(NoiseClass, Position,
++			PlanetPosition, NoiseScale, NoiseIntensity, PlanetScale, false, Latitude,
++			NoisePosition, FNoiseData(), false).Height;
++	}
++
+ #if WITH_EDITOR
+ 	virtual void PostEditChangeProperty(struct FPropertyChangedEvent& e) override;
+ #endif

@@ -7,6 +7,45 @@
 #include "APS_ALPHA/Generation/PlanetaryProceduralGenerator.h"
 #include "APS_ALPHA/Generation/PlanetGenerator.h"
 #include "APS_ALPHA/Generation/MoonGenerator.h"
+#include <limits>
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAPSPlanetPreviewWheelContinuityTest,
+	"APS.Preview.Editor.PlanetWheelContinuity",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+bool FAPSPlanetPreviewWheelContinuityTest::RunTest(const FString& Parameters)
+{
+	for (const double RadiusKm : {1.0, 6371.0, 6750.0, 70000.0})
+	{
+		const double R = RadiusKm * 1.e5;
+		const auto Bounds = FAPSPreviewCameraBounds::Calculate(R, R, .25, 1.01);
+		for (const double HeightRatio : {.011, .02, .15, 1.0, 10.0})
+		{
+			const double D = R * (1.0 + HeightRatio);
+			const double Closer = FAPSPreviewCameraBounds::ApplyWheel(D, R, .25, Bounds.MinimumCm, Bounds.MaximumCm);
+			TestTrue(TEXT("Closer remains outside the surface and is monotonic"), Closer <= D && Closer >= Bounds.MinimumCm);
+			if (Closer > Bounds.MinimumCm)
+			{
+				TestTrue(TEXT("Fractional wheel scales clearance, not planet radius"), FMath::IsNearlyEqual(
+					(Closer - R) / (D - R), FMath::Pow(.82, .25), 1.e-10));
+				const double Back = FAPSPreviewCameraBounds::ApplyWheel(Closer, R, -.25, Bounds.MinimumCm, Bounds.MaximumCm);
+				TestTrue(TEXT("Unclamped zoom round trip is reversible"), FMath::IsNearlyEqual(Back / D, 1.0, 1.e-12));
+			}
+			const double Delta = FAPSPreviewCameraBounds::WheelDeltaBetween(D, R * 1.5, R);
+			TestTrue(TEXT("Automation inverse uses the exact production zoom metric"), FMath::IsNearlyEqual(
+				FAPSPreviewCameraBounds::ApplyWheel(D, R, Delta, Bounds.MinimumCm, Bounds.MaximumCm) / (R * 1.5), 1.0, 1.e-12));
+		}
+		TestEqual(TEXT("Extreme inward input stops at the original bound"), FAPSPreviewCameraBounds::ApplyWheel(R * 2, R, 1.e9, Bounds.MinimumCm, Bounds.MaximumCm), Bounds.MinimumCm);
+		TestEqual(TEXT("Extreme outward input stops at the original bound"), FAPSPreviewCameraBounds::ApplyWheel(R * 2, R, -1.e9, Bounds.MinimumCm, Bounds.MaximumCm), Bounds.MaximumCm);
+	}
+	constexpr double R = 6750.e5;
+	TestTrue(TEXT("One click from 1000km reaches 820km, not 67.5km"), FMath::IsNearlyEqual(
+		(FAPSPreviewCameraBounds::ApplyWheel(R + 1000.e5, R, 1, R * 1.01, R * 30) - R) / 1.e5, 820.0, 1.e-8));
+	TestTrue(TEXT("Star/system/interrupted-focus law is unchanged"), FMath::IsNearlyEqual(
+		FAPSPreviewCameraBounds::ApplyWheel(1.e18, 0, .25, 1, 1.e25) / 1.e18, FMath::Pow(.82, .25), 1.e-12));
+	TestEqual(TEXT("Nonfinite wheel input cannot poison the camera"), FAPSPreviewCameraBounds::ApplyWheel(100, 0,
+		std::numeric_limits<double>::quiet_NaN(), 1, 1000), 100.0);
+	return true;
+}
 
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAPSPlanetPreviewZoomBoundsTest,
 	"APS.Preview.Editor.PlanetMoonZoomBounds",

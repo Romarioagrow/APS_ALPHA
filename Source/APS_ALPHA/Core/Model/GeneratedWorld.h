@@ -10,6 +10,7 @@
 #include "APS_ALPHA/Core/Enums/StellarType.h"
 #include "APS_ALPHA/Core/Model/APSCanonicalStellarDataset.h"
 #include "APS_ALPHA/Core/Saves/GeneratedWorldData.h"
+#include "APS_ALPHA/Core/Planetary/APSPlanetCloudSettings.h"
 #include "GeneratedWorld.generated.h"
 
 struct FPlanetData;
@@ -41,6 +42,9 @@ USTRUCT()
 struct FAPSPreviewBodyEditOverride
 {
 	GENERATED_BODY()
+
+	UPROPERTY()
+	FAPSPlanetCloudSettings CloudSettings;
 
 	UPROPERTY()
 	EPlanetType PlanetType{EPlanetType::Frozen};
@@ -226,6 +230,13 @@ public:
 	const FString* FindPreviewDisplayNameOverride(const FString& StableKey) const;
 	void ClearPreviewDisplayNameOverrides() { PreviewDisplayNameOverrides.Reset(); }
 
+	/** Display-name keys of the galaxy and the home cluster (Rio 02.10: they are named like bodies). */
+	static const TCHAR* GalaxyNameKey() { return TEXT("GALAXY"); }
+	static const TCHAR* ClusterNameKey() { return TEXT("CLUSTER"); }
+	/** The player's name, else one generated from the seed (APSBodyNames). */
+	FString GetGalaxyName() const;
+	FString GetClusterName() const;
+
 	/** Resolves UI seed zero from stable world/body identity, never actor transform/name. */
 	static int32 ResolveCanonicalSurfaceSeed(
 		int32 AuthoredSeed, int32 WorldGenerationSeed, const FString& StableBodyKey);
@@ -239,6 +250,14 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
 	bool bGenerateFullScaledWorld{ true };
 
+	/**
+	 * Rio 05.10 (real scale experiment, stage 1 = menu only): the same seed, catalogue and StableIds laid out at real
+	 * distances (neighbouring stars ~1.3 pc apart, planetary orbits not compacted). Needs FULL-SCALE WORLD; a game cannot
+	 * start from it yet. Every older save loads OFF.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Generation Params")
+	bool bRealScale{ false };
+
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
 	bool bGenerateHomeSystem{ true };
 
@@ -248,6 +267,11 @@ public:
 	/** Deterministic seed shared by menu preview and the committed gameplay hierarchy. */
 	UPROPERTY(EditAnywhere, Category = "Generation Params")
 	int32 GenerationSeed{271828};
+
+	/** Body-name generator of this world (APSBodyNames): new worlds use the current style (1); a world restored
+	 * from a snapshot without this field keeps the original "Lonesobo Planet" names (0), so its fleet keys hold. */
+	UPROPERTY()
+	int32 NameStyle{1};
 
 	/** Finalized stellar truth duplicated unchanged into the gameplay GameInstance. */
 	UPROPERTY()
@@ -323,6 +347,25 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Galaxy")
 	int GalaxyStarCount{ 100000000 };
 
+	/**
+	 * Rio 03.10 (STARS slider, 1,800..1,000,000): galaxy stars actually placed, the first N of the fixed catalogue
+	 * order, so more stars only add to the same sky. 0 keeps the historic budgets (menu 1,800, gameplay 25,000).
+	 * A render budget: never part of the canonical dataset InputHash.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Galaxy")
+	int32 GalaxyPlacedStarCount{ 0 };
+
+	/**
+	 * Rio 03.10 ("the galaxy's star sizes and spectral classes, the same as for the cluster"): the cluster's presets
+	 * applied to the galaxy catalogue. All Sequences / All Spectral (the zero value, and every older save) keep the
+	 * historic catalogue exactly. Re-resolved, never stored, never part of the canonical dataset InputHash.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Galaxy")
+	EStarClusterPopulation GalaxyStarPopulation{};
+
+	UPROPERTY(EditAnywhere, Category = "Galaxy")
+	EStarClusterComposition GalaxyStarComposition{};
+
 	UPROPERTY(EditAnywhere, Category = "Home System", meta = (EditCondition = "!bRandomHomeSystem"))
 	int PlanetsAmount{ 0 };
 
@@ -376,6 +419,9 @@ public:
 	// Свойства атмосферы
 	UPROPERTY(EditAnywhere, Category = "Atmosphere")
 	double AtmosphereHeight{ 100.0 };
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Clouds")
+	FAPSPlanetCloudSettings CloudSettings;
 
 	UPROPERTY(EditAnywhere, Category = "Atmosphere")
 	double AtmosphereOpacity{ 1.0 };
@@ -478,6 +524,7 @@ public:
 		WorldData.SurfaceCraterScale = SurfaceCraterScale;
 		WorldData.SurfaceRoughnessScale = SurfaceRoughnessScale;
 		WorldData.AtmosphereHeight = AtmosphereHeight;
+		WorldData.CloudSettings = CloudSettings.Sanitized();
 		WorldData.AtmosphereOpacity = AtmosphereOpacity;
 		WorldData.AtmosphereMultiScattering = AtmosphereMultiScattering;
 		WorldData.AtmosphereRayleighScattering = AtmosphereRayleighScattering;

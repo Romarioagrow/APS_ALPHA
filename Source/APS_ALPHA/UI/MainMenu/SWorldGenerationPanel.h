@@ -8,6 +8,7 @@ class SAPSGenerationRangeSlider;
 class SVerticalBox;
 class SEditableTextBox;
 struct FAPSPreviewBodyEntry;
+struct FAPSModelCard;
 
 enum class EAPSGenerationSurfaceControl : uint8
 {
@@ -52,6 +53,11 @@ private:
 	void RebuildBodyHierarchy(const TArray<FAPSPreviewBodyEntry>& Entries, uint32 Signature);
 	FString GetHierarchyEntryKey(const FAPSPreviewBodyEntry& Entry) const;
 	FReply ToggleHierarchyChildren(FString EntryKey);
+	/** LIVE MODEL card, rebuilt only when its content changes (Rio 02.10: readable facts, not one text block). */
+	void RefreshModelCard();
+	void RebuildModelCard(const FAPSModelCard& Card);
+	/** The name box follows the selected body or scope while it has no keyboard focus. */
+	void RefreshNameBox();
 
 	TWeakObjectPtr<UWorldGenerationViewModel> ViewModel;
 	FSimpleDelegate OnBack;
@@ -64,4 +70,8 @@ private:
 	FString PendingRenameBodyKey;
 	TSharedPtr<SEditableTextBox> BodyNameTextBox;
 	TWeakObjectPtr<AActor> LastHierarchySelection;
+	TSharedPtr<SVerticalBox> ModelCardBox;
+	FString ModelCardSignature;
+	FString NameBoxKey;
+	FString NameBoxValue;
 };

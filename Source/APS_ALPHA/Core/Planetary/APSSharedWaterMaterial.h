@@ -38,7 +38,10 @@ namespace APSSharedWaterMaterial
         FMaterialResource* Resource = Candidate->GetMaterialResource(FeatureLevel);
         FMaterialShaderMap* Map = Resource ? Resource->GetGameThreadShaderMap() : nullptr;
         return Resource && Resource->IsGameThreadShaderMapComplete()
-            && Resource->GetCompileErrors().Num() == 0 && Map
+#if WITH_EDITOR
+            && Resource->GetCompileErrors().Num() == 0
+#endif
+            && Map
             && Map->GetMeshShaderMap(&FLocalVertexFactory::StaticType);
     }
     // Creation is not publication. The probe must request asynchronous shader/

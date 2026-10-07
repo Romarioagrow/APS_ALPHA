@@ -39,6 +39,9 @@ public:
 	UFUNCTION(BlueprintPure, Category="Civilization|Materialization")
 	bool IsMaterializationComplete() const { return bMaterializationComplete; }
 
+	/** A new surface start is still taking the pilot into the colony (the arrival curtain waits for it). */
+	bool IsPilotArrivalPending() const { return bPilotArrivalPending; }
+
 	FOnAPSCivilizationMaterializationStateChanged& OnMaterializationStateChanged()
 	{
 		return MaterializationStateChanged;
@@ -66,12 +69,14 @@ private:
 	 */
 	bool ResolvePilotSite(APlanetaryBody* HomeBody, FVector& OutPreferredUp);
 	/**
-	 * After a new surface start materializes, the pilot walks up to the colony: a stand point beside the base and the
-	 * landed ship, facing them and the sun (Rio, 30.09: the start showed a lone pilot). The pilot waits in the surface
-	 * handoff until the terrain collision under the stand point exists, like the generator's own landing.
+	 * A new surface start takes the pilot into the colony: inside the headquarters hall once the building stands (Rio
+	 * 03.10), otherwise to a stand point beside the base and the landed ship, facing them and the sun (Rio, 30.09). Until
+	 * then the pilot hovers in the surface handoff over the stand point, where WorldScape then builds the collision.
 	 */
 	void BeginPilotArrival(APlanetaryBody* HomeBody, const FVector& BaseLocation, const FVector& PadLocation);
 	void TickPilotArrival();
+	bool PlacePilotInHeadquarters(class ACustomGravityCharacter* Pilot);
+	void FinishPilotArrival(class ACustomGravityCharacter* Pilot, const TCHAR* Where);
 	bool TryMaterializeEntities(AAstroGenerator* Generator, APlanetaryBody* HomeBody,
 		const FAPSCivilizationFootprintResult& Placement);
 	AActor* FindMaterializedActor(const FAPSCivilizationManifestEntity& Entity) const;
@@ -121,10 +126,18 @@ private:
 	 * headquarters, and a piloted ship stays under its pilot: in service, not parked (Rio 29.09/30.09: every start works).
 	 */
 	bool bShipParkedAtColony{false};
-	FVector PilotArrivalLocation{FVector::ZeroVector};
-	FVector PilotArrivalView{FVector::ZeroVector};
-	FVector PilotArrivalReturn{FVector::ZeroVector};
+	/**
+	 * The arrival's ground point, facing and the landing site it came from, in home-body space: the hop can shift the
+	 * world origin, and stored world positions then sent the pilot into the terrain (Rio 03.10, a 3088 km hop).
+	 */
+	FVector PilotArrivalLocal{FVector::ZeroVector};
+	FVector PilotArrivalViewLocal{FVector::ZeroVector};
+	FVector PilotArrivalReturnLocal{FVector::ZeroVector};
+	/** Where the pilot settled after landing, in home-body space (the arrival's leash). */
+	FVector PilotSettleLocal{FVector::ZeroVector};
 	double PilotArrivalDeadlineSeconds{0.0};
+	/** No ground under the stand point in time: the pilot hovers back over the landing site until its ground holds. */
+	bool bPilotArrivalReturning{false};
 	FOnAPSCivilizationMaterializationStateChanged MaterializationStateChanged;
 	float RetryAccumulator{0.0f};
 	bool bManifestInitialized{false};

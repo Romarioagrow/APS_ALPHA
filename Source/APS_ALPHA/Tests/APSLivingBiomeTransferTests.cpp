@@ -34,9 +34,13 @@ bool FAPSLivingBiomeTransferTest::RunTest(const FString& Parameters)
             return FMath::Square(FMath::Clamp((1.0f + 2.0f * CoastContrast)
                 * (R - CoastShift - Variation) - CoastContrast, 0.0f, 1.0f));
         };
-        TestTrue(TEXT("Sand is not already suppressed at sea level"), InlandMask(0.08f) < 0.001f);
-        TestTrue(TEXT("The beach does not cover inland elevations"), InlandMask(0.20f) > 0.999f);
+        TestTrue(TEXT("Below-sea sediment remains available"), InlandMask(0.03f) < 0.001f);
+        TestTrue(TEXT("Coastal sand is gone above the narrow coastal band"),
+            InlandMask(CoastUpperHeight + 0.0001f) > 0.999f);
+        TestTrue(TEXT("Accepted inland layers remain unchanged"), InlandMask(0.20f) > 0.999f);
     }
+    TestTrue(TEXT("Sand band no longer consumes a large fraction of the land span"),
+        CoastUpperHeight - 0.08f <= 0.01201f);
     FAPSResolvedPlanetSurfaceProfile Profile;
     Profile.Archetype = EAPSPlanetSurfaceArchetype::Magmatic;
     Profile.LiquidType = EAPSPlanetLiquidType::Lava;

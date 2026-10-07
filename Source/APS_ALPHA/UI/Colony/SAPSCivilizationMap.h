@@ -74,7 +74,11 @@ public:
 	virtual FReply OnMouseMove(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
 	virtual FReply OnMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
 	virtual FReply OnMouseButtonDoubleClick(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
+	virtual FReply OnMouseButtonUp(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
+	virtual FReply OnMouseWheel(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
 	virtual void OnMouseLeave(const FPointerEvent& MouseEvent) override;
+	/** Rio 06.10 (audit: Alt-Tab during a drag left the press armed): a lost capture ends the press and the pan. */
+	virtual void OnMouseCaptureLost(const FCaptureLostEvent& CaptureLostEvent) override;
 	virtual FCursorReply OnCursorQuery(const FGeometry& MyGeometry, const FPointerEvent& CursorEvent) const override;
 
 private:
@@ -103,4 +107,12 @@ private:
 	mutable TArray<FVector2D> PaintedPositions;
 	/** Radius of the focused planet's disc in the local view, for picking. */
 	mutable double PaintedDiscRadius{0.0};
+	/** Wheel zoom (1 = the whole view) and the view centre's offset from the widget centre, pixels (Rio 02.10). */
+	double MapZoom{1.0};
+	FVector2D MapOffset{FVector2D::ZeroVector};
+	/** A press that moves past a few pixels pans the map; one that does not is a click (selection). */
+	bool bPressed{false};
+	bool bPanning{false};
+	FVector2D PressPosition{FVector2D::ZeroVector};
+	FVector2D PressOffset{FVector2D::ZeroVector};
 };

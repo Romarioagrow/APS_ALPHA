@@ -34,7 +34,7 @@ struct FGalaxyCatalogStarRecord
 	int32 SpectralSubclass{0};
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Galaxy|Catalog")
-	bool bPotentialStarSystem{true};
+	bool bPotentialStarSystem{true}; float RadiusScale{1.0f}; // Rio 03.10: galaxy POPULATION size factor (not reflected; one line keeps UHT line numbers)
 };
 
 /**
@@ -69,7 +69,7 @@ struct FGalaxyCatalogDescriptor
 	EGalaxyClass GalaxyClass{EGalaxyClass::E0};
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Galaxy|Catalog")
-	FVector CatalogHalfExtent{FVector::ZeroVector};
+	FVector CatalogHalfExtent{FVector::ZeroVector}; uint8 StarPopulation{0}; uint8 StarComposition{0}; // Rio 03.10: galaxy POPULATION/COMPOSITION (EStarCluster* values; not reflected, one line keeps UHT line numbers)
 
 	FGuid MakeStableStarId(int64 CatalogIndex) const;
 	bool ResolveStar(int64 CatalogIndex, FGalaxyCatalogStarRecord& OutRecord) const;
@@ -86,6 +86,7 @@ public:
 
 protected:
 	virtual void PostInitializeComponents() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 public:
 
@@ -113,4 +114,30 @@ public:
 	bool GetRenderedCatalogIndex(int32 InstanceIndex, int64& OutCatalogIndex) const;
 	bool GetRenderedCatalogRecord(int32 InstanceIndex, FGalaxyCatalogStarRecord& OutRecord) const;
 	bool GetRenderedProxyBaseTransform(int32 InstanceIndex, FTransform& OutTransform) const;
+
+	/**
+	 * Rio 03.10 (galaxy phase 3): GPU points + glow of the catalogue beyond the ISM prefix (APSGalaxyGpuStars.h,
+	 * Plugins/APSStarRenderer). Built on a background task, only while aps.Stars.GpuPoints / aps.Stars.GalaxyGlow ask.
+	 */
+	void RebuildGpuStarLayer();
+	void ReleaseGpuStarLayer();
+	/** APSStarRenderer handles (0 = none) and the build state; owned by APSGalaxyGpuStars. */
+	uint32 GpuPointSet{0};
+	uint32 GpuGlowVolume{0};
+	uint32 GpuStarLayerSerial{0};
+	bool bGpuStarLayerActive{false};
+	bool bGpuStarLayerBuilding{false};
 };
+
+namespace APSGalaxyCatalogBatch
+{
+	/**
+	 * Rio 03.10 (up to 1M placed stars): resolves render ordinals [FirstOrdinal, FirstOrdinal +
+	 * Count) of a nested catalogue order, in parallel for large ranges. Pure catalogue reads, so
+	 * the records equal one-by-one ResolveStar calls. An unresolvable ordinal keeps
+	 * CatalogIndex == INDEX_NONE. Returns the number of resolved records.
+	 */
+	APS_ALPHA_API int32 ResolveStars(const FGalaxyCatalogDescriptor& Catalog,
+		const APSCanonicalStellarProjection::FNestedCatalogPermutation& Order,
+		int32 FirstOrdinal, int32 Count, TArray<FGalaxyCatalogStarRecord>& OutRecords);
+}

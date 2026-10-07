@@ -7,8 +7,9 @@ public class APS_ALPHA : ModuleRules
 	public APS_ALPHA(ReadOnlyTargetRules Target) : base(Target)
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
+        PrivateDependencyModuleNames.Add("Chaos"); // Opt-in fitted-hull spatial sweeps.
 	
-		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "UMG", "ModelViewViewModel"
+		PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "PhysicsCore", "InputCore", "UMG", "ModelViewViewModel"
 			, "WorldScapeCore"
 			, "WorldScapeCommon"
 			, "WorldScapeNoise"
@@ -27,6 +28,8 @@ public class APS_ALPHA : ModuleRules
 		}
 		
 		PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore", "DirGravity", "EnhancedInput", "AssetRegistry", "RenderCore" });
+		// Rio 03.10 (galaxy phase 3): GPU star points and galaxy glow (Plugins/APSStarRenderer, enabled in the .uproject).
+		PrivateDependencyModuleNames.Add("APSStarRenderer");
 
 		// Uncomment if you are using Slate UI
 		// PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore" });

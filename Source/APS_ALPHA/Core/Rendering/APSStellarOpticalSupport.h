@@ -18,7 +18,19 @@ struct FProfile
 	float RayStrength = 0.0f;
 };
 
-inline FProfile Select(const TArray<float>& Data, const int32 Stride, const int32 Index)
+/**
+ * RayRule (A5, Rio 01.10: "some stars have rays, others not"): 0 the accepted stable rank (a share of the bright
+ * stars sparkles, so the field is no uniform grid of crosses), 1 every star bright enough sparkles, 2 none does.
+ */
+/** Live ray settings, defined next to their console variables in APSGameplayStellarView.cpp: aps.Stars.RayRule,
+ * aps.Stars.RayBrightness (where rays begin) and aps.Stars.RaySize (their reach). */
+int32 RayRuleSetting();
+double RayBrightnessSetting();
+double RaySizeSetting();
+
+inline FProfile Select(const TArray<float>& Data, const int32 Stride, const int32 Index,
+	const int32 RayRule = RayRuleSetting(), const double RayBrightness = RayBrightnessSetting(),
+	const double RaySize = RaySizeSetting())
 {
 	FProfile Result;
 	const int64 Base = int64(Index) * Stride;
@@ -39,8 +51,22 @@ inline FProfile Select(const TArray<float>& Data, const int32 Stride, const int3
 		* FMath::Clamp(Gain, 0.5, 1.2);
 	const double Rank = FMath::Frac(FMath::Abs(double(Data[Base + 4])) * 17.713 + 0.37);
 	const double RankThreshold = FMath::Lerp(0.96, 0.72, FMath::Clamp(Brightness * 2.0, 0.0, 1.0));
-	if (Brightness < 0.055 || Rank < RankThreshold) return Result;
+	if (Brightness < 0.055 || RayRule == 2) return Result;
 	const double Strength = FMath::Clamp((Brightness - 0.035) / 0.42, 0.0, 1.0);
+	if (RayRule == 1)
+	{
+		// Rio 02.10: "no rays at all" at the old threshold 0.3, which hardly any catalogue star reaches; then "rays OK
+		// but they stand out too much: smaller, with a smooth transition". Rays fade in over a band of brightness
+		// above RayBrightness instead of switching on, and reach about two thirds of rule 0's.
+		const double Fade = FMath::SmoothStep(RayBrightness, RayBrightness + 0.2, Brightness);
+		if (Fade <= 0.0) return Result;
+		const double Reach = FMath::Lerp(5.0, 9.5, Strength) * FMath::Clamp(RaySize, 0.25, 2.0);
+		Result.SupportPixels = FMath::Clamp(FMath::Lerp(CompactSupportPixels, Reach, Fade),
+			CompactSupportPixels, MaximumSupportPixels);
+		Result.RayStrength = float(Fade * FMath::Lerp(0.25, 0.7, Strength));
+		return Result;
+	}
+	if (Rank < RankThreshold) return Result;
 	Result.SupportPixels = FMath::Lerp(8.0, MaximumSupportPixels, Strength);
 	Result.RayStrength = float(FMath::Lerp(0.35, 1.0, Strength));
 	return Result;
