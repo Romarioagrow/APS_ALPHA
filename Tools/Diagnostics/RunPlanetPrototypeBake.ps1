@@ -8,12 +8,16 @@ param(
     [switch]$WaterRelease,
     [switch]$WaterShoreTransmission,
     [switch]$CloudWeatherCandidate,
-    [switch]$CloudLayeredCandidate
+    [switch]$CloudLayeredCandidate,
+    [switch]$CloudTwoCrossingCandidate
 )
 $ErrorActionPreference='Stop'
 if($CloudWeatherCandidate -and $CloudLayeredCandidate){throw 'Select one cloud candidate: refined V31 or layered V30'}
 if($CloudWeatherCandidate -and $Candidate -ne 'Clouds'){throw 'CloudWeatherCandidate requires Candidate Clouds'}
 if($CloudLayeredCandidate -and $Candidate -ne 'Clouds'){throw 'CloudLayeredCandidate requires Candidate Clouds'}
+# Rio 06.10 (clouds vanish at an altitude): V33 two-crossing cloud graph, exclusive with V30/V31.
+if($CloudTwoCrossingCandidate -and ($CloudWeatherCandidate -or $CloudLayeredCandidate)){throw 'Select one cloud candidate: two-crossing V33, refined V31 or layered V30'}
+if($CloudTwoCrossingCandidate -and $Candidate -ne 'Clouds'){throw 'CloudTwoCrossingCandidate requires Candidate Clouds'}
 if($WaterShoreTransmission -and ($Candidate -ne 'WaterAnalytic' -or $WaterRelease -or $AnchorSplit -or $AnchorNoise)){throw 'ShoreTransmission uses only published WaterV1'}
 if($WaterRelease -and ($Candidate -ne 'WaterAnalytic' -or $AnchorSplit -or $AnchorNoise)){throw 'Release uses the saved anchored-noise source, no diagnostic builder switches'}
 if($AnchorNoise -and !$AnchorSplit){throw 'AnchorNoise requires AnchorSplit'}
@@ -42,6 +46,7 @@ if($Candidate -eq 'SurfaceScatter') { $destination=$projectRoot+'/Content/APS/AP
 if($Candidate -eq 'Clouds'){$destination=$projectRoot+'/Content/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/CloudWeather20261002V27'}
 if($CloudWeatherCandidate){$destination=$projectRoot+'/Content/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/CloudWeather20261003V31'}
 if($CloudLayeredCandidate){$destination=$projectRoot+'/Content/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/CloudWeather20261002V30'}
+if($CloudTwoCrossingCandidate){$destination=$projectRoot+'/Content/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/CloudWeather20261006V33'}
 if($Candidate -eq 'GasGiant'){$destination=$projectRoot+'/Content/APS/APS_ALPHA/Diagnostics/GasCloudBelts20261002V2'}
 if($Candidate -eq 'ScatterMaterial'){$destination=$projectRoot+'/Content/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/ScatterMaterial20260930V1'}
 if($Candidate -eq 'WaterDomainAudit') { $destination=$projectRoot+'/Content/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/WaterDomainAudit20260930' }
@@ -117,6 +122,15 @@ foreach($source in $sources) {
 if($Candidate -eq 'Clouds'){
     . (Join-Path $PSScriptRoot 'CloudWeatherDiagnostic.ps1')
     $cloudSelection=Get-APSCloudWeatherDiagnostic -ProjectRoot $projectRoot -Candidate:$CloudWeatherCandidate -LayeredCandidate:$CloudLayeredCandidate
+    if($CloudTwoCrossingCandidate){
+        # CloudWeatherDiagnostic.ps1 knows V27/V30/V31 only: keep its V27 constant, source
+        # list and DLL-age checks above, then validate the V33 constant against the header.
+        $twoCrossingPath='/Game/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/CloudWeather20261006V33/M_APS_PlanetCloud.M_APS_PlanetCloud'
+        $twoCrossingMatch=[regex]::Match((Get-Content -LiteralPath ($projectRoot+'/Source/APS_ALPHA/Core/Planetary/APSPlanetCloudWeather.h') -Raw),
+            '(?m)^inline constexpr const TCHAR\* TwoCrossingMaterialPath=TEXT\("([^"]+)"\);')
+        if(!$twoCrossingMatch.Success -or $twoCrossingMatch.Groups[1].Value -cne $twoCrossingPath){throw 'Two-crossing cloud path differs from its policy constant'}
+        $cloudSelection=[pscustomobject]@{ObjectPath=$twoCrossingPath;Asset=(Join-Path $projectRoot ('Content/'+$twoCrossingPath.Substring(6).Split('.')[0]+'.uasset'));Sources=$cloudSelection.Sources;Candidate=$false;LayeredCandidate=$false}
+    }
     if([IO.Path]::GetFullPath((Split-Path -Parent $cloudSelection.Asset)) -ne [IO.Path]::GetFullPath($destination)){throw 'Cloud builder and destination disagree'}
 }
 New-Item -ItemType Directory -Path $runDir | Out-Null
@@ -207,6 +221,7 @@ if($Candidate -eq 'GasGiant'){
     $arguments+='-OnlyPlanetCloudCandidate'
     if($CloudWeatherCandidate){$arguments+='-APSCloudWeatherCandidate'}
     if($CloudLayeredCandidate){$arguments+='-APSCloudLayeredCandidate'}
+    if($CloudTwoCrossingCandidate){$arguments+='-APSCloudTwoCrossingCandidate'}
 } elseif($Candidate -eq 'SurfaceScatter') {
     $arguments+='-OnlySurfaceScatter'
 } elseif($Candidate -eq 'ScatterMaterial') {

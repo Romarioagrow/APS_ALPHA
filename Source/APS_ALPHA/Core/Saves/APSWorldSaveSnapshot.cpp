@@ -117,8 +117,18 @@ UGeneratedWorld* APSWorldSaveSnapshot::Restore(const UGameSave* Save, UObject* O
 		Archive.Close();
 		bRestoredSnapshot = !Reader.IsError();
 		Reader.Close();
+		if (!bRestoredSnapshot)
+		{
+			// Rio 06.10 (audit: saves): the legacy summary has no seed (a slot hash stands in) and none of the newer fields,
+			// so substituting it for a present snapshot silently loaded another world under the save's name.
+			UE_LOG(LogTemp, Error,
+				TEXT("[APS.Save] Slot %s: model snapshot (%d bytes, version %d) is unreadable; refusing legacy-summary substitution"),
+				*SlotName, Save->GeneratedWorldModelData.Num(), Save->SaveFormatVersion);
+			return nullptr;
+		}
 	}
 
+	// Only a save without a snapshot (before the snapshot existed) falls back to the legacy summary.
 	if (!bRestoredSnapshot)
 	{
 		if (Save->GeneratedWorldsDataArray.IsEmpty())

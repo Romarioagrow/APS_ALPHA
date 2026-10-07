@@ -27,7 +27,7 @@ class FSlateWindowElementList;
 struct FGeometry;
 class FSlateRect;
 class UBoxComponent;
-class UArrowComponent;
+class UArrowComponent; class UInstancedStaticMeshComponent;
 enum class EAPSGroundVehicleKind : uint8; // Rio 02.10: ground vehicles; defined in Gameplay/Vehicles/APSGroundVehicleTypes.h
 /** Gameplay size class. The display names intentionally match the in-world ship taxonomy. */
 UENUM(BlueprintType)
@@ -639,6 +639,45 @@ private:
 	int32 AppliedHullSceneLightingMode{1};
 	void StabilizeFullScaleVisualVelocity();
 	void SetFlightCollisionOptimization(bool bEnabled);
+	/**
+	 * Rio 06.10 (collision by motion, aps.Ship.KeepHullOutWhileMoving): Codex's detailed hull collision is kept for a ship
+	 * at rest; a ship that moves (with or without a pilot, a fleet unit under orders too) flies on the proxy boxes with the
+	 * detailed body out of the physics scene. A walker aboard stands on the walk shell meanwhile (the boxes let pawns, the
+	 * camera and visibility traces through). The body comes back once the ship has rested, when the walker steps off.
+	 * Rio 07.10: the walk shell is test-only (aps.Ship.WalkOnShellAtSpeed 0, a walker aboard gets the hull's body back), and
+	 * without a pilot in the seat the body is held in the scene, inert, rather than destroyed (aps.Ship.HullHold).
+	 */
+	bool HasDetailedHullProxy() const;
+	/** A query-only walk shell (tag APS.Ship.CollisionShell) that carries a walker while the hull's body is out. */
+	bool HasWalkShell() const;
+	/** A pawn other than the pilot (a walker) rides attached to the ship. */
+	bool IsWalkerAboard() const;
+	/** Why the ship counts as moving for its collision (speed, autopilot, flow, owed travel, fleet order); null at rest. */
+	const TCHAR* GetHullMotionReason() const;
+	/** The player's character on foot within the hull's radius + ExtraCm. */
+	bool IsPlayerOnFootNear(double ExtraCm) const;
+	/** The proxy boxes ignore Pawn, Camera and Visibility (a walker aboard a moving ship), or block all again. */
+	void SetProxyBoxesPassWalkers(bool bPass);
+	/** UnPossessed: keeps the hull's body out for the walker (true), or leaves the restore to the caller (false). */
+	bool KeepHullOutForWalker();
+	/** Timer (0.1 s) of a ship with a detailed hull: takes the body out while it moves, gives it back after a rest. */
+	void UpdateHullCollisionByMotion();
+	void StartHullMotionWatch();
+	/**
+	 * Rio 07.10 (aps.Ship.HullHold, fleet on proxies without the restore freeze): the take-out holds the hull's body in the
+	 * scene, inert (UAPSShipHullComponent), instead of destroying it: a root static hull with a physics body, nobody in the
+	 * seat (or HullHold 2), not frozen far away.
+	 */
+	bool ShouldHoldHullBody(const UPrimitiveComponent& PrimaryHull) const;
+	/** Makes the held body inert and stops sending it the hull's moves, or teleports it back and restores its filters. */
+	void SetHullBodyHeld(bool bHold);
+	/** Rio 07.10 (fleet audit): a restore may run now: not while frozen far away (no body could be built), and a build waits
+	 * aps.Ship.HullRestoreSpacingSeconds after the last one when paced. */
+	bool MayRestoreHullBody(bool bPacedBuild) const;
+	/** EndPlay, a ship being destroyed or a world torn down: no body is rebuilt (aps.Ship.HullRestoreOnce). */
+	bool IsHullGoingAway() const;
+	/** Rio 06.10 (aps.Ship.CameraAlignNose): the camera keeps its place above and behind but looks along the nose. */
+	void UpdateCameraNoseAlignment();
 	void UpdateFlightEnvironment(float DeltaTime, bool bForce = false);
 	void ApplyEnvironmentForces(float DeltaTime);
 	void EnforceDriveModeForEnvironment();
@@ -671,7 +710,7 @@ private:
 	bool IsInsideNavigationFocusGravity(const APlanet* FocusPlanet) const;
 	bool ShouldShowNavigationMarker(int32 ContactIndex) const;
 	bool ProjectWorldLocationToNavigationScreen(const FVector& WorldLocation, FVector2D& OutScreenPosition,
-		bool bRequireInsideViewport = true) const;
+		bool bRequireInsideViewport = true, bool bSnapToPixel = true) const;
 	bool ProjectNavigationContactToScreen(int32 ContactIndex, FVector2D& OutScreenPosition) const;
 	bool GetNavigationMarkerLayout(int32 ContactIndex, FVector2D& OutAnchorPosition,
 		FVector2D& OutLabelPosition, const TSet<int32>* OccludedContacts = nullptr) const;
@@ -725,6 +764,39 @@ private:
 	ECollisionEnabled::Type OriginalHullCollisionEnabled{ECollisionEnabled::QueryAndPhysics};
 	FCollisionResponseContainer OriginalHullCollisionResponses;
 	bool bOriginalHullSimulatesPhysics{false};
+	/** Rio 06.10: the proxy build turns the hull's overlap events off; aps.Ship.HullRestoreOnce gives them back. */
+	bool bOriginalHullGenerateOverlapEvents{false};
+	/** Collision by motion (HasDetailedHullProxy): the body is out without a pilot and waits for the ship to rest. */
+	bool bHullRestorePending{false};
+	/** The proxy boxes let a walker, the camera and visibility traces through (the walk shell carries the walker). */
+	bool bProxyBoxesPassWalkers{false};
+	/** EndPlay ran: the ship is going away and never gets its body back. */
+	bool bHullGoingAway{false};
+	/** Rio 07.10 (aps.Ship.HullHold): the hull's body is in the scene, held and inert, while the ship flies on its boxes. */
+	bool bHullBodyHeld{false};
+	/** Rio 07.10 (aps.Ship.ProxyUnstick): real time of the last 'climbs out of' log line (one a second). */
+	double ProxyUnstickLogSeconds{0.0};
+	/** Rio 07.10 (aps.Ship.InstancedResend): the ship's own plain instanced meshes and the render matrix last seen. */
+	struct FAPSInstancedRider
+	{
+		TWeakObjectPtr<UInstancedStaticMeshComponent> Mesh;
+		FMatrix Last;
+		bool bHasLast = false;
+	};
+	TArray<FAPSInstancedRider> InstancedRiders;
+	FDelegateHandle InstancedResendHandle;
+	void ResendInstancedRiders(UWorld* World);
+	/** Seconds the pending ship has rested so far, and the world time of the timer's last check. */
+	float HullRestSeconds{0.0f};
+	double HullMotionLastCheckSeconds{0.0};
+	/** World time the pilot got up, keeping the boxes open for the walker a moment before it is attached aboard. */
+	double HullPendingSinceSeconds{-1.0e9};
+	/** World time this ship last carried a world flow or an owed step (MoveShipKinematic). */
+	double HullLastFlowSeconds{-1.0e9};
+	FTimerHandle HullMotionTimer;
+	/** aps.Ship.CameraAlignNose as applied to the camera, and the camera's own relative rotation before it. */
+	bool bCameraAlignNoseApplied{false};
+	FRotator CameraAlignBaseRotation{FRotator::ZeroRotator};
 
 	float YawInput{0.0f};
 	float PitchInput{0.0f};

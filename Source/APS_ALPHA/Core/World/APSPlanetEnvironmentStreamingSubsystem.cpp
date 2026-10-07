@@ -14,6 +14,9 @@
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
 #include "HAL/IConsoleManager.h"
+#include "HAL/PlatformTime.h"
+// Rio 06.10 (takeoff hitches): WorldScapeCore public header; CurrentBytes() is WORLDSCAPECORE_API (aps.Surface.PublishHoldFrames).
+#include "WorldScapePreparedMesh.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogAPSWorldScapeStreaming, Log, All);
 
@@ -64,6 +67,322 @@ namespace
 	}
 }
 
+// Rio 06.10 (planet freezes): the surface reveal is spread over frames by the body itself (PlanetaryBodyStreaming.cpp);
+// this subsystem only advances it every frame.
+namespace APSWorldScapeReveal
+{
+	void AdvanceStagedReveals(UWorld* World);
+}
+
+// Rio 06.10 (planet freezes on foot, on arrival and on departure): fewer LOD batches and fewer surface switches. Each
+// rule has its own console variable; 0 restores the 05.10 behaviour of that rule.
+namespace APSSurfacePolicyPrivate
+{
+	TAutoConsoleVariable<float> CVarNearObserverStepCm(
+		TEXT("aps.Surface.NearObserverStepCm"), 800.0f,
+		TEXT("Rio 06.10 (stutter on foot): near the ground the terrain's visual observer moves only once the pawn is this far ")
+		TEXT("from it. WorldScape re-centres its finest ring every 1.2 m, so walking published ~3.4 LOD batches a second, each ")
+		TEXT("followed by render stalls; in 8 m steps it is about one a second. Collision follows the pawn on its own. ")
+		TEXT("0: the observer follows every frame (the old way)."),
+		ECVF_Default);
+
+	TAutoConsoleVariable<float> CVarNearObserverAltitudeKm(
+		TEXT("aps.Surface.NearObserverAltitudeKm"), 2.0f,
+		TEXT("See aps.Surface.NearObserverStepCm: the step applies only this close to the ground (km above the terrain)."),
+		ECVF_Default);
+
+	TAutoConsoleVariable<float> CVarActiveSwitchMinSeconds(
+		TEXT("aps.Surface.ActiveSwitchMinSeconds"), 3.0f,
+		TEXT("Rio 06.10 (A->B->A surface thrash): another body of the family takes over the active surface only once it has been ")
+		TEXT("the nearest for this many seconds, unless the observer is within aps.Surface.ActiveSwitchNearRadii of it or flies ")
+		TEXT("at it. Each switch rebuilt a surface (50-84 ms hitches; 4 switches in 14 s while leaving a planet). 0: at once."),
+		ECVF_Default);
+
+	TAutoConsoleVariable<float> CVarActiveSwitchNearRadii(
+		TEXT("aps.Surface.ActiveSwitchNearRadii"), 4.0f,
+		TEXT("Within this many of its own radii from its centre a body takes over the active surface at once ")
+		TEXT("(aps.Surface.ActiveSwitchMinSeconds, aps.Surface.PassByKmPerS)."),
+		ECVF_Default);
+
+	TAutoConsoleVariable<float> CVarPassByKmPerS(
+		TEXT("aps.Surface.PassByKmPerS"), 20.0f,
+		TEXT("Rio 06.10 (activations of bodies only flown past): a body the observer passes faster than this (km/s), on a line ")
+		TEXT("missing its centre by more than aps.Surface.PassByMissRadii, is neither activated nor started ahead of arrival. ")
+		TEXT("0: off (the old way)."),
+		ECVF_Default);
+
+	TAutoConsoleVariable<float> CVarPassByMissRadii(
+		TEXT("aps.Surface.PassByMissRadii"), 6.0f,
+		TEXT("See aps.Surface.PassByKmPerS: a line passing within this many body radii of the centre is an approach."),
+		ECVF_Default);
+
+	TAutoConsoleVariable<float> CVarLeaveFreezeKmPerS(
+		TEXT("aps.Surface.LeaveFreezeKmPerS"), 20.0f,
+		TEXT("Rio 06.10 (freezes on departure): while the observer recedes from the active body faster than this (km/s), the ")
+		TEXT("terrain keeps its observer (as the far freeze does), so a planet being left is not rebuilt: WorldScape rebuilt ")
+		TEXT("every LOD at each doubling of altitude, and again when a frozen surface resumed on the way out. Only once the kept ")
+		TEXT("observer is high enough that WorldScape's altitude scale no longer grows; resumes when slower or approaching. 0: off."),
+		ECVF_Default);
+
+	TAutoConsoleVariable<float> CVarLeaveFreezeHoldTurnDeg(
+		TEXT("aps.Surface.LeaveFreezeHoldTurnDeg"), 0.0f,
+		TEXT("Rio 06.10 (takeoff: the planet was rebuilt again once the leave freeze let go at 14 km/s, hitches 54/43/312 ms): ")
+		TEXT("a leave freeze already on also holds while the observer is still above the kept observer, is not approaching ")
+		TEXT("faster than a tenth of aps.Surface.LeaveFreezeKmPerS, and the view from the planet's centre has turned less than ")
+		TEXT("this many degrees from the kept observer. Never while the F10 map camera is the observer. 0: off (lets go below ")
+		TEXT("0.8x aps.Surface.LeaveFreezeKmPerS, as before)."),
+		ECVF_Default);
+
+	TAutoConsoleVariable<int32> CVarPublishHoldFrames(
+		TEXT("aps.Surface.PublishHoldFrames"), 0,
+		TEXT("Rio 06.10 (takeoff from an ocean world, 59-80 fps, 1-2 hitches a second): one land+ocean LOD wave nearly fills ")
+		TEXT("WorldScape's prepared-mesh budget, and its reservations live on in render commands while the next wave reserves, ")
+		TEXT("so that wave falls back to the slow legacy upload. Above 300 m, while prepared reservations are live, the visual ")
+		TEXT("observer is held during a wave's generation and for up to this many frames after it (at most 30). 0: off (as before)."),
+		ECVF_Default);
+
+	TAutoConsoleVariable<int32> CVarMapKeepObserverOnPass(
+		TEXT("aps.Map.KeepObserverOnPass"), 1,
+		TEXT("Rio 06.10 review: while the F10 map camera is the WorldScape observer (aps.Map.WorldScapeObserver/Radii), the ")
+		TEXT("half-second pass keeps it instead of writing the pawn for one frame (two full LOD waves and collision resets each ")
+		TEXT("cycle). 0: the old behaviour."),
+		ECVF_Default);
+
+	/** The observer's motion relative to one streamed body between two selection passes. */
+	struct FPassMotion
+	{
+		double SpeedCmPerS{0.0};
+		/** Positive while the observer recedes from the body's centre. */
+		double RadialCmPerS{0.0};
+		APSPlanetArrivalForecast::FResult Line;
+	};
+
+	/** Per-subsystem state of the rules above (the subsystem's header is shared; this stays private to this file). */
+	struct FPolicyState
+	{
+		float DeltaSeconds{0.0f};
+		// Leave freeze: the observer's recession from the anchored root, measured every frame.
+		TWeakObjectPtr<AWorldScapeRoot> MotionRoot;
+		uint64 MotionFrame{0};
+		double MotionDistanceCm{-1.0};
+		double RecedeCmPerS{0.0};
+		bool bLeaveFrozen{false};
+		// Rio 06.10 (leave freeze hold, publish hold): the F10 map camera is the visual observer on this frame's pass.
+		bool bMapObserver{false};
+		// Rio 06.10 (audit: F10 near a planet, aps.Map.KeepObserverOnPass): the frame whose per-frame pass made the map camera
+		// the observer; MAX_uint64 when it did not.
+		uint64 MapObserverFrame{MAX_uint64};
+		// Rio 06.10 (audit: the leave freeze kept the map camera's position after F10 closed): the map camera was the observer
+		// on the previous per-frame pass.
+		bool bMapObserverLastFrame{false};
+		// Rio 06.10 (publish hold): frames held since the last wave finished, and the frame/root of this frame's hold.
+		int32 PublishHeldFrames{0};
+		uint64 PublishHoldFrame{MAX_uint64};
+		TWeakObjectPtr<AWorldScapeRoot> PublishHoldRoot;
+		// Body motion between selection passes (switch dwell, pass-by, the leave freeze of a rebound root).
+		TMap<TWeakObjectPtr<APlanetaryBody>, FVector> PassRelative;
+		TWeakObjectPtr<APawn> PassObserver;
+		double PassSeconds{0.0};
+		TMap<TWeakObjectPtr<AWorldScapeRoot>, double> PassRecedeByRoot;
+		// Switch dwell.
+		TWeakObjectPtr<APlanetaryBody> SwitchCandidate;
+		double SwitchCandidateSince{0.0};
+		TWeakObjectPtr<APlanetaryBody> LoggedHold;
+		// Near observer step, summarised in the log every 10 s.
+		int32 StepKeptFrames{0};
+		int32 StepMoves{0};
+		double StepLogSeconds{0.0};
+		double StepLastCountSeconds{0.0};
+	};
+	TMap<const void*, FPolicyState> GPolicyStates;
+
+	FPolicyState& PolicyState(const void* Owner)
+	{
+		return GPolicyStates.FindOrAdd(Owner);
+	}
+
+	const APlanetaryBody* OwningBody(const AWorldScapeRoot* Root)
+	{
+		const APlanetaryBody* Body = Cast<APlanetaryBody>(Root->GetOwner());
+		if (!Body)
+		{
+			Body = Cast<APlanetaryBody>(Root->GetAttachParentActor());
+		}
+		return Body && IsValid(Body->PlanetaryEnvironmentGenerator)
+			&& Body->PlanetaryEnvironmentGenerator->WorldScapeRootInstance == Root ? Body : nullptr;
+	}
+
+	/**
+	 * WorldScape (WorldScapeRoot_Main.cpp, UpdatePosition) scales every LOD by 2^round(log2(altitude / HeightAnchor)), capped
+	 * per LOD set at ceil(128 R / (triangle * resolution * 2^MaxLod)) and 999. Once the kept observer is above the altitude
+	 * where both sets reach that cap, its coarsest ring spans the whole globe: a farther observer would build the same rings.
+	 */
+	bool IsAltitudeScaleSaturated(const AWorldScapeRoot* Root)
+	{
+		const double Altitude = Root->PlayerDistanceToGround;
+		if (!Root->init || !(Root->HeightAnchor > 0.0f) || !FMath::IsFinite(Altitude) || Altitude <= Root->HeightAnchor)
+		{
+			return false;
+		}
+		const auto Cap = [Root](const double Triangle, const int32 Resolution, const int32 MaxLod)
+		{
+			const double Span = Triangle * Resolution * FMath::Pow(2.0, static_cast<double>(MaxLod));
+			return Span > 0.0 ? FMath::Clamp(FMath::CeilToDouble(128.0 * Root->PlanetScaleCode / Span), 1.0, 999.0) : 999.0;
+		};
+		double Needed = Cap(Root->TriangleSize, Root->LodResolution, Root->MaxLod);
+		if (Root->bOcean)
+		{
+			Needed = FMath::Max(Needed, Cap(Root->OceanTriangleSize, Root->OceanLodResolution, Root->OceanMaxLod));
+		}
+		const double Multiplier = FMath::Pow(2.0, FMath::RoundToDouble(FMath::Log2(Altitude / Root->HeightAnchor)));
+		return Multiplier >= Needed;
+	}
+
+	/** Updates the observer's recession from Root (once per frame) and whether the leave freeze keeps Root's observer. */
+	void UpdateLeaveFreeze(FPolicyState& State, AWorldScapeRoot* Root, const FVector& PawnLocation)
+	{
+		const double Distance = FVector::Distance(PawnLocation, Root->GetActorLocation());
+		if (State.MotionRoot.Get() != Root)
+		{
+			// A rebound root (a surface resumed on the way out) starts from the selection pass's measurement.
+			if (State.bLeaveFrozen)
+			{
+				UE_LOG(LogAPSWorldScapeStreaming, Log, TEXT("[APS.Surface] leave freeze off: %s is no longer the anchored surface"),
+					*GetNameSafe(State.MotionRoot.Get()));
+			}
+			State.MotionRoot = Root;
+			State.MotionFrame = GFrameCounter;
+			const double* Seed = State.PassRecedeByRoot.Find(Root);
+			State.RecedeCmPerS = Seed ? *Seed : 0.0;
+			State.bLeaveFrozen = false;
+		}
+		else if (State.MotionFrame != GFrameCounter)
+		{
+			if (GFrameCounter - State.MotionFrame > 4)
+			{
+				// Rio 06.10 (review): only (nearly) consecutive frames measure a speed. After a gap (no anchor for a while, a
+				// paused world) the distance change spans many frames and read as a burst of recession over one frame's
+				// time, which could freeze a slowly receding observer; the selection pass's measurement seeds it instead.
+				// A frame or two of slack keeps the measurement across a high-resolution screenshot's extra frame.
+				const double* Seed = State.PassRecedeByRoot.Find(Root);
+				State.RecedeCmPerS = Seed ? *Seed : 0.0;
+			}
+			else if (State.DeltaSeconds > 0.0f && State.MotionDistanceCm >= 0.0 && FMath::IsFinite(Distance))
+			{
+				const double Raw = (Distance - State.MotionDistanceCm) / State.DeltaSeconds;
+				const double Blend = 1.0 - FMath::Exp(-static_cast<double>(State.DeltaSeconds) / 0.2);
+				State.RecedeCmPerS += (Raw - State.RecedeCmPerS) * Blend;
+			}
+			State.MotionFrame = GFrameCounter;
+		}
+		State.MotionDistanceCm = FMath::IsFinite(Distance) ? Distance : -1.0;
+		if (!FMath::IsFinite(State.RecedeCmPerS))
+		{
+			State.RecedeCmPerS = 0.0;
+		}
+
+		const double Limit = CVarLeaveFreezeKmPerS.GetValueOnGameThread() * 1.0e5;
+		const APlanetaryBody* Body = Limit > 0.0 ? OwningBody(Root) : nullptr;
+		const bool bEligible = Body && Body->bWorldScapeSurfaceReady && Root->bOverridePlayerPosition
+			&& !Root->OverridedPlayerPosition.ContainsNaN() && IsAltitudeScaleSaturated(Root);
+		// Rio 06.10 (takeoff: after the freeze let go at 14 km/s on a turn, the planet was rebuilt again, hitches 54/43/312 ms):
+		// with aps.Surface.LeaveFreezeHoldTurnDeg > 0 a freeze already on also holds while the observer is still above the kept
+		// observer, not approaching fast, and the view from the centre has turned less than that angle. Not while the F10 map
+		// camera is the observer. 0: bTurnHold stays false, so the 0.8x rule below is exactly the previous one.
+		const FVector KeptFromCenter = Root->OverridedPlayerPosition - Root->GetActorLocation();
+		const FVector HereFromCenter = PawnLocation - Root->GetActorLocation();
+		bool bTurnHold = false;
+		if (const double HoldTurnDeg = CVarLeaveFreezeHoldTurnDeg.GetValueOnGameThread();
+			State.bLeaveFrozen && HoldTurnDeg > 0.0 && !State.bMapObserver)
+		{
+			bTurnHold = HereFromCenter.SizeSquared() >= KeptFromCenter.SizeSquared() && State.RecedeCmPerS > -0.1 * Limit
+				&& FVector::DotProduct(HereFromCenter.GetSafeNormal(), KeptFromCenter.GetSafeNormal())
+					> FMath::Cos(FMath::DegreesToRadians(HoldTurnDeg));
+		}
+		const bool bFreeze = bEligible && (bTurnHold || State.RecedeCmPerS > (State.bLeaveFrozen ? 0.8 : 1.0) * Limit);
+		if (bFreeze != State.bLeaveFrozen)
+		{
+			State.bLeaveFrozen = bFreeze;
+			// Rio 06.10 (review of Rio's takeoff log): the "off" line also gives the view's turn from the kept observer.
+			const FString TurnNote = bFreeze ? FString() : FString::Printf(TEXT(", view turned %.1f deg from the kept observer"),
+				FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(
+					FVector::DotProduct(HereFromCenter.GetSafeNormal(), KeptFromCenter.GetSafeNormal()), -1.0, 1.0))));
+			UE_LOG(LogAPSWorldScapeStreaming, Log, TEXT("[APS.Surface] leave freeze %s: %s observer %.0f km above the ground, receding at %.1f km/s%s"),
+				bFreeze ? TEXT("on") : TEXT("off"), *GetNameSafe(Body ? static_cast<const AActor*>(Body) : Root),
+				Root->PlayerDistanceToGround / 1.0e5, State.RecedeCmPerS / 1.0e5, *TurnNote);
+		}
+	}
+
+	/** Near-ground observer step: true while the step rule applies to Root; bOutHold while Candidate is within the step. */
+	bool NearStepApplies(const FPolicyState& State, const AWorldScapeRoot* Root, const FVector& Candidate, bool& bOutHold)
+	{
+		bOutHold = false;
+		const double Step = CVarNearObserverStepCm.GetValueOnGameThread();
+		// A zero-time manual Tick (automation, tools) asks for the exact observer.
+		if (!(Step > 0.0) || !(State.DeltaSeconds > 0.0f) || !Root->init || !Root->bOverridePlayerPosition
+			|| Root->OverridedPlayerPosition.ContainsNaN() || Candidate.ContainsNaN()
+			|| !(Root->PlayerDistanceToGround <= CVarNearObserverAltitudeKm.GetValueOnGameThread() * 1.0e5))
+		{
+			return false;
+		}
+		bOutHold = FVector::DistSquared(Candidate, Root->OverridedPlayerPosition) < FMath::Square(Step);
+		return true;
+	}
+
+	void CountNearStep(FPolicyState& State, const AWorldScapeRoot* Root, const bool bKept)
+	{
+		const double Now = FPlatformTime::Seconds();
+		// Rio 06.10 (review): a new stretch near the ground opens a new window, so each line is a rate over its own seconds
+		// (a window left open while flying reported the counts of a short walk over minutes).
+		if (State.StepLogSeconds <= 0.0 || Now - State.StepLastCountSeconds > 1.0)
+		{
+			State.StepLogSeconds = Now;
+			State.StepKeptFrames = 0;
+			State.StepMoves = 0;
+		}
+		State.StepLastCountSeconds = Now;
+		bKept ? ++State.StepKeptFrames : ++State.StepMoves;
+		if (Now - State.StepLogSeconds >= 10.0)
+		{
+			UE_LOG(LogAPSWorldScapeStreaming, Log, TEXT("[APS.Surface] near observer step %.0f cm: kept %d frames, moved %d times in %.0f s (%s, %.0f m above the ground)"),
+				CVarNearObserverStepCm.GetValueOnGameThread(), State.StepKeptFrames, State.StepMoves, Now - State.StepLogSeconds,
+				*GetNameSafe(Root->GetOwner()), Root->PlayerDistanceToGround / 100.0);
+			State.StepKeptFrames = 0;
+			State.StepMoves = 0;
+			State.StepLogSeconds = Now;
+		}
+	}
+
+	/** True when the half-second pass or a rebind must leave Root's observer where the per-frame rules keep it. */
+	bool HoldsObserver(FPolicyState& State, AWorldScapeRoot* Root, const FVector& PawnLocation, const bool bAnchorChanged)
+	{
+		UpdateLeaveFreeze(State, Root, PawnLocation);
+		// Rio 06.10 (review): a zero-time manual Tick (automation, tools) asks for the exact observer, as for the near step.
+		if (State.bLeaveFrozen && State.DeltaSeconds > 0.0f)
+		{
+			return true;
+		}
+		// Rio 06.10 (audit: F10 near a planet): this frame's per-frame pass made the map camera the observer; the half-second
+		// pass wrote the pawn over it for one frame, so WorldScape built two full LOD waves (and reset collision) per cycle.
+		// A new anchor and a zero-time manual Tick still get the pawn. aps.Map.KeepObserverOnPass 0: the old behaviour.
+		if (!bAnchorChanged && State.DeltaSeconds > 0.0f && State.MapObserverFrame == GFrameCounter
+			&& CVarMapKeepObserverOnPass.GetValueOnGameThread() != 0)
+		{
+			return true;
+		}
+		// Rio 06.10 (publish hold): the per-frame pass held Root's observer this frame for aps.Surface.PublishHoldFrames; the
+		// half-second pass does not undo it. A new anchor still gets the exact observer. Never set while the CVar is 0.
+		// Rio 06.10 (review): a zero-time manual Tick gets the exact observer here too, even after a held frame's stamp.
+		if (!bAnchorChanged && State.DeltaSeconds > 0.0f && State.PublishHoldFrame == GFrameCounter
+			&& State.PublishHoldRoot.Get() == Root)
+		{
+			return true;
+		}
+		bool bHold = false;
+		return !bAnchorChanged && NearStepApplies(State, Root, PawnLocation, bHold) && bHold;
+	}
+}
+
 bool UAPSPlanetEnvironmentStreamingSubsystem::ShouldCreateSubsystem(UObject* Outer) const
 {
 	const UWorld* World = Cast<UWorld>(Outer);
@@ -80,11 +399,13 @@ void UAPSPlanetEnvironmentStreamingSubsystem::Deinitialize()
 	FirstBuilds.Reset();
 	VisibleLiquidBodies.Reset();
 	CancelFlightReplacement();
+	APSSurfacePolicyPrivate::GPolicyStates.Remove(this);
 	Super::Deinitialize();
 }
 
 void UAPSPlanetEnvironmentStreamingSubsystem::Tick(float DeltaTime)
 {
+	APSSurfacePolicyPrivate::PolicyState(this).DeltaSeconds = DeltaTime;
 	// The active body/family search is intentionally amortized below, but WorldScape's
 	// visual producer must follow the possessed pawn every frame. Leaving this position
 	// on the half-second cadence lets a fast manual approach outrun the generated patch,
@@ -103,6 +424,7 @@ void UAPSPlanetEnvironmentStreamingSubsystem::Tick(float DeltaTime)
 	UpdateFlightResidency(DeltaTime);
 	APSPlaceholderGlobe::Tick(GetWorld());
 	APSPlanetReliefRuntime::Tick(GetWorld(),ActiveBody.Get(),ArrivingBody.Get());
+	APSWorldScapeReveal::AdvanceStagedReveals(GetWorld());
 }
 
 void UAPSPlanetEnvironmentStreamingSubsystem::RefreshVisibleLiquidAppearance()
@@ -211,20 +533,13 @@ void UAPSPlanetEnvironmentStreamingSubsystem::RefreshGameplayObserverPosition()
 	{
 		return;
 	}
-	if (CollisionAnchorPawn.Get() != Observer)
-	{
-		// Possession changes are cheap observer-contract changes, not a reason to run
-		// the global body/family search early. Rebind this already-active root now so
-		// neither its visual nor collision producer follows the previous pawn.
-		ApplyGameplayObserverContract(Root, Observer);
-		return;
-	}
-
-	Root->bOverridePlayerPosition = true;
 	FVector VisualObserver = Observer->GetActorLocation();
+	bool bMapObserver = false;
 	// Rio 03.10 ("in F10 the planet must load fully, through WorldScape itself"): while the strategic map is open, its
 	// camera is the terrain's visual observer, so WorldScape builds the planet for the view the map shows. Collision stays
 	// with the pawn (CollisionDependantActor, ApplyGameplayObserverContract), so nothing under the pawn changes.
+	// Rio 06.10 (leave freeze hold): decided before the leave freeze below, which must not hold for the map camera; this
+	// block only reads state.
 	if (const AGravityPlayerController* GravityController = Cast<AGravityPlayerController>(PlayerController);
 		GravityController && GravityController->IsStrategicMapOpen() && IsValid(GravityController->PlayerCameraManager)
 		&& CVarMapCameraObserver.GetValueOnGameThread() != 0)
@@ -235,8 +550,37 @@ void UAPSPlanetEnvironmentStreamingSubsystem::RefreshGameplayObserverPosition()
 			|| FVector::DistSquared(MapCamera, Root->GetActorLocation()) <= FMath::Square(MapRadii * Root->PlanetScale))
 		{
 			VisualObserver = MapCamera;
+			bMapObserver = true;
 		}
 	}
+	// Rio 06.10 (freezes on departure): the observer's recession from this root is measured every frame, also across a
+	// possession change (leaving the seat of a receding ship is not a stop).
+	APSSurfacePolicyPrivate::FPolicyState& Policy = APSSurfacePolicyPrivate::PolicyState(this);
+	Policy.bMapObserver = bMapObserver;
+	// Rio 06.10 (audit: F10 near a planet): recorded only; HoldsObserver reads it for aps.Map.KeepObserverOnPass.
+	Policy.MapObserverFrame = bMapObserver ? GFrameCounter : MAX_uint64;
+	// Rio 06.10 (audit: a leave freeze on while F10 was open kept the map camera's position as the observer after the map
+	// closed): on the closing frame the freeze lets go once and the pawn is written; it may freeze again from there. Inert
+	// at aps.Surface.LeaveFreezeKmPerS 0. The freeze is not forced off while the map is open.
+	const bool bMapJustClosed = Policy.bMapObserverLastFrame && !bMapObserver;
+	Policy.bMapObserverLastFrame = bMapObserver;
+	if (bMapJustClosed && Policy.bLeaveFrozen)
+	{
+		Policy.bLeaveFrozen = false;
+		UE_LOG(LogAPSWorldScapeStreaming, Log, TEXT("[APS.Surface] leave freeze released: map closed (%s)"),
+			*GetNameSafe(Root->GetOwner()));
+	}
+	APSSurfacePolicyPrivate::UpdateLeaveFreeze(Policy, Root, Observer->GetActorLocation());
+	if (CollisionAnchorPawn.Get() != Observer)
+	{
+		// Possession changes are cheap observer-contract changes, not a reason to run
+		// the global body/family search early. Rebind this already-active root now so
+		// neither its visual nor collision producer follows the previous pawn.
+		ApplyGameplayObserverContract(Root, Observer);
+		return;
+	}
+
+	Root->bOverridePlayerPosition = true;
 	// Rio 03.10 (flight stutter): far out every LOD batch (50-400 ms, about every 0.4 s) only redraws the same small globe.
 	// Beyond FarFreezeRadii the observer keeps its last far position until the view from the planet's centre has turned
 	// FarFreezeTurnDeg; inside that radius, and on the way in, it follows every frame as before.
@@ -253,6 +597,57 @@ void UAPSPlanetEnvironmentStreamingSubsystem::RefreshGameplayObserverPosition()
 			return;
 		}
 	}
+	if (!bMapObserver)
+	{
+		// Rio 06.10 (freezes on departure): a planet being left faster than aps.Surface.LeaveFreezeKmPerS keeps its observer,
+		// like the far freeze, instead of rebuilding every LOD for an observer that is gone a second later.
+		// Rio 06.10 (audit): not on the frame F10 closed, so the pawn replaces the map camera's position.
+		if (Policy.bLeaveFrozen && !bMapJustClosed && Policy.DeltaSeconds > 0.0f && Policy.MotionRoot.Get() == Root)
+		{
+			return;
+		}
+		// Rio 06.10 (stutter on foot): near the ground the observer moves in aps.Surface.NearObserverStepCm steps, not every
+		// 1.2 m re-snap of the finest ring. Flight moves it at once (>8 m a frame); a world shift moves both together.
+		bool bKeep = false;
+		if (APSSurfacePolicyPrivate::NearStepApplies(Policy, Root, VisualObserver, bKeep))
+		{
+			APSSurfacePolicyPrivate::CountNearStep(Policy, Root, bKeep);
+			if (bKeep)
+			{
+				return;
+			}
+		}
+	}
+	// Rio 06.10 (takeoff from an ocean world, 1-2 hitches a second): a land+ocean LOD wave nearly fills WorldScape's
+	// prepared-mesh budget and its reservations live on in render commands; the next wave, started as soon as the previous
+	// one is published, then falls back to the slow legacy upload. Above 300 m, while prepared reservations are live, the
+	// observer stays put during a wave's generation and for up to aps.Surface.PublishHoldFrames frames after it, so the render
+	// thread can release them first. A zero-time manual Tick gets the exact observer. 0: off (as before).
+	// Rio 06.10 (review): at most 30 frames after a wave, so a typo or a leaked reservation cannot park the observer.
+	if (const int32 MaxPublishHold = FMath::Min(APSSurfacePolicyPrivate::CVarPublishHoldFrames.GetValueOnGameThread(), 30);
+		MaxPublishHold > 0 && Policy.DeltaSeconds > 0.0f && Root->PlayerDistanceToGround > 3.0e4
+		&& WorldScapePreparedMesh::CurrentBytes() > 0)
+	{
+		if (Policy.PublishHoldRoot.Get() != Root)
+		{
+			Policy.PublishHoldRoot = Root;
+			Policy.PublishHeldFrames = 0;
+		}
+		if (Root->WorldScapeLodInGeneration.Num() > 0)
+		{
+			Policy.PublishHeldFrames = 0;
+			Policy.PublishHoldFrame = GFrameCounter;
+			return;
+		}
+		if (Policy.PublishHeldFrames++ < MaxPublishHold)
+		{
+			Policy.PublishHoldFrame = GFrameCounter;
+			return;
+		}
+	}
+	Policy.PublishHeldFrames = 0;
+	// Rio 06.10 (review): a released frame is not a held one for a later pass of the same frame (MAX_uint64 at CVar 0 anyway).
+	Policy.PublishHoldFrame = MAX_uint64;
 	Root->OverridedPlayerPosition = VisualObserver;
 }
 
@@ -281,8 +676,17 @@ void UAPSPlanetEnvironmentStreamingSubsystem::ApplyGameplayObserverContract(
 	// internally cleared the invoker list during regeneration without accumulating
 	// duplicate anchors on the subsystem's half-second refresh.
 	Root->CollisionDependantActor.AddUnique(Observer);
+	const bool bHadObserver = Root->bOverridePlayerPosition;
 	Root->bOverridePlayerPosition = true;
-	Root->OverridedPlayerPosition = Observer->GetActorLocation();
+	// Rio 06.10 (planet freezes): the half-second pass rewrote the pawn's position here, undoing the near-ground step every
+	// 0.5 s, and a surface resumed while being left (A->B->A on departure) rebuilt every LOD for the receding observer. The
+	// rules of RefreshGameplayObserverPosition decide here too; a new anchor still gets the exact observer unless it is
+	// being left faster than aps.Surface.LeaveFreezeKmPerS.
+	if (!bHadObserver || !APSSurfacePolicyPrivate::HoldsObserver(APSSurfacePolicyPrivate::PolicyState(this), Root,
+		Observer->GetActorLocation(), bAnchorChanged))
+	{
+		Root->OverridedPlayerPosition = Observer->GetActorLocation();
+	}
 	Root->DistanceToFreezeGeneration = 0.0f;
 	const bool bTransit = Root->ActorHasTag(TEXT("APS.Surface.Transit"));
 	Root->bGenerateCollision = !bTransit;
@@ -355,6 +759,71 @@ void UAPSPlanetEnvironmentStreamingSubsystem::UpdateActiveEnvironment()
 			Families.FindOrAdd(Family).Add(Body);
 		}
 	}
+
+	// Rio 06.10 (planet freezes on arrival and departure): the observer's motion relative to each streamed body since the
+	// previous pass, for the switch dwell, the pass-by rule and the leave freeze of a rebound root. Kept apart from the
+	// arrival forecast, so that aps.Surface.ArrivalLeadSeconds 0 does not switch these rules off.
+	using namespace APSSurfacePolicyPrivate;
+	FPolicyState& Policy = PolicyState(this);
+	const double PassNow = World->GetTimeSeconds();
+	const double PassStep = PassNow - Policy.PassSeconds;
+	const bool bPassMotion = Policy.PassObserver.Get() == Observer && PassStep >= 0.1 && PassStep <= 2.0;
+	TMap<const APlanetaryBody*, FPassMotion> PassMotion;
+	TMap<TWeakObjectPtr<APlanetaryBody>, FVector> PassRelative;
+	Policy.PassRecedeByRoot.Reset();
+	for (APlanetaryBody* Body : StreamedBodies)
+	{
+		const FVector Relative = ObserverLocation - Body->GetActorLocation();
+		PassRelative.Add(Body, Relative);
+		const FVector* Previous = bPassMotion ? Policy.PassRelative.Find(Body) : nullptr;
+		if (!Previous)
+		{
+			continue;
+		}
+		FPassMotion& Motion = PassMotion.Add(Body);
+		Motion.SpeedCmPerS = FVector::Distance(Relative, *Previous) / PassStep;
+		Motion.RadialCmPerS = (Relative.Size() - Previous->Size()) / PassStep;
+		Motion.Line = APSPlanetArrivalForecast::Evaluate(Relative, *Previous, PassStep, Body->GetWorldScapeBodyRadiusCm());
+		if (IsValid(Body->PlanetaryEnvironmentGenerator) && IsValid(Body->PlanetaryEnvironmentGenerator->WorldScapeRootInstance))
+		{
+			Policy.PassRecedeByRoot.Add(Body->PlanetaryEnvironmentGenerator->WorldScapeRootInstance, Motion.RadialCmPerS);
+		}
+	}
+	Policy.PassRelative = MoveTemp(PassRelative);
+	Policy.PassObserver = Observer;
+	Policy.PassSeconds = PassNow;
+	const double NearRadii = FMath::Max(0.0, static_cast<double>(CVarActiveSwitchNearRadii.GetValueOnGameThread()));
+	const auto IsNear = [&ObserverLocation, NearRadii](const APlanetaryBody* Body)
+	{
+		return FVector::DistSquared(ObserverLocation, Body->GetActorLocation())
+			<= FMath::Square(NearRadii * Body->GetWorldScapeBodyRadiusCm());
+	};
+	const double MissRadii = FMath::Max(0.0, static_cast<double>(CVarPassByMissRadii.GetValueOnGameThread()));
+	const auto IsApproach = [&PassMotion, MissRadii](const APlanetaryBody* Body)
+	{
+		const FPassMotion* Motion = PassMotion.Find(Body);
+		return Motion && Motion->Line.ClosingSpeedCmPerSecond > 0.0
+			&& Motion->Line.MissDistanceCm <= MissRadii * Body->GetWorldScapeBodyRadiusCm();
+	};
+	const double PassByLimit = CVarPassByKmPerS.GetValueOnGameThread() * 1.0e5;
+	const auto PassesBy = [&PassMotion, &IsNear, &IsApproach, PassByLimit](const APlanetaryBody* Body)
+	{
+		const FPassMotion* Motion = Body && PassByLimit > 0.0 ? PassMotion.Find(Body) : nullptr;
+		return Motion && Motion->SpeedCmPerS > PassByLimit && !IsNear(Body) && !IsApproach(Body);
+	};
+	const auto DescribeMotion = [&PassMotion](const APlanetaryBody* Body)
+	{
+		const FPassMotion* Motion = PassMotion.Find(Body);
+		if (!Motion)
+		{
+			return FString(TEXT("no motion"));
+		}
+		const double Radius = Body->GetWorldScapeBodyRadiusCm();
+		return Motion->Line.ClosingSpeedCmPerSecond > 0.0
+			? FString::Printf(TEXT("%.1f km/s, line %.1f radii from its centre"), Motion->SpeedCmPerS / 1.0e5,
+				Motion->Line.MissDistanceCm / Radius)
+			: FString::Printf(TEXT("%.1f km/s, receding"), Motion->SpeedCmPerS / 1.0e5);
+	};
 
 	APlanetaryBody* Arriving = UpdateArrivalForecast(Observer, StreamedBodies);
 	APlanet* BestFamily = nullptr;
@@ -460,8 +929,60 @@ void UAPSPlanetEnvironmentStreamingSubsystem::UpdateActiveEnvironment()
 		}
 	}
 
+	// Rio 06.10 (planet freezes, A->B->A): leaving a planet past its moon switched the active surface planet -> moon ->
+	// planet within seconds, each switch a rebuild (50-84 ms hitches). A body passed faster than aps.Surface.PassByKmPerS
+	// is not activated at all, and another body of the family takes over from a still eligible active one only after
+	// being the nearest for aps.Surface.ActiveSwitchMinSeconds. Within aps.Surface.ActiveSwitchNearRadii, or flying at
+	// the body, the switch is immediate as before.
+	{
+		APlanetaryBody* const RawBest = BestBody;
+		APlanetaryBody* const Current = ActiveBody.Get();
+		if (!RawBest || RawBest == Current)
+		{
+			Policy.SwitchCandidate.Reset();
+			Policy.LoggedHold.Reset();
+		}
+		else
+		{
+			if (Policy.SwitchCandidate.Get() != RawBest)
+			{
+				Policy.SwitchCandidate = RawBest;
+				Policy.SwitchCandidateSince = PassNow;
+			}
+			const bool bCurrentHolds = IsValid(Current) && FamilyBodies.Contains(Current)
+				&& FVector::Distance(ObserverLocation, Current->GetActorLocation()) <= Current->GetWorldScapeDeactivationRadiusCm();
+			const double Dwell = CVarActiveSwitchMinSeconds.GetValueOnGameThread();
+			FString HoldReason;
+			if (PassesBy(RawBest))
+			{
+				HoldReason = FString::Printf(TEXT("is only passed (%s)"), *DescribeMotion(RawBest));
+			}
+			else if (bCurrentHolds && Dwell > 0.0 && !IsNear(RawBest) && !IsApproach(RawBest)
+				&& PassNow - Policy.SwitchCandidateSince < Dwell)
+			{
+				HoldReason = FString::Printf(TEXT("has been the nearest for %.1f of %.1f s (%s)"),
+					PassNow - Policy.SwitchCandidateSince, Dwell, *DescribeMotion(RawBest));
+			}
+			if (!HoldReason.IsEmpty())
+			{
+				BestBody = bCurrentHolds ? Current : nullptr;
+				if (Policy.LoggedHold.Get() != RawBest)
+				{
+					Policy.LoggedHold = RawBest;
+					UE_LOG(LogAPSWorldScapeStreaming, Log, TEXT("Held WorldScape switch: %s stays active, %s %s"),
+						BestBody ? *BestBody->GetName() : TEXT("none"), *RawBest->GetName(), *HoldReason);
+				}
+			}
+			else
+			{
+				Policy.LoggedHold.Reset();
+			}
+		}
+	}
+
 	// Nothing within activation range yet: the body the observer flies to starts now, without collision.
-	bAnchorWithoutCollision = !BestBody && Arriving && ResolveFamilyPlanet(Arriving) == BestFamily;
+	// Rio 06.10: not a body only passed at speed (aps.Surface.PassByKmPerS).
+	bAnchorWithoutCollision = !BestBody && Arriving && ResolveFamilyPlanet(Arriving) == BestFamily && !PassesBy(Arriving);
 	if (bAnchorWithoutCollision)
 	{
 		BestBody = Arriving;

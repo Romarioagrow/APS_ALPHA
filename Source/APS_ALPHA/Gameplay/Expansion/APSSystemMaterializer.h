@@ -33,6 +33,11 @@ public:
 	int32 GetActiveIndex() const { return ActiveIndex; }
 	/** Its planets, once spawned. */
 	void GetPlanets(TArray<APlanet*>& OutPlanets) const;
+	/**
+	 * Rio 07.10 (a structure built at a foreign star was filed under the home system and went with the star): the star
+	 * that stands for the active system, or null; the infrastructure tells it from the home star by this.
+	 */
+	AStar* GetStar() const;
 
 	/** Test runs: moves the piloted ship to a system's edge facing its star, or near its first planet once spawned. */
 	bool VisitForTest(const FAPSStarSystems& Systems, int32 Index, bool bNearPlanet);

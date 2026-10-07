@@ -88,7 +88,13 @@ namespace APSShipHudPrivate
 		if (Seconds < 120.0) return FString::Printf(TEXT("%.0f s"), Seconds);
 		if (Seconds < 7200.0) return FString::Printf(TEXT("%.1f min"), Seconds / 60.0);
 		if (Seconds < 172800.0) return FString::Printf(TEXT("%.1f h"), Seconds / 3600.0);
-		return FString::Printf(TEXT("%.1f d"), Seconds / 86400.0);
+		// Rio 06.10 (audit: a far star at low speed printed a day count wider than the tile): display only, bounded. The unit
+		// stays after the last space for SplitValueUnit; NaN and infinity end in the last line.
+		const double Days = Seconds / 86400.0;
+		if (Days < 1000.0) return FString::Printf(TEXT("%.1f d"), Days);
+		const double Years = Seconds / 31557600.0;
+		if (Years < 1000.0) return FString::Printf(TEXT("%.0f y"), Years);
+		return FString(TEXT("> 999 y"));
 	}
 
 	/** A metric well: a small label over a large value with its unit. */
@@ -115,6 +121,7 @@ namespace APSShipHudPrivate
 			[Main]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 3.0f, 0.0f, 0.0f)
 			[
+				// Rio 06.10 (audit: a wrapped sub-line grew the flight bar by a line and made it jump): one line, as in 61532ed6.
 				SNew(STextBlock).Text(Sub).Font(APSHud::TextFont(11)).ColorAndOpacity(SubColour)
 				.OverflowPolicy(ETextOverflowPolicy::Ellipsis)
 			];
@@ -141,7 +148,7 @@ void SAPSShipHud::Construct(const FArguments& InArgs)
 		]
 		+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Bottom).Padding(0.0f, 0.0f, 0.0f, 48.0f)
 		[
-			SNew(SBox).WidthOverride(640.0f).Visibility(EVisibility::HitTestInvisible)[FlightBar.ToSharedRef()]
+			SNew(SBox).WidthOverride(820.0f).Visibility(EVisibility::HitTestInvisible)[FlightBar.ToSharedRef()]
 		]
 		+ SOverlay::Slot().HAlign(HAlign_Fill).VAlign(VAlign_Bottom).Padding(60.0f, 0.0f, 60.0f, 14.0f)
 		[
@@ -427,13 +434,22 @@ TSharedRef<SWidget> SAPSShipHud::BuildFlightBar()
 		{
 			if (Readout.bStarDrive)
 			{
-				return Readout.DriveHeldBy.IsEmpty()
-					? FText::Format(LOCTEXT("DriveSet", "Set {0}"), FText::FromString(Readout.DriveSet))
-					: FText::Format(LOCTEXT("DriveHeld", "Held back: {0}"), FText::FromString(Readout.DriveHeldBy));
+				if (Readout.DriveHeldBy.IsEmpty())
+				{
+					return FText::Format(LOCTEXT("DriveSet", "Set {0}"), FText::FromString(Readout.DriveSet));
+				}
+				// Rio 06.10 (audit: "Held back: INSIDE A STAR SYSTEM" did not fit the column): short words here only; the
+				// flight model's literals stay as they are, the logs and run_0610_saw.ps1 parse them.
+				const FString& H = Readout.DriveHeldBy;
+				const FText Why = H == TEXT("INSIDE A STAR SYSTEM") ? LOCTEXT("HeldInSystem", "in a system")
+					: H == TEXT("STAR SYSTEM AHEAD") ? LOCTEXT("HeldSystemAhead", "system ahead")
+					: H == TEXT("BODY NEAR") ? LOCTEXT("HeldBody", "body near")
+					: FText::FromString(H.ToLower());
+				return FText::Format(LOCTEXT("DriveHeldShort", "Held: {0}"), Why);
 			}
 			return Readout.bAutopilot
 				? FText::Format(LOCTEXT("AutopilotTo", "To {0}"), FText::FromString(Readout.AutopilotTarget))
-				: LOCTEXT("AutopilotHint", "Z engages to the target");
+				: LOCTEXT("AutopilotHint", "Z engages it");
 		}),
 		Colour([]() { return P().TextSoft; }));
 
@@ -442,26 +458,28 @@ TSharedRef<SWidget> SAPSShipHud::BuildFlightBar()
 		SNew(SVerticalBox)
 		+ SVerticalBox::Slot().AutoHeight()
 		[
+			// Rio 06.10: the label and the limit on one line, in the same face, so they share a baseline.
 			SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot().AutoWidth()
+			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 			[APSHud::Label(LOCTEXT("Speed", "SPEED"), Colour([]() { return P().TextQuiet; }))]
-			+ SHorizontalBox::Slot().FillWidth(1.0f).HAlign(HAlign_Right)
+			+ SHorizontalBox::Slot().FillWidth(1.0f).HAlign(HAlign_Right).VAlign(VAlign_Center)
 			[
-				SNew(STextBlock).Font(APSHud::TextFont(11)).ColorAndOpacity(Colour([]() { return P().TextQuiet; }))
+				SNew(STextBlock).Font(APSHud::LabelFont(9)).ColorAndOpacity(Colour([]() { return P().TextQuiet; }))
 				.Text_Lambda([this]()
 				{
+					// Rio 06.10 (audit: "MM/S" read as millimetres): the units keep their spelling (Mm/s), as in the value row.
 					if (Readout.bStarDrive)
 					{
-						return FText::Format(LOCTEXT("CruiseLimit", "cruise {0}"), FText::FromString(Readout.DriveCruise));
+						return FText::Format(LOCTEXT("CruiseLimit", "CRUISE {0}"), FText::FromString(Readout.DriveCruise));
 					}
 					return Readout.Boost > 0.0f
-						? FText::Format(LOCTEXT("BoostLimit", "boost x{0}   limit {1}"), FText::AsNumber(Readout.Boost), FText::FromString(Readout.SpeedLimit))
-						: FText::Format(LOCTEXT("SpeedLimit", "limit {0}"), FText::FromString(Readout.SpeedLimit));
+						? FText::Format(LOCTEXT("BoostLimit", "BOOST x{0}   LIMIT {1}"), FText::AsNumber(Readout.Boost), FText::FromString(Readout.SpeedLimit))
+						: FText::Format(LOCTEXT("SpeedLimit", "LIMIT {0}"), FText::FromString(Readout.SpeedLimit));
 				})
 			]
 		]
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 3.0f, 0.0f, 0.0f)
-		[APSHud::ValueWithUnit(TAttribute<FString>::CreateLambda([this]() { return Readout.Speed; }), 20)]
+		[APSHud::ValueWithUnit(TAttribute<FString>::CreateLambda([this]() { return Readout.Speed; }), 20, 104.0f)]
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 5.0f, 0.0f, 0.0f)
 		[
 			SNew(SSpeedBar).Fraction_Lambda([this]() { return Readout.SpeedFraction; })
@@ -480,7 +498,7 @@ TSharedRef<SWidget> SAPSShipHud::BuildFlightBar()
 				return Readout.AutopilotRemaining;
 			}
 			return Readout.NearestDistance.IsEmpty() ? FString(TEXT("--")) : Readout.NearestDistance;
-		}), 17),
+		}), 17, 88.0f),
 		TAttribute<FText>::CreateLambda([this]()
 		{
 			if (Readout.bAutopilot)
@@ -493,7 +511,15 @@ TSharedRef<SWidget> SAPSShipHud::BuildFlightBar()
 
 	// 4. The band (pace) or the engine's state.
 	const TSharedRef<SWidget> BandColumn = Column(
-		LOCTEXT("Pace", "PACE"),
+		TAttribute<FText>::CreateLambda([this]()
+		{
+			if (Readout.bStarDrive)
+			{
+				return LOCTEXT("Pace", "PACE");
+			}
+			return Readout.bAutoBand ? LOCTEXT("PaceAuto", "PACE · AUTO") : LOCTEXT("PaceManual", "PACE · MANUAL");
+		}),
+		// Rio 06.10 (audit: the bar keeps a constant height): one line with an ellipsis, as in 61532ed6.
 		SNew(STextBlock).Font(APSHud::ValueFont(14)).ColorAndOpacity(Colour([]() { return P().Highlight; }))
 		.OverflowPolicy(ETextOverflowPolicy::Ellipsis)
 		.Text_Lambda([this]()
@@ -502,8 +528,7 @@ TSharedRef<SWidget> SAPSShipHud::BuildFlightBar()
 			{
 				return LOCTEXT("PaceDrive", "STAR DRIVE");
 			}
-			return FText::FromString(FString::Printf(TEXT("%s · %s"), Readout.bAutoBand ? TEXT("AUTO") : TEXT("MANUAL"),
-				*Readout.BandName.ToUpper()));
+			return FText::FromString(Readout.BandName.ToUpper());
 		}),
 		TAttribute<FText>::CreateLambda([this]()
 		{
@@ -523,13 +548,13 @@ TSharedRef<SWidget> SAPSShipHud::BuildFlightBar()
 	const TSharedRef<SWidget> Columns =
 		SNew(SHorizontalBox)
 		.Visibility_Lambda([Valid]() { return Valid() ? EVisibility::Visible : EVisibility::Collapsed; })
-		+ SHorizontalBox::Slot().AutoWidth()[SNew(SBox).WidthOverride(140.0f)[PilotColumn]]
+		+ SHorizontalBox::Slot().AutoWidth()[SNew(SBox).WidthOverride(170.0f)[PilotColumn]]
 		+ SHorizontalBox::Slot().AutoWidth().Padding(14.0f, 0.0f)[APSHud::Rule(true)]
 		+ SHorizontalBox::Slot().FillWidth(1.0f)[SpeedColumn]
 		+ SHorizontalBox::Slot().AutoWidth().Padding(14.0f, 0.0f)[APSHud::Rule(true)]
-		+ SHorizontalBox::Slot().AutoWidth()[SNew(SBox).WidthOverride(124.0f)[NextColumn]]
+		+ SHorizontalBox::Slot().AutoWidth()[SNew(SBox).WidthOverride(170.0f)[NextColumn]]
 		+ SHorizontalBox::Slot().AutoWidth().Padding(14.0f, 0.0f)[APSHud::Rule(true)]
-		+ SHorizontalBox::Slot().AutoWidth()[SNew(SBox).WidthOverride(124.0f)[BandColumn]];
+		+ SHorizontalBox::Slot().AutoWidth()[SNew(SBox).WidthOverride(190.0f)[BandColumn]];
 
 	return APSHud::Card(
 		SNew(SVerticalBox)

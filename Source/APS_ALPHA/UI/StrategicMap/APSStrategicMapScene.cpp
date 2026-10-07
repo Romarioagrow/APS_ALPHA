@@ -32,6 +32,7 @@
 #include "Framework/Application/SlateApplication.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
+#include "HAL/IConsoleManager.h"
 #include "Rendering/SlateRenderer.h"
 #include "Styling/CoreStyle.h"
 
@@ -46,6 +47,12 @@ namespace APSStrategicMapSceneLocal
 	/** A mesh this far from its actor is a stray component, not the structure (the HQ Alpha asset, 02.10). */
 	constexpr double StrayMeshCm = 10000000.0;
 	constexpr double MaximumStructureRadiusCm = 5000000.0;
+
+	TAutoConsoleVariable<int32> CVarHomeSystemFrame(TEXT("aps.Map.HomeSystemFrame"), 1,
+		TEXT("Rio 06.10 ('HOME SYSTEM does not show the home system, the camera is very far'): what HOME SYSTEM (H) and a focus on the ")
+		TEXT("home system's mark frame. 1: the home system itself (its outermost star, planet or moon round the home star plus its ")
+		TEXT("radius, with the generation menu's 1.20 margin, as its HOME SYSTEM screen). 0: the catalogue room, half the way to the ")
+		TEXT("nearest neighbour star (~1e5 AU under REAL SCALE: the system is one dot)."));
 
 	/** "ROCKY", "FROZEN", "GAS GIANT": the enum's " Planet" word repeats the kind (as the menu's plates). */
 	FString TypeName(const EPlanetType Type)
@@ -747,7 +754,7 @@ double FAPSStrategicMapScene::FrameRadius(const APSStrategicMap::FSelection& Tar
 	{
 		const FAPSStarSystems* Stars = GetStars();
 		const FAPSStarSystemInfo* Info = Stars ? Stars->Get(Target.SystemIndex) : nullptr;
-		return Info ? (Info->bHome ? GetHomeRoomCm() : FMath::Max(Info->RoomCm, APSStars::AstronomicalUnitCm * 0.05))
+		return Info ? (Info->bHome ? GetHomeSystemFrameCm() : FMath::Max(Info->RoomCm, APSStars::AstronomicalUnitCm * 0.05))
 			: APSStars::AstronomicalUnitCm;
 	}
 	const int32 Index = FindObject(Target.Actor.Get());
@@ -947,6 +954,63 @@ double FAPSStrategicMapScene::GetHomeRoomCm() const
 		}
 	}
 	return Outermost > 0.0 ? Outermost * 1.15 : 5.0 * APSStars::AstronomicalUnitCm;
+}
+
+double FAPSStrategicMapScene::GetHomeSystemFrameCm() const
+{
+	// Rio 06.10 (HOME SYSTEM does not show the home system, the camera very far): under REAL SCALE the room is ~1e5 AU,
+	// the planets within tens of AU; framed as the generation menu's HOME SYSTEM (GetContinuousPreviewPhysicalFocus):
+	// the outermost home star, planet or moon from the home star plus its own radius.
+	const AActor* HomeStar = GetHomeStar();
+	UWorld* LiveWorld = World.Get();
+	if (APSStrategicMapSceneLocal::CVarHomeSystemFrame.GetValueOnGameThread() == 0 || !HomeStar || !LiveWorld)
+	{
+		return GetHomeRoomCm();
+	}
+	// A binary home: every star of the home system.
+	TArray<const AActor*, TInlineAllocator<4>> HomeStars{HomeStar};
+	if (const AAstroGenerator* Astro = Generator.Get())
+	{
+		if (const AStarSystem* System = Astro->GetPreviewHomeSystem(); IsValid(System)
+			&& System->GetStars().Contains(HomeStar))
+		{
+			for (const AStar* Star : System->GetStars())
+			{
+				if (IsValid(Star))
+				{
+					HomeStars.AddUnique(Star);
+				}
+			}
+		}
+	}
+	const FVector Centre = HomeStar->GetActorLocation();
+	double Extent = 0.0;
+	for (const AActor* Star : HomeStars)
+	{
+		const AStar* AsStar = Cast<AStar>(Star);
+		Extent = FMath::Max(Extent, FVector::Dist(Star->GetActorLocation(), Centre)
+			+ (AsStar ? static_cast<double>(AsStar->StarRadiusKM) * 1.0e5 : 0.0));
+	}
+	bool bBodies = false;
+	for (TActorIterator<APlanetaryBody> It(LiveWorld); It; ++It)
+	{
+		const APlanet* Planet = Cast<APlanet>(*It);
+		if (const AMoon* Moon = Cast<AMoon>(*It))
+		{
+			Planet = Moon->ParentPlanet;
+		}
+		if (!IsValid(*It) || !IsValid(Planet) || !HomeStars.Contains(static_cast<const AActor*>(Planet->ParentStar)))
+		{
+			continue;
+		}
+		Extent = FMath::Max(Extent, FVector::Dist(It->GetActorLocation(), Centre) + It->GetWorldScapeBodyRadiusCm());
+		bBodies = true;
+	}
+	// The menu's FrameMargin 1.20 on top of FlyTo's own 1.06.
+	const double Result = bBodies ? Extent * (1.20 / 1.06) : 5.0 * APSStars::AstronomicalUnitCm;
+	UE_LOG(LogTemp, Log, TEXT("[APS.Map] HOME SYSTEM frame %.2f AU (room %.0f AU)"),
+		Result / APSStars::AstronomicalUnitCm, GetHomeRoomCm() / APSStars::AstronomicalUnitCm);
+	return Result;
 }
 
 double FAPSStrategicMapScene::GetClusterFrameRadius() const

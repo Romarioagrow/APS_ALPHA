@@ -423,11 +423,16 @@ private:
 	void ApplyBand(EAPSFlightBand NewBand, const TCHAR* Reason);
 	EAPSFlightBand NeighbourBand(EAPSFlightBand Band, int32 Direction) const;
 	FVector StepVelocity(const FAPSFlightBandSettings& Band, const FVector& LocalInput, double Limit, double Boost,
-		double Drag, float DeltaTime) const;
+		double Drag, float DeltaTime, double ThrustScale = 1.0) const;
 
 	EAPSFlightBand FlightBand{EAPSFlightBand::Maneuver};
 	bool bManualBand{false};
 	float AutoShiftHold{0.0f};
+	/** Rio 07.10 (aps.Ship.ShiftRampSeconds): the thrust the last band-flight frame used (cm/s2), the thrust an AUTO shift
+	 * up starts its ramp from, and how far into that ramp the ship is (< 0: no ramp). */
+	double LastThrustCm{0.0};
+	double ShiftRampFromThrustCm{0.0};
+	float ShiftRampElapsed{-1.0f};
 	/** After AUTO shifted down closing in on a body, no shift up for a while (Rio 04.10: ORBITAL <-> CRUISE every 3-5 s). */
 	float UpShiftBlockSeconds{0.0f};
 	/** Nearest star (actor or catalogue point), cm to its surface; -1 unknown. */

@@ -1,5 +1,6 @@
 #include "APSSystemMaterializer.h"
 
+#include "APSInfrastructure.h"
 #include "APSStarSystems.h"
 #include "APS_ALPHA/Actors/Astro/Galaxy.h"
 #include "APS_ALPHA/Actors/Astro/Moon.h"
@@ -22,6 +23,7 @@
 #include "APS_ALPHA/Core/Structs/PlanetarySystemGenerationModel.h"
 #include "APS_ALPHA/Core/Structs/StarGenerationModel.h"
 #include "APS_ALPHA/Core/Structs/StarSystemGenerationModel.h"
+#include "APS_ALPHA/Gameplay/Fleet/APSFleetCommand.h"
 #include "APS_ALPHA/Generation/APSBodyNames.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
 #include "APS_ALPHA/Generation/MoonGenerator.h"
@@ -155,6 +157,28 @@ namespace APSSystemMaterializerLocal
 		return StarSystem;
 	}
 
+	/**
+	 * Rio 06.10 (star approach): how far the sky (the gameplay generator the indexed galaxy is drawn under) stands from its
+	 * sky place now, the home's world place + the sky offset, where the stellar view puts it later in the frame; zero where
+	 * the stellar view does not keep it there (a legacy dataset, another root, a home attached to the generator). As
+	 * APSStarSystems.cpp's SkyRootOf.
+	 */
+	FVector MaterializerSkyLag(const UWorld* World, const AGalaxy* Galaxy, const AAstroGenerator* Gen)
+	{
+		if (!World || !Galaxy || !IsValid(Galaxy->StarMeshInstances) || !IsValid(Gen))
+		{
+			return FVector::ZeroVector;
+		}
+		const FAPSCanonicalStellarProjectionDescriptor& Descriptor = Gen->GetCanonicalStellarProjectionDescriptor();
+		const AActor* HomeActor = Gen->GetPreviewHomeSystem();
+		if (!Descriptor.bFinalized || !Descriptor.bConsumedFinalizedDataset || !Descriptor.Galaxy.bEnabled || !IsValid(HomeActor)
+			|| HomeActor->IsAttachedTo(Gen) || Galaxy->StarMeshInstances->GetAttachmentRootActor() != Gen)
+		{
+			return FVector::ZeroVector;
+		}
+		return HomeActor->GetActorLocation() + UAPSWorldOriginSubsystem::SkyOffsetOf(World) - Gen->GetActorLocation();
+	}
+
 	int32 SurfaceSeed(const int32 SystemSeed, const FString& BodyAddress)
 	{
 		return 10 + static_cast<int32>(HashCombineFast(static_cast<uint32>(SystemSeed), GetTypeHash(BodyAddress)) % 999983u);
@@ -192,7 +216,8 @@ namespace APSSystemMaterializerLocal
 	int32 FindVisitTarget(const FAPSStarSystems& Systems, const UWorld* World, const FString& Name)
 	{
 		const bool bGalaxy = Name.Equals(TEXT("galaxy"), ESearchCase::IgnoreCase);
-		if (!Name.IsEmpty() && !bGalaxy && !Name.Equals(TEXT("nearest"), ESearchCase::IgnoreCase))
+		if (!Name.IsEmpty() && !bGalaxy && !Name.Equals(TEXT("nearest"), ESearchCase::IgnoreCase)
+			&& !Name.Equals(TEXT("worlds"), ESearchCase::IgnoreCase))
 		{
 			TArray<int32> Found;
 			Systems.Search(Name, 1, Found);
@@ -217,12 +242,14 @@ namespace APSSystemMaterializerLocal
 			}
 			return Best;
 		}
+		// Rio 07.10 (test of the held structures): 'worlds' picks the nearest system the catalogue gives planets.
+		const bool bWorlds = Name.Equals(TEXT("worlds"), ESearchCase::IgnoreCase);
 		TArray<int32> Nearest;
-		Systems.FindNearest(From, 4, Nearest);
+		Systems.FindNearest(From, bWorlds ? 64 : 4, Nearest);
 		for (const int32 Index : Nearest)
 		{
 			const FAPSStarSystemInfo* Info = Systems.Get(Index);
-			if (Info && !Info->bHome && !Info->bInsideHome) return Index;
+			if (Info && !Info->bHome && !Info->bInsideHome && (!bWorlds || Info->PotentialPlanets > 0)) return Index;
 		}
 		return INDEX_NONE;
 	}
@@ -274,6 +301,11 @@ void FAPSSystemMaterializer::GetPlanets(TArray<APlanet*>& OutPlanets) const
 	{
 		if (APlanet* Planet = Weak.Get()) OutPlanets.Add(Planet);
 	}
+}
+
+AStar* FAPSSystemMaterializer::GetStar() const
+{
+	return Star.Get();
 }
 
 void FAPSSystemMaterializer::Update(FAPSStarSystems& Systems, const float DeltaSeconds)
@@ -591,11 +623,37 @@ bool FAPSSystemMaterializer::Begin(FAPSStarSystems& Systems, const int32 Index)
 		PreviousEnvelopeCm = EnvelopeCm;
 	}
 	Stage = EStage::Spawning;
+	// Rio 06.10 (star approach: "the point vanishes, reappears elsewhere"): a galaxy star is measured against where the sky
+	// draws its point this frame (its catalogue place with the sky at its sky place, where the stellar view puts it after
+	// this tick), not only against the registry place it was spawned at, which it stands on by construction; a registry
+	// skew shows here and warns. A cluster system keeps the old measure.
+	const double RegistryOffCm = FVector::Dist(NewStar->GetActorLocation(), Info->Location);
+	FString OffText = FString::Printf(TEXT("%.0f km off its catalogue point"), RegistryOffCm / 100000.0);
+	if (Info->GalaxyIndex != INDEX_NONE)
+	{
+		const AGalaxy* DrawnGalaxy = APSGalaxyGpuStars::GetIndexedGalaxy(LiveWorld);
+		FGalaxyCatalogStarRecord DrawnRecord;
+		FVector Drawn = FVector::ZeroVector;
+		if (DrawnGalaxy && DrawnGalaxy->StarCatalog.ResolveStar(Info->GalaxyIndex, DrawnRecord)
+			&& APSGalaxyGpuStars::ProjectCatalogueLocation(LiveWorld, DrawnRecord.GalaxyLocalLocation, Drawn))
+		{
+			const FVector SkyLag = MaterializerSkyLag(LiveWorld, DrawnGalaxy, Gen);
+			Drawn += SkyLag;
+			const double DrawnOffCm = FVector::Dist(NewStar->GetActorLocation(), Drawn);
+			OffText = FString::Printf(TEXT("%.0f km off its drawn point, registry %.0f km, sky lag %.0f km"), DrawnOffCm / 100000.0,
+				RegistryOffCm / 100000.0, SkyLag.Size() / 100000.0);
+			if (DrawnOffCm > 3.0 * FMath::Max(Info->StarRadiusCm, 1.0e10))
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[APS.Stars] %s stands %.4g AU off its drawn point (registry skew)"), *ActiveName,
+					DrawnOffCm / AstronomicalUnitCm);
+			}
+		}
+	}
 	UE_LOG(LogTemp, Log,
-		TEXT("[APS.Stars] materializing %s: %s star of %d km, %.3f AU from home (%.0f km off its catalogue point), room %.3f AU; ")
+		TEXT("[APS.Stars] materializing %s: %s star of %d km, %.3f AU from home (%s), room %.3f AU; ")
 		TEXT("%d of %d worlds fit (orbits x1/%.1f, outermost %.3f AU) | %.1f ms"),
 		*ActiveName, *NewStar->FullSpectralName.ToString(), NewStar->StarRadiusKM,
-		Info->HomeDistanceCm / AstronomicalUnitCm, FVector::Dist(NewStar->GetActorLocation(), Info->Location) / 100000.0,
+		Info->HomeDistanceCm / AstronomicalUnitCm, *OffText,
 		Info->RoomCm / AstronomicalUnitCm, Plan.Num(), Model->PlanetsList.Num(), Scale > 0.0 ? 1.0 / Scale : 0.0,
 		PreviousOrbitCm / AstronomicalUnitCm, (FPlatformTime::Seconds() - StartSeconds) * 1000.0);
 	return true;
@@ -783,6 +841,34 @@ bool FAPSSystemMaterializer::IsDrained(const float DeltaSeconds)
 
 void FAPSSystemMaterializer::Finish()
 {
+	// Rio 07.10 ("buildings on planets of other star systems disappear when that system goes away"): the system's actor
+	// tree goes below, with everything attached to its worlds. Before that the fleet's ships there move to the system's
+	// beacon and what the civilization built there is kept as records, raised again when the system stands
+	// (aps.Stars.HoldReleasedStructures; each hold returns at once when it is 0). Only when the tree really goes: a
+	// system that vanished has no bodies left, and a cluster system without its generator is not torn down here.
+	if (UWorld* LiveWorld = World.Get(); LiveWorld && System.IsValid()
+		&& (ActiveGalaxyIndex != INDEX_NONE || (Generator.IsValid() && ActiveInstance != INDEX_NONE)))
+	{
+		TArray<APlanetaryBody*> Bodies;
+		APSSystemMaterializerLocal::CollectBodies(Planets, Bodies);
+		FAPSStarSystems* Stars = APSStarSystemsFind(LiveWorld);
+		const FAPSStarSystemInfo* Info = Stars ? Stars->Get(ActiveIndex) : nullptr;
+		// Rio 07.10 (review: ships at the star of a system where no planet fit went with it): the fleet's ships are moved off
+		// the whole tree also when no world stood.
+		if (Info && !Info->bHome)
+		{
+			const FGuid HostSystemId = Info->Id;
+			// The ships first: a placed prop or a structure aboard a ship that leaves stays with it, not with the world.
+			if (FAPSFleetCommand* Fleet = APSFleetFind(LiveWorld))
+			{
+				Fleet->HoldOnRelease(Bodies, HostSystemId, *Stars, System.Get());
+			}
+			if (FAPSInfrastructure* Infrastructure = APSInfrastructureFind(LiveWorld))
+			{
+				Infrastructure->HoldOnRelease(Bodies, HostSystemId);
+			}
+		}
+	}
 	// Rio 06.10 (still ship): the system no longer rides with the sky.
 	if (UWorld* LiveWorld = World.Get(); LiveWorld && System.IsValid())
 	{

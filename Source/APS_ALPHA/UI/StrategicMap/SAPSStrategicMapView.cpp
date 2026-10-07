@@ -12,11 +12,14 @@
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
 #include "APS_ALPHA/UI/MainMenu/APSPreviewAnnotationLayout.h"
 #include "APS_ALPHA/UI/Style/APSMenuChrome.h"
+#include "APS_ALPHA/UI/Style/APSOrbitStroke.h"
+#include "APS_ALPHA/UI/Style/APSSlateLineGuard.h"
 #include "APS_ALPHA/UI/Style/APSUINumber.h"
 #include "Brushes/SlateRoundedBoxBrush.h"
 #include "Engine/GameViewportClient.h"
 #include "Fonts/FontMeasure.h"
 #include "Framework/Application/SlateApplication.h"
+#include "HAL/IConsoleManager.h"
 #include "Rendering/SlateRenderer.h"
 #include "Engine/LocalPlayer.h"
 #include "GameFramework/Pawn.h"
@@ -38,6 +41,16 @@ namespace APSStrategicMapViewLocal
 
 	/** A click picks the nearest marker this close (px). */
 	constexpr double PickReach = 12.0;
+
+	TAutoConsoleVariable<int32> CVarMapOrbitStyle(TEXT("aps.Map.OrbitStyle"), 1,
+		TEXT("Rio 06.10 (strategic map: 'the Home System orbits are still the old ones, make them as on the generation screen'): 1 draws ")
+		TEXT("planet and moon orbits with the generation preview's strokes (dark under-stroke, glow, core; cyan planets, blue moons, ")
+		TEXT("brighter towards the body). 0: the thin type-coloured lines."));
+	TAutoConsoleVariable<int32> CVarPrecisePick(TEXT("aps.Map.PrecisePick"), 1,
+		TEXT("Rio 06.10 ('I click a star and one at the other end of the galaxy is selected'): 1 casts a click on the star field from ")
+		TEXT("the map's own camera-relative projection, built from the paint geometry (exact at any range, in any window place); ")
+		TEXT("0 restores APlayerController::DeprojectScreenPositionToWorld on the mouse event's geometry, whose ray is rounding noise ")
+		TEXT("once the camera is beyond ~1 ly of 0,0,0 (GALAXY, CLUSTER)."));
 	/** Markers closer than this merge into the first one drawn there, with a "+N" (px). */
 	constexpr double MergeDistance = 6.0;
 	/** A body larger than this share of the view is seen itself: no ring round it. */
@@ -124,6 +137,26 @@ namespace APSStrategicMapViewLocal
 			return FMath::IsFinite(OutLocal.X) && FMath::IsFinite(OutLocal.Y);
 		}
 
+		/** Rio 06.10 (galaxy pick): the view direction through a panel point, the inverse of ProjectRelative. The engine's
+		 * deprojection inverts the translated view-projection and subtracts two points 10 cm and 10 m ahead of a camera
+		 * ~1e22 cm out: pure rounding at galaxy range. ViewProjection has no translation, so this is exact at any range. */
+		bool Ray(const FVector2D& Local, FVector& OutDirection) const
+		{
+			const FVector2D Pixel = (Local - PixelOffset) / PixelScale;
+			const double X = (Pixel.X - Rect.Min.X) / Rect.Width() * 2.0 - 1.0;
+			const double Y = 1.0 - (Pixel.Y - Rect.Min.Y) / Rect.Height() * 2.0;
+			const FMatrix Inverse = ViewProjection.Inverse();
+			// Reversed Z: 1 is the near plane, 0.01 a hundred near distances ahead.
+			const FVector4 A = Inverse.TransformFVector4(FVector4(X, Y, 1.0, 1.0));
+			const FVector4 B = Inverse.TransformFVector4(FVector4(X, Y, 0.01, 1.0));
+			if (FMath::IsNearlyZero(A.W, 1.0e-12) || FMath::IsNearlyZero(B.W, 1.0e-12))
+			{
+				return false;
+			}
+			OutDirection = (FVector(B.X, B.Y, B.Z) / B.W - FVector(A.X, A.Y, A.Z) / A.W).GetSafeNormal();
+			return !OutDirection.IsNearlyZero() && !OutDirection.ContainsNaN();
+		}
+
 		bool Project(const FVector& World, FVector2D& OutLocal, double& OutDepth) const
 		{
 			const FVector Relative = World - Origin;
@@ -190,7 +223,7 @@ namespace APSStrategicMapViewLocal
 	void Lines(FSlateWindowElementList& Out, const int32 Layer, const FGeometry& Geometry, TArray<FVector2f>&& Points,
 		const FLinearColor& Colour, const float Thickness)
 	{
-		if (Points.Num() > 1)
+		if (Points.Num() > 1 && APSSlateLineGuard::IsDrawable(Points))
 		{
 			FSlateDrawElement::MakeLines(Out, Layer, Geometry.ToPaintGeometry(), MoveTemp(Points), ESlateDrawEffect::None,
 				Colour, true, Thickness);
@@ -526,6 +559,20 @@ int32 SAPSStrategicMapView::OnPaint(const FPaintArgs& Args, const FGeometry& All
 	if (Map->IsLayerOn(ELayer::Orbits))
 	{
 		TArray<FVector2D> Intervals;
+		// Rio 06.10 ("the Home System orbits are still the old ones, make them as on the generation screen"): planet and
+		// moon orbits are gathered as short runs and drawn after the loop with the generation preview's strokes.
+		const bool bOrbitStyle = APSStrategicMapViewLocal::CVarMapOrbitStyle.GetValueOnGameThread() != 0;
+		APSOrbitStroke::FRuns OrbitRuns;
+		// Under the generation strokes the other orbits (orbital rings) keep their lines but are drawn after the runs.
+		// Slate merges lines of one width on one layer into the first batch drawn there: a ring's 1.0 / 1.6 px line sent
+		// before the runs would pull every moon or planet core under the dark under-strokes.
+		struct FOtherOrbitLine
+		{
+			TArray<FVector2f> Points;
+			FLinearColor Colour;
+			float Thickness;
+		};
+		TArray<FOtherOrbitLine> OtherOrbitLines;
 		for (const FObject& Object : Objects)
 		{
 			const AActor* Body = Object.Actor.Get();
@@ -534,12 +581,15 @@ int32 SAPSStrategicMapView::OnPaint(const FPaintArgs& Args, const FGeometry& All
 			{
 				continue;
 			}
+			const bool bNewStyle = bOrbitStyle && (Object.Kind == EKind::Planet || Object.Kind == EKind::Moon);
 			const FVector CentreLocation = Centre->GetActorLocation();
 			const double CentreDepth = FVector::DotProduct(CentreLocation - View.Origin, View.Forward);
 			const double Extent = CentreDepth > Object.OrbitRadiusCm * 1.01
 				? View.PixelRadius(Object.OrbitRadiusCm, CentreDepth) : 1.0e6;
-			// A moon's orbit round a distant planet is a dot: its marker is enough.
-			if (Extent < 6.0)
+			// A moon's orbit round a distant planet is a dot: its marker is enough. Under the generation strokes a moon's
+			// orbit waits for a wider ring (the generation SYSTEM screen hides them at system scale): the moons' glows
+			// would otherwise pile up round every planet of the HOME SYSTEM view.
+			if (Extent < (bNewStyle && Object.Kind == EKind::Moon ? 16.0 : 6.0))
 			{
 				continue;
 			}
@@ -555,9 +605,35 @@ int32 SAPSStrategicMapView::OnPaint(const FPaintArgs& Args, const FGeometry& All
 			const FLinearColor Colour = WithAlpha(Object.Colour, bSelected ? 0.75f : Object.Kind == EKind::Moon ? 0.22f : 0.32f);
 			const float Thickness = bSelected ? 1.6f : Object.Kind == EKind::Moon ? 0.8f : 1.0f;
 			const int32 Samples = FMath::Clamp(FMath::CeilToInt(Extent / 5.0), 48, 192);
+			if (bNewStyle)
+			{
+				// The body's angle in the orbit plane, live (the axes come from the scene's 2 s refresh): the run nearest to
+				// it is the brightest. The halo fades in with the ring's size; the selected orbit gets a stronger core.
+				// A run spans ~33.75 degrees, as the generation screen's 6 of 64 samples.
+				const FVector BodyDirection = Body->GetActorLocation() - CentreLocation;
+				const double BodyAngle = FMath::Atan2(FVector::DotProduct(BodyDirection, Object.OrbitAxisY),
+					FVector::DotProduct(BodyDirection, Object.OrbitAxisX));
+				OrbitRuns.Begin(Object.Kind == EKind::Moon ? APSOrbitStroke::Moon() : APSOrbitStroke::Planet(Cyan), BodyAngle,
+					bSelected ? 0.25f : 0.f, static_cast<float>(FMath::Clamp((Extent - 6.0) / 20.0, 0.0, 1.0)),
+					FMath::Max(7, Samples * 6 / 64 + 1));
+			}
 			TArray<FVector2f> Polyline;
 			const auto Flush = [&]()
 			{
+				if (bNewStyle)
+				{
+					OrbitRuns.Flush();
+					return;
+				}
+				if (bOrbitStyle)
+				{
+					if (Polyline.Num() > 1)
+					{
+						OtherOrbitLines.Add({MoveTemp(Polyline), Colour, Thickness});
+					}
+					Polyline.Reset();
+					return;
+				}
 				Lines(OutDrawElements, LayerGuides, Geometry, MoveTemp(Polyline), Colour, Thickness);
 				Polyline.Reset();
 			};
@@ -610,6 +686,11 @@ int32 SAPSStrategicMapView::OnPaint(const FPaintArgs& Args, const FGeometry& All
 								Flush();
 								continue;
 							}
+							if (bNewStyle)
+							{
+								OrbitRuns.Add(Start, End, Angle, Interval.Y < 1.0, 0.05);
+								continue;
+							}
 							if (!Polyline.IsEmpty() && !Polyline.Last().Equals(FVector2f(Start), 0.05f))
 							{
 								Flush();
@@ -629,6 +710,14 @@ int32 SAPSStrategicMapView::OnPaint(const FPaintArgs& Args, const FGeometry& All
 				Previous = Current;
 			}
 			Flush();
+		}
+		// All under-strokes first, then the glows and cores, on the guides' layer (orbits stay under the network's lines).
+		// Lines sent later on this layer join the first batch of their width: the course's dark halo (4.6 px) draws with
+		// the planets' under-strokes, its core (1.6 px) over the planets' cores.
+		OrbitRuns.Paint(OutDrawElements, Geometry, LayerGuides, LayerGuides);
+		for (FOtherOrbitLine& Line : OtherOrbitLines)
+		{
+			Lines(OutDrawElements, LayerGuides, Geometry, MoveTemp(Line.Points), Line.Colour, Line.Thickness);
 		}
 	}
 
@@ -1301,23 +1390,54 @@ bool SAPSStrategicMapView::PickGalaxyStar(const FGeometry& Geometry, const FVect
 	APlayerController* PlayerController = Controller.Get();
 	UWorld* World = PlayerController ? PlayerController->GetWorld() : nullptr;
 	FAPSStarSystems* Stars = APSStarSystemsFind(World);
+	// Rio 06.10 ("I click a star and one at the other end of the galaxy is selected"): the ray comes from the map's own
+	// camera-relative projection, the one every marker is drawn with. The engine's deprojection works on the camera's
+	// absolute place (~1e22 cm out in GALAXY): its direction was rounding noise. The projector is built from this
+	// widget's paint geometry, as in OnPaint: a mouse event's geometry is desktop space, and Build pairs it with the
+	// viewport's paint-space geometry, which shifted the click by the window's place on the desktop (the local position
+	// is the same in both spaces).
+	const bool bPrecisePick = APSStrategicMapViewLocal::CVarPrecisePick.GetValueOnGameThread() != 0;
 	APSStrategicMapViewLocal::FProjector View;
-	if (!World || !Stars || !Stars->IsReady() || !View.Build(PlayerController, Geometry))
+	if (!World || !Stars || !Stars->IsReady() || !View.Build(PlayerController, bPrecisePick ? GetPaintSpaceGeometry() : Geometry))
 	{
 		return false;
 	}
-	const FVector2D Pixel = (LocalPosition - View.PixelOffset) / View.PixelScale;
-	FVector RayOrigin;
+	FVector RayOrigin = View.Origin;
 	FVector RayDirection;
-	if (!PlayerController->DeprojectScreenPositionToWorld(Pixel.X, Pixel.Y, RayOrigin, RayDirection))
+	if (bPrecisePick)
 	{
-		return false;
+		if (!View.Ray(LocalPosition, RayDirection))
+		{
+			return false;
+		}
+	}
+	else
+	{
+		const FVector2D Pixel = (LocalPosition - View.PixelOffset) / View.PixelScale;
+		if (!PlayerController->DeprojectScreenPositionToWorld(Pixel.X, Pixel.Y, RayOrigin, RayDirection))
+		{
+			return false;
+		}
 	}
 	APSGalaxyGpuStars::FNearStar Star;
 	const double MaxAngle = APSStrategicMapViewLocal::PickReach / FMath::Max(View.ScaleX, 1.0e-6);
 	if (!APSGalaxyGpuStars::PickAlongRay(World, RayOrigin, RayDirection, MaxAngle, Star))
 	{
 		return false;
+	}
+	{
+		// Verification for Rio's test: where the picked star is drawn against the click (PASS within ~12 px).
+		FVector2D At;
+		double AtDepth = 0.0;
+		if (View.Project(Star.WorldLocation, At, AtDepth))
+		{
+			UE_LOG(LogTemp, Log, TEXT("[APS.StrategicMap] pick: catalogue %lld %.1f px from the click"), Star.CatalogIndex,
+				FVector2D::Distance(At, LocalPosition));
+		}
+		else
+		{
+			UE_LOG(LogTemp, Log, TEXT("[APS.StrategicMap] pick: catalogue %lld behind the camera"), Star.CatalogIndex);
+		}
 	}
 	int32 Index = Stars->RegisterGalaxyStar(Star.CatalogIndex);
 	if (Index == INDEX_NONE)

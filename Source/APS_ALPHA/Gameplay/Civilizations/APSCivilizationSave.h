@@ -16,6 +16,11 @@ class UWorld;
  */
 namespace APSCivilizationSave
 {
-	APS_ALPHA_API void Capture(UWorld* World, TArray<uint8>& OutBytes);
+	/** FallbackPilotedVehicleKey (Rio 06.10, audit: saves): the ship the player last piloted, for a save made after
+	 * UnPossess (the lifecycle autosave); used only when the player is not seated now and aps.Save.RestorePilotedShip is 1. */
+	APS_ALPHA_API void Capture(UWorld* World, TArray<uint8>& OutBytes,
+		const FString& FallbackPilotedVehicleKey = FString());
 	APS_ALPHA_API void Restore(UWorld* World, const TArray<uint8>& Bytes);
+	/** aps.Save.RestorePilotedShip: a ship piloted at save time comes back with its pilot, at the saved seat. */
+	APS_ALPHA_API bool RestorePilotedShipEnabled();
 }

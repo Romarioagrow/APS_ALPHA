@@ -32,6 +32,67 @@ static TAutoConsoleVariable<int32> CVarAPSPlanetCloudDebug(TEXT("aps.Surface.Clo
     TEXT("Cloud diagnostics only: 0 normal, 1 both-sided bounds, 2 ray interval, 3 unsafe depth bypass, 4 numeric depth (V29 unsupported/magenta), 5 back-face bounds, 6 ray RGB, 7 segment, 8 integral alpha."));
 static TAutoConsoleVariable<int32> CVarAPSPlanetCloudAerial(TEXT("aps.Surface.CloudAerial"),1,
     TEXT("Cloud-only atmospheric contrast transfer. 0 diagnostic bypass; no changes to the atmosphere or terrain."));
+// Rio 06.10 (clouds vanish at an altitude): V27 keeps one deck crossing per ray, so the
+// horizon band switched off at camera radius R+Bottom. The V33 graph marches both.
+static TAutoConsoleVariable<int32> CVarAPSPlanetCloudTwoCrossings(TEXT("aps.Surface.CloudTwoCrossings"),1,
+    TEXT("Rio 06.10: 1 two-crossing V33 cloud graph when baked (V27 if the asset is missing); 0 the accepted V27 exactly. Live A/B; weather clouds only, process candidates (V30/V31/V33 flags) win."));
+
+namespace APSPlanetCloudTwoCrossing
+{
+// Rio 06.10 (clouds vanish at an altitude): V33 replaces ONLY the accepted V27 weather
+// graph. Explicit process candidates and the policy graph keep their own parent.
+static bool ProcessSelected()
+{
+    static const bool bSelected=APSPlanetCloudWeather::CandidateRequested()
+        ||APSPlanetCloudWeather::LayeredRequested()||APSPlanetCloudWeather::TwoCrossingRequested();
+    return bSelected;
+}
+static TWeakObjectPtr<UMaterialInterface>& Loaded()
+{
+    static TWeakObjectPtr<UMaterialInterface> Cache;
+    return Cache;
+}
+// A missing package is probed ONCE per process, never per tick. An unused graph may be
+// collected after an A/B back to V27; it is then loaded again on the next switch.
+static UMaterialInterface* Graph()
+{
+    static bool bMissing=false;
+    if(UMaterialInterface* Cached=Loaded().Get()) return Cached;
+    if(bMissing) return nullptr;
+    UMaterialInterface* Material=LoadObject<UMaterialInterface>(nullptr,
+        APSPlanetCloudWeather::TwoCrossingMaterialPath,nullptr,LOAD_NoWarn|LOAD_Quiet);
+    bMissing=!Material; Loaded()=Material;
+    UE_LOG(LogTemp,Display,TEXT("[APS.Clouds] two-crossing graph %s: %s"),
+        Material?TEXT("loaded"):TEXT("not baked, V27 retained"),APSPlanetCloudWeather::TwoCrossingMaterialPath);
+    return Material;
+}
+// nullptr = keep the existing selection exactly (V27, process candidate or policy graph).
+static UMaterialInterface* Wanted(bool bWeather)
+{
+    return bWeather && !ProcessSelected() && CVarAPSPlanetCloudTwoCrossings.GetValueOnGameThread()==1
+        ? Graph() : nullptr;
+}
+// Per tick: a cvar read, a weak-pointer lookup and pointer compares. The MID is only
+// re-created when the selected parent differs; parameters are copied, then UpdateFrame
+// rewrites every uniform in the same tick.
+static void SelectParent(UStaticMeshComponent* Component,TObjectPtr<UMaterialInstanceDynamic>& Material,bool bWeather)
+{
+    if(!Material || !bWeather || ProcessSelected()) return;
+    UMaterialInterface* Want=Wanted(bWeather);
+    UMaterialInterface* Current=Material->Parent;
+    UMaterialInterface* TwoCrossing=Loaded().Get();
+    if(Want ? Current==Want : !(TwoCrossing && Current==TwoCrossing)) return;
+    UMaterialInterface* Parent=Want?Want:LoadObject<UMaterialInterface>(nullptr,APSPlanetCloudWeather::SelectedMaterialPath());
+    if(!Parent) { UE_LOG(LogTemp,Warning,TEXT("[APS.Clouds] Requested cloud graph unavailable; retained current layer")); return; }
+    UMaterialInstanceDynamic* Next=UMaterialInstanceDynamic::Create(Parent,Component);
+    if(!Next) return;
+    Next->CopyParameterOverrides(Material.Get());
+    Material=Next;
+    Component->SetMaterial(0,Next);
+    UE_LOG(LogTemp,Display,TEXT("[APS.Clouds] owner=%s parent=%s twoCrossings=%d"),
+        *GetNameSafe(Component->GetOwner()),*Parent->GetPathName(),CVarAPSPlanetCloudTwoCrossings.GetValueOnGameThread());
+}
+}
 
 UAPSPlanetCloudComponent::UAPSPlanetCloudComponent()
 {
@@ -91,7 +152,9 @@ void UAPSPlanetCloudComponent::Refresh(APlanet* P)
     if (!Existing)
     {
         auto* Mesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Sphere.Sphere"));
-        auto* Material = LoadObject<UMaterialInterface>(nullptr, Weather
+        // Rio 06.10 (clouds vanish at an altitude): V33 when selected and baked, else the old graph.
+        UMaterialInterface* Material = APSPlanetCloudTwoCrossing::Wanted(Weather);
+        if (!Material) Material = LoadObject<UMaterialInterface>(nullptr, Weather
             ? APSPlanetCloudWeather::SelectedMaterialPath() : APSPlanetCloudPolicy::MaterialPath);
         if (!Mesh || !Material) { UE_LOG(LogTemp, Warning, TEXT("[APS.Clouds] Prototype assets unavailable; no substitute created")); return; }
         FActorSpawnParameters Spawn; Spawn.Owner=P; Spawn.ObjectFlags=RF_Transient;
@@ -114,7 +177,9 @@ void UAPSPlanetCloudComponent::Refresh(APlanet* P)
     // the old graph. Asset absence leaves the current visual untouched.
     if(Existing->bWeatherMaterial!=Weather)
     {
-        auto* M=LoadObject<UMaterialInterface>(nullptr,Weather?APSPlanetCloudWeather::SelectedMaterialPath():APSPlanetCloudPolicy::MaterialPath);
+        // Rio 06.10 (clouds vanish at an altitude): V33 when selected and baked, else the old graph.
+        UMaterialInterface* M=APSPlanetCloudTwoCrossing::Wanted(Weather);
+        if(!M) M=LoadObject<UMaterialInterface>(nullptr,Weather?APSPlanetCloudWeather::SelectedMaterialPath():APSPlanetCloudPolicy::MaterialPath);
         if(!M){UE_LOG(LogTemp,Warning,TEXT("[APS.Clouds] Requested cloud graph unavailable; retained current layer"));return;}
         Existing->CloudMaterial=UMaterialInstanceDynamic::Create(M,Existing);
         Existing->SetMaterial(0,Existing->CloudMaterial);
@@ -137,6 +202,8 @@ void UAPSPlanetCloudComponent::TickComponent(float DeltaTime, ELevelTick TickTyp
         if(const auto* P=CloudPlanet.Get())
             WindPhase=APSPlanetCloudWeather::AdvanceWindPhase(
                 WindPhase,DeltaTime,P->RadiusKM,Layer.WindKmPerSecond);
+    // Rio 06.10 (clouds vanish at an altitude): live aps.Surface.CloudTwoCrossings A/B.
+    APSPlanetCloudTwoCrossing::SelectParent(this,CloudMaterial,bWeatherMaterial);
     UpdateFrame();
 }
 

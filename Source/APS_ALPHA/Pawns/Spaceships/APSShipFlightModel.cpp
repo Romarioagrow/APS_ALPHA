@@ -31,6 +31,7 @@
 #include "GameFramework/PlayerController.h"
 #include "HAL/IConsoleManager.h"
 #include "HAL/PlatformTime.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
 
 namespace APSShipFlightModelLocal
 {
@@ -120,6 +121,18 @@ namespace APSShipFlightModelLocal
 	TAutoConsoleVariable<int32> CVarLog(
 		TEXT("aps.Ship.FlightLog"), 0,
 		TEXT("1 logs the piloted ship's band, limit, nearest surface and speed every second."));
+	// Rio 06.10 ("the saw is back"): the flight log's one line a second cannot show a 2 s rise and fall; this samples it.
+	TAutoConsoleVariable<float> CVarSpeedSawLog(
+		TEXT("aps.Ship.SpeedSawLog"), 0.0f,
+		TEXT("> 0 logs [APS.SpeedSaw] for the piloted ship every this many seconds (0.1 = ten a second): band or J, frame ")
+		TEXT("time, speed, limit, set speed, the course limit and its source, in light years a second. 0: off."));
+	// Rio 06.10 ("the saw is back"; the diagnosis's third cause): a cluster system standing up leaves the star catalogue at
+	// once, while its star actor joined the bodies only at their next refresh, up to a second later. For that while the
+	// course limit (and the course guard) took the next star along or none, and the speed rose by itself before the star.
+	TAutoConsoleVariable<int32> CVarBodiesWithCatalogue(
+		TEXT("aps.Ship.BodiesWithCatalogue"), 1,
+		TEXT("1: a change of the star catalogue (a system standing up or going) re-reads the bodies in the same frame, so a ")
+		TEXT("star that stood up counts as its catalogue point leaves. 0: the bodies follow within a second, as before."));
 
 	// Star drive (Rio 02.10, key J).
 	TAutoConsoleVariable<float> CVarDriveCrossSeconds(
@@ -162,6 +175,22 @@ namespace APSShipFlightModelLocal
 		TEXT("Space band flight: low-pass time constant of the mouse steering, seconds (0 = none)."));
 	TAutoConsoleVariable<float> CVarCloseInHoldSeconds(TEXT("aps.Ship.CloseInHoldSeconds"), 5.0f,
 		TEXT("Rio 04.10: after AUTO shifts down closing in on a body, how long it keeps from shifting up again (0 = at once)."));
+	// Rio 07.10 (frames of a departure from the HQ: MANEUVER -> FLIGHT -> ORBITAL in two frames, 131 -> 500 m/s in ONE frame,
+	// the world jumping 5 -> 19 px a frame and the flight path ring 40 px): the new band's thrust (ORBITAL's is 75-167 times
+	// FLIGHT's) took over in a single frame. It now grows from what the old band used, in log space.
+	TAutoConsoleVariable<float> CVarShiftRampSeconds(TEXT("aps.Ship.ShiftRampSeconds"), 1.0f,
+		TEXT("Rio 07.10: after an AUTO shift into a band with more thrust, the thrust grows from the old band's to the new one's ")
+		TEXT("over this many seconds (log space; 131 -> 500 m/s now takes ~0.45 s, at most ~20 m/s a frame). Manual band picks, ")
+		TEXT("shifts down and S braking are not ramped. 0: at once, as before (the one-frame jump)."));
+	// Rio 07.10 (aps.Ship.ShiftRampSeconds): the thrust a ramp after an AUTO shift allows Elapsed seconds into it.
+	double ShiftThrustCm(const double FromCm, const double ToCm, const double Elapsed, const double Seconds)
+	{
+		if (Seconds <= 0.0 || FromCm <= 0.0 || ToCm <= FromCm || Elapsed >= Seconds)
+		{
+			return ToCm;
+		}
+		return FromCm * FMath::Pow(ToCm / FromCm, FMath::Clamp(Elapsed / Seconds, 0.0, 1.0));
+	}
 	TAutoConsoleVariable<float> CVarSpaceKeyTurnScale(TEXT("aps.Ship.SpaceKeyTurnScale"), 0.45f,
 		TEXT("Rio 04.10: space band flight with the mouse on the camera: the share of the full turn rate A/D reach (1 = full)."));
 	TAutoConsoleVariable<float> CVarSpaceKeyTurnEase(TEXT("aps.Ship.SpaceKeyTurnEase"), 0.25f,
@@ -179,6 +208,37 @@ namespace APSShipFlightModelLocal
 		TEXT("How long the autopilot's course takes to swing to a new aim (a detour round a world appearing or ending), s."));
 	TAutoConsoleVariable<float> CVarAutopilotBank(TEXT("aps.Autopilot.Bank"), 25.0f,
 		TEXT("How far the autopilot banks into a turn, degrees (0 = level turns)."));
+	/**
+	 * Rio 06.10 (walking aboard a fast ship: 120 -> 40-60 fps, back in the seat 120 at once): with nobody at the helm the
+	 * walker has the detailed hull's own body in the physics scene (aps.Ship.WalkOnShellAtSpeed 0), and the autopilot turned
+	 * that kinematic body every frame with TeleportPhysics, which UE 5.4 runs as a kinematic target AND a global pose
+	 * (BodyInstance.cpp SetBodyTransform): two bounds updates of all 13.5k shapes plus two acceleration-structure updates,
+	 * 3.2-6.2 ms a frame, before the overlaps and the waits of every query near the hull. Both switches touch only that case
+	 * (no pilot, not player-controlled, the detailed hull's body in the scene); 0 keeps the code path as it was.
+	 */
+	TAutoConsoleVariable<float> CVarAutopilotWalkerHoldDeg(TEXT("aps.Autopilot.WalkerHoldDeg"), 0.05f, // Rio 06.10 night: on after w-stand A/B (70 -> 96 fps walking, floor and arrival unchanged)
+		TEXT("Rio 06.10 (walking aboard at speed): > 0: while nobody is at the helm and the detailed hull's own body is in the ")
+		TEXT("physics scene, the autopilot leaves the nose where it is while it is less than this many degrees off its wanted ")
+		TEXT("heading (the course is re-aimed from the ship's place every frame; the hull and its body stay where the ship is). ")
+		TEXT("A larger turn flies as before. Clamped to 0.5. 0: the autopilot turns the hull every frame (as before)."));
+	TAutoConsoleVariable<int32> CVarAutopilotWalkerKinematicTurn(TEXT("aps.Autopilot.WalkerKinematicTurn"), 1,
+		TEXT("Rio 06.10 (walking aboard at speed): 1: in the same case the autopilot turns the hull as the pilot's own turns ")
+		TEXT("do (ETeleportType::None, a kinematic target only: one shape update instead of two). 0: TeleportPhysics, as before."));
+	/** Rio 06.10 (aps.Ship.FlightLog, walking aboard at speed): what the autopilot's turn did in that case, logged every 2 s. */
+	struct FAutopilotWalkerTurnStats
+	{
+		TWeakObjectPtr<const AActor> Ship;
+		double Since{-1.0};
+		double Last{-1.0};
+		int32 Frames{0};
+		int32 Turned{0};
+		int32 Held{0};
+		/** Frames whose angle to the wanted heading was at most 0.01, 0.02, 0.05 and 0.1 degrees. */
+		int32 OffWithin[4]{0, 0, 0, 0};
+		double MaxStepDeg{0.0};
+		double MaxOffDeg{0.0};
+	};
+	FAutopilotWalkerTurnStats GAutopilotWalkerTurnStats;
 
 	/**
 	 * Rio 05.10 (real scale, stage 2): in a REAL SCALE world neighbouring stars stand parsecs apart. A star's arrival sphere
@@ -189,8 +249,14 @@ namespace APSShipFlightModelLocal
 	TAutoConsoleVariable<float> CVarRealApproachShare(TEXT("aps.RealScale.ApproachShare"), 0.0025f,
 		TEXT("REAL SCALE: a star's arrival sphere (STELLAR and the star drive slow down for it, AUTO counts it as the star's ")
 		TEXT("system) as a share of the median star spacing (0.0025 of 1.3 pc is ~670 AU). Never below InterstellarDistanceAU."));
-	TAutoConsoleVariable<float> CVarRealMissScale(TEXT("aps.RealScale.CourseMissScale"), 4.0f,
-		TEXT("REAL SCALE: a course passing a star's arrival sphere counts as this many times the miss further away (legacy 1000)."));
+	// Rio 06.10 ("the saw is back": STELLAR, manual and J; "let it just fly at the speed I set, I accelerate myself"): at 4
+	// every star the course passed within light years pulled the course limit down while closing on it and let it go past
+	// its abeam point (about every 2 s between the galaxy's stars). 1e5 leaves only the stars the course runs into to slow
+	// the ship; the guard, bodies near, the edge of charted space and the autopilot's arrival are unchanged.
+	TAutoConsoleVariable<float> CVarRealMissScale(TEXT("aps.RealScale.CourseMissScale"), 100000.0f,
+		TEXT("REAL SCALE: a course passing a star's arrival sphere counts as this many times the miss further away (legacy ")
+		TEXT("1000). 100000 (Rio 06.10): only a star the course runs into slows STELLAR and the star drive. 4: every star ")
+		TEXT("passed slows them and the speed saws, as before."));
 	TAutoConsoleVariable<float> CVarRealSystemSphereAu(TEXT("aps.RealScale.SystemSphereAU"), 20.0f,
 		TEXT("REAL SCALE: the system sphere of a star that stands as an actor (the home, a materialized system), AU, its ")
 		TEXT("planets reaching beyond it (legacy InterstellarDistanceAU): the drive leaves home within seconds."));
@@ -222,6 +288,13 @@ namespace APSShipFlightModelLocal
 	// come later"): his S hull has no offset engine, so J and STELLAR were refused and only CRUISE was left. In REAL
 	// SCALE every ship with a space-wrap (CRUISE) engine flies STELLAR and the star drive; the atmosphere, engine and
 	// pilot conditions stay. Off by default: Rio then saw the S hull was the reason and went to test a class M ship.
+	// Rio 06.10 ("I set a target on the map and fly to it, but the HUD course points somewhere else"): the maps, the
+	// terminal and fleet orders engage the autopilot directly, while the HUD's ACTIVE TARGET card and COURSE marker read
+	// the navigation selection; nothing copied the one to the other. The autopilot's target becomes the course too.
+	TAutoConsoleVariable<int32> CVarAutopilotSetsCourse(TEXT("aps.Nav.AutopilotSetsCourse"), 1,
+		TEXT("1: engaging the autopilot (maps, terminal, fleet orders, Z) also sets the navigation course, so the HUD target ")
+		TEXT("and COURSE marker show where the ship flies. 0: as before (two separate targets). T while the autopilot flies ")
+		TEXT("only browses the HUD selection; retargeting the autopilot with T is aps.Nav.CycleRetargetsAutopilot (Rio 06.10)."));
 	TAutoConsoleVariable<int32> CVarRealDriveAnyHull(TEXT("aps.RealScale.DriveAnyHull"), 0,
 		TEXT("REAL SCALE: 1 lets every ship with CRUISE fly STELLAR and the star drive (J); 0 keeps them for offset engines ")
 		TEXT("(class M and up)."));
@@ -758,6 +831,9 @@ void UAPSShipFlightModel::ApplyBand(EAPSFlightBand NewBand, const TCHAR* Reason)
 	const EAPSFlightBand PreviousBand = FlightBand;
 	FlightBand = NewBand;
 	AutoShiftHold = 0.0f;
+	// Rio 07.10 (aps.Ship.ShiftRampSeconds): manual picks and the star drive's hand-over keep the instant switch; only
+	// UpdateAutoBand starts a ramp, right after this.
+	ShiftRampElapsed = -1.0f;
 	BodyRefreshElapsed = TNumericLimits<float>::Max();
 	CatalogueScanElapsed = TNumericLimits<float>::Max();
 	UE_LOG(LogTemp, Log, TEXT("[APS.Flight] %s band %s -> %s at %s (%s)"), *GetNameSafe(Ship),
@@ -851,6 +927,16 @@ void UAPSShipFlightModel::EngageAutopilot(AActor* Target)
 	SetAutoBands();
 	UE_LOG(LogTemp, Log, TEXT("[APS.Autopilot] %s engaged for %s (stops %.0f km from its surface)"), *GetNameSafe(Ship),
 		*GetNameSafe(Target), ArrivalCm / 100000.0);
+	if (APSShipFlightModelLocal::CVarAutopilotSetsCourse.GetValueOnGameThread() != 0 && Ship->ShipNavigation)
+	{
+		const FShipNavigationContact* Selected = Ship->ShipNavigation->GetSelectedContact();
+		if (!Selected || Selected->Actor.Get() != Target)
+		{
+			const bool bCharted = Ship->ShipNavigation->SetCourse(Target->GetPathName());
+			UE_LOG(LogTemp, Log, TEXT("[APS.Nav] course <- autopilot %s: %s"), *GetNameSafe(Target),
+				bCharted ? TEXT("set") : TEXT("not among the contacts"));
+		}
+	}
 }
 
 void UAPSShipFlightModel::ApplyWorldShift(const FVector& Offset)
@@ -1045,9 +1131,65 @@ void UAPSShipFlightModel::UpdateAutopilot(const float DeltaTime)
 	const double MaxStep = FMath::DegreesToRadians(FMath::Max(APSShipFlightModelLocal::CVarAutopilotTurnRate.GetValueOnGameThread(), 1.0f))
 		* DeltaTime;
 	const double Alpha = FMath::Min(FMath::Clamp(DeltaTime * 1.6, 0.0, 1.0), Angle > UE_SMALL_NUMBER ? MaxStep / Angle : 1.0);
-	Ship->SetActorRotation(FQuat::Slerp(Current, Wanted, Alpha), ETeleportType::TeleportPhysics);
+	// Rio 06.10 (walking aboard at speed, aps.Autopilot.WalkerHoldDeg / aps.Autopilot.WalkerKinematicTurn): nobody at the
+	// helm and the detailed hull's own body in the physics scene for the walker. The body never leaves the scene and stays
+	// exactly where the ship is; a held frame only leaves the nose up to the hold behind its wanted heading. The seated
+	// autopilot (a pilot, or a ship the player flies directly) keeps the turn below unchanged.
+	const UPrimitiveComponent* WalkerHull = Ship->GetPrimaryHullComponent();
+	const bool bWalkerHull = !Ship->HasPilot() && !Ship->IsPlayerControlled() && !Ship->bFlightCollisionOptimizationActive
+		&& WalkerHull && WalkerHull->IsPhysicsStateCreated() && Ship->HasDetailedHullProxy();
+	const bool bWalkerKinematicTurn = bWalkerHull
+		&& APSShipFlightModelLocal::CVarAutopilotWalkerKinematicTurn.GetValueOnGameThread() != 0;
+	const double WalkerHoldRadians = bWalkerHull ? FMath::DegreesToRadians(static_cast<double>(FMath::Clamp(
+		APSShipFlightModelLocal::CVarAutopilotWalkerHoldDeg.GetValueOnGameThread(), 0.0f, 0.5f))) : 0.0;
+	const bool bWalkerHeld = WalkerHoldRadians > 0.0 && Angle < WalkerHoldRadians;
+	if (!bWalkerHeld)
+	{
+		Ship->SetActorRotation(FQuat::Slerp(Current, Wanted, Alpha),
+			bWalkerKinematicTurn ? ETeleportType::None : ETeleportType::TeleportPhysics);
+	}
 	AutopilotLastRotation = Ship->GetActorQuat();
 	bAutopilotRotated = true;
+	// Rio 06.10 (aps.Ship.FlightLog): whether the hold can work at all is the angle the turn chases every frame; a control
+	// run (both switches 0) shows it directly.
+	if (bWalkerHull && APSShipFlightModelLocal::CVarLog.GetValueOnGameThread() != 0 && GetWorld())
+	{
+		APSShipFlightModelLocal::FAutopilotWalkerTurnStats& Stats = APSShipFlightModelLocal::GAutopilotWalkerTurnStats;
+		const double Now = GetWorld()->GetTimeSeconds();
+		if (Stats.Ship.Get() != Ship || Stats.Since < 0.0 || Now < Stats.Last || Now - Stats.Last > 0.5)
+		{
+			Stats = APSShipFlightModelLocal::FAutopilotWalkerTurnStats();
+			Stats.Ship = Ship;
+			Stats.Since = Now;
+		}
+		Stats.Last = Now;
+		const double OffDeg = FMath::RadiansToDegrees(Angle);
+		++Stats.Frames;
+		++(bWalkerHeld ? Stats.Held : Stats.Turned);
+		constexpr double OffBuckets[4] = {0.01, 0.02, 0.05, 0.1};
+		for (int32 Bucket = 0; Bucket < 4; ++Bucket)
+		{
+			Stats.OffWithin[Bucket] += OffDeg <= OffBuckets[Bucket] ? 1 : 0;
+		}
+		Stats.MaxOffDeg = FMath::Max(Stats.MaxOffDeg, OffDeg);
+		if (!bWalkerHeld)
+		{
+			Stats.MaxStepDeg = FMath::Max(Stats.MaxStepDeg, OffDeg * Alpha);
+		}
+		if (Now - Stats.Since >= 2.0)
+		{
+			const double PerCent = 100.0 / FMath::Max(Stats.Frames, 1);
+			UE_LOG(LogTemp, Log, TEXT("[APS.Autopilot] %s walker hull: %d frames in %.1f s, turned %d (%s), held %d (hold %.3f deg), ")
+				TEXT("step max %.4f deg, off course max %.4f deg (<=0.01 %.0f%%, <=0.02 %.0f%%, <=0.05 %.0f%%, <=0.1 %.0f%%)"),
+				*Ship->GetName(), Stats.Frames, Now - Stats.Since, Stats.Turned, bWalkerKinematicTurn ? TEXT("kinematic") : TEXT("teleport"),
+				Stats.Held, FMath::RadiansToDegrees(WalkerHoldRadians), Stats.MaxStepDeg, Stats.MaxOffDeg,
+				Stats.OffWithin[0] * PerCent, Stats.OffWithin[1] * PerCent, Stats.OffWithin[2] * PerCent, Stats.OffWithin[3] * PerCent);
+			Stats = APSShipFlightModelLocal::FAutopilotWalkerTurnStats();
+			Stats.Ship = Ship;
+			Stats.Since = Now;
+			Stats.Last = Now;
+		}
+	}
 	// Thrust once the nose is on the target; the bands slow the ship near bodies as for a pilot.
 	const double Alignment = FVector::DotProduct(Ship->GetShipForwardVector(), Direction);
 	bDebugDrive = true;
@@ -1132,6 +1274,7 @@ bool UAPSShipFlightModel::IsInAtmosphere() const
 
 void UAPSShipFlightModel::RefreshFlightBodies()
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(APS_Flight_RefreshBodies);
 	FlightBodies.Reset();
 	UWorld* World = GetWorld();
 	if (!World)
@@ -1275,6 +1418,7 @@ bool UAPSShipFlightModel::RebuildStarCatalogue()
 	{
 		return true;
 	}
+	TRACE_CPUPROFILER_EVENT_SCOPE(APS_Flight_CatalogueRebuild);
 	// Rio 04.10 (the ~80 ms hitch at every system cruise materialized or released): when only single proxies changed, the
 	// stars are re-read but the spacing statistics (64 samples over every star) and the log stay from the last full build.
 	const bool bPointsOnly = CatalogueHome.Get() == Home && CatalogueBuildSerial == Descriptor.ProxyBuildSerial
@@ -1416,9 +1560,13 @@ bool UAPSShipFlightModel::RebuildStarCatalogue()
 
 void UAPSShipFlightModel::ScanStarCatalogue(const FVector& Location, const FVector& Heading)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(APS_Flight_CatalogueScan);
 	NearestCatalogueStars.Reset();
 	CourseCatalogueStar = INDEX_NONE;
 	CatalogueScanHeading = Heading;
+	const uint64 BuildSerialBefore = CatalogueBuildSerial;
+	const uint64 MutationSerialBefore = CatalogueMutationSerial;
+	const AActor* HomeBefore = CatalogueHome.Get();
 	if (!RebuildStarCatalogue())
 	{
 		if (!bCatalogueMissingLogged && CatalogueGenerator.IsValid())
@@ -1427,6 +1575,14 @@ void UAPSShipFlightModel::ScanStarCatalogue(const FVector& Location, const FVect
 			UE_LOG(LogTemp, Log, TEXT("[APS.Flight] star catalogue not ready yet (stellar view has not placed it); stars as actors only"));
 		}
 		return;
+	}
+	// Rio 06.10 (aps.Ship.BodiesWithCatalogue): a system that stood up left the catalogue just now; its star actor (spawned
+	// with that change) joins the bodies in this frame, before the course limit and the guard are taken from both.
+	if ((CatalogueBuildSerial != BuildSerialBefore || CatalogueMutationSerial != MutationSerialBefore
+		|| CatalogueHome.Get() != HomeBefore) && APSShipFlightModelLocal::CVarBodiesWithCatalogue.GetValueOnGameThread() != 0)
+	{
+		BodyRefreshElapsed = 0.0f;
+		RefreshFlightBodies();
 	}
 	// One pass over the catalogue: the nearest few stars and the system the course runs into. No allocation, no sort.
 	// Rio 06.10 (still ship): the ship's place among the stars, from the home's place in the sky.
@@ -1484,6 +1640,7 @@ void UAPSShipFlightModel::ScanStarCatalogue(const FVector& Location, const FVect
 
 void UAPSShipFlightModel::ScanGalaxyStars(const FVector& Location, const FVector& Heading)
 {
+	TRACE_CPUPROFILER_EVENT_SCOPE(APS_Flight_GalaxyScan);
 	// Rio 03.10 ("every star must be reachable"): the drawn galaxy stars are stars to fly to as the cluster's are: the
 	// nearest few limit the speed, and the one the course runs into slows the drive for its arrival.
 	NearestGalaxyStars.Reset();
@@ -2097,18 +2254,24 @@ void UAPSShipFlightModel::UpdateAutoBand(double SpeedCm, double Throttle, float 
 	if (Wanted != FlightBand && IsBandAvailable(Wanted))
 	{
 		ApplyBand(Wanted, Reason);
+		// Rio 07.10 (aps.Ship.ShiftRampSeconds): the thrust grows from what the old band used (a shift down needs no ramp:
+		// ApplyTranslation ends it at once when the new band's thrust is not higher).
+		ShiftRampFromThrustCm = LastThrustCm;
+		ShiftRampElapsed = LastThrustCm > 0.0 ? 0.0f : -1.0f;
 	}
 }
 
 FVector UAPSShipFlightModel::StepVelocity(const FAPSFlightBandSettings& Band, const FVector& LocalInput, double Limit,
-	double Boost, double Drag, float DeltaTime) const
+	double Boost, double Drag, float DeltaTime, double ThrustScale) const
 {
 	const ASpaceship* Ship = GetShip();
 	const FVector Forward = Ship->GetShipForwardVector();
 	const FVector Right = Ship->GetShipRightVector();
 	const FVector Up = Ship->GetShipUpVector();
-	const double Acceleration = Band.Acceleration * 100.0 * Boost
+	const double FullAcceleration = Band.Acceleration * 100.0 * Boost
 		* APSFlightBandModel::ClassAgility(static_cast<uint8>(Ship->SizeClass));
+	// Rio 07.10 (aps.Ship.ShiftRampSeconds): thrust ramping up after an AUTO shift; S braking keeps the full thrust.
+	const double Acceleration = FullAcceleration * FMath::Clamp(ThrustScale, 0.0, 1.0);
 	FVector Velocity = Ship->KinematicVelocity;
 
 	switch (Band.Control)
@@ -2148,7 +2311,7 @@ FVector UAPSShipFlightModel::StepVelocity(const FAPSFlightBandSettings& Band, co
 			const double ReverseTarget = -Limit * Band.LateralFraction * -LocalInput.X;
 			if (ForwardSpeed > ReverseTarget)
 			{
-				ForwardSpeed = FMath::Max(ReverseTarget, ForwardSpeed - Acceleration * -LocalInput.X * DeltaTime);
+				ForwardSpeed = FMath::Max(ReverseTarget, ForwardSpeed - FullAcceleration * -LocalInput.X * DeltaTime);
 			}
 		}
 		else
@@ -2183,6 +2346,9 @@ bool UAPSShipFlightModel::ApplyTranslation(float DeltaTime)
 		{
 			DisengageStarDrive(TEXT("engine off"));
 		}
+		// Rio 07.10 (aps.Ship.ShiftRampSeconds): no stale thrust to start a later ramp from.
+		LastThrustCm = 0.0;
+		ShiftRampElapsed = -1.0f;
 		return false;
 	}
 	EnsureKinematicHull();
@@ -2256,7 +2422,26 @@ bool UAPSShipFlightModel::ApplyTranslation(float DeltaTime)
 		AutopilotCap);
 
 	const double Drag = IsInAtmosphere() ? Ship->GetEnvironmentDrag() : 0.0;
-	FVector Velocity = StepVelocity(Band, LocalInput, Limit, Boost, Drag, DeltaTime);
+	// Rio 07.10 (aps.Ship.ShiftRampSeconds): after an AUTO shift up the thrust grows from what the old band used.
+	const double BandThrustCm = Band.Acceleration * 100.0 * Boost
+		* APSFlightBandModel::ClassAgility(static_cast<uint8>(Ship->SizeClass));
+	double ThrustScale = 1.0;
+	if (ShiftRampElapsed >= 0.0f)
+	{
+		const float RampSeconds = APSShipFlightModelLocal::CVarShiftRampSeconds.GetValueOnGameThread();
+		if (RampSeconds > 0.0f && ShiftRampElapsed < RampSeconds && BandThrustCm > ShiftRampFromThrustCm)
+		{
+			ThrustScale = APSShipFlightModelLocal::ShiftThrustCm(ShiftRampFromThrustCm, BandThrustCm, ShiftRampElapsed, RampSeconds)
+				/ BandThrustCm;
+			ShiftRampElapsed += DeltaTime;
+		}
+		else
+		{
+			ShiftRampElapsed = -1.0f;
+		}
+	}
+	LastThrustCm = BandThrustCm * ThrustScale;
+	FVector Velocity = StepVelocity(Band, LocalInput, Limit, Boost, Drag, DeltaTime, ThrustScale);
 	if (Band.MaxLogAcceleration > 0.0)
 	{
 		// Whatever the limit ahead allows, cruise control multiplies the speed by a bounded factor per second.
@@ -2432,6 +2617,37 @@ void UAPSShipFlightModel::MoveShip(FVector Velocity, const bool bSweepBand, cons
 					Hit.GetComponent() ? *Hit.GetComponent()->GetCollisionProfileName().ToString() : TEXT("?"),
 					*SurfaceNormal.ToCompactString(), Hit.bStartPenetrating ? 1 : 0, Hit.PenetrationDepth);
 			}
+		}
+	}
+
+	// Rio 06.10 (aps.Ship.SpeedSawLog, "the saw is back"): the speed this frame left with, the limit and set speed it
+	// followed and the course limit with its source, sampled often enough to show a rise and fall of a second or two.
+	// The piloted ship only: the throttle below is one for every ship, and a fleet's ships flying would take its samples.
+	const float SawLogSeconds = APSShipFlightModelLocal::CVarSpeedSawLog.GetValueOnGameThread();
+	if (SawLogSeconds > 0.0f && Ship->IsPlayerControlled())
+	{
+		static double LastSawLogSeconds = 0.0;
+		const double Now = FPlatformTime::Seconds();
+		if (Now - LastSawLogSeconds >= SawLogSeconds)
+		{
+			LastSawLogSeconds = Now;
+			constexpr double LightYear = APSShipFlightModelLocal::LightYearCm;
+			const FAPSFlightBandSettings& Settings = GetBandSettings(FlightBand);
+			double CourseLimitCm = -1.0;
+			if (!bStarDrive && Settings.bCourseLimit && CourseClearanceCm >= 0.0)
+			{
+				CourseLimitCm = Settings.DistanceSpeedFactor * BandBoost(FlightBand, BoostAlpha) * CourseClearanceCm
+					* FMath::Max(APSShipFlightModelLocal::CVarDistanceFactorScale.GetValueOnGameThread(), 0.0f);
+			}
+			UE_LOG(LogTemp, Log,
+				TEXT("[APS.SpeedSaw] %s mode=%s dt=%.1f ms speed=%.6g limit=%.6g set=%.6g course-limit=%.6g ly/s held=%s course=%.6g ly src=%s along=%.4g miss=%.4g ly input=%.2f brake=%d boost=%.2f"),
+				*Ship->GetName(), bStarDrive ? TEXT("J") : *Settings.Name, DeltaTime * 1000.0f,
+				Ship->KinematicVelocity.Size() / LightYear, CurrentSpeedLimitCm / LightYear,
+				bStarDrive ? StarDriveSetCm / LightYear : -1.0, CourseLimitCm >= 0.0 ? CourseLimitCm / LightYear : -1.0,
+				bStarDrive && StarDriveHeldBy ? StarDriveHeldBy : TEXT("-"),
+				CourseClearanceCm >= 0.0 ? CourseClearanceCm / LightYear : -1.0, CourseSourceKind ? CourseSourceKind : TEXT("-"),
+				CourseSourceAlongCm / LightYear, CourseSourceMissCm / LightYear,
+				bDebugDrive ? DebugForwardInput : Ship->ForwardInput, Ship->bIsDecelerating ? 1 : 0, BoostAlpha);
 		}
 	}
 }

@@ -102,20 +102,27 @@ TSharedRef<SWidget> APSHud::Label(const TAttribute<FText>& Text, const TAttribut
 	return SNew(STextBlock).Text(Text).Font(LabelFont()).ColorAndOpacity(Colour);
 }
 
-TSharedRef<SWidget> APSHud::ValueWithUnit(const TAttribute<FString>& Formatted, const int32 Size)
+TSharedRef<SWidget> APSHud::ValueWithUnit(const TAttribute<FString>& Formatted, const int32 Size, const float ValueWidth)
 {
 	using namespace APSHudPrivate;
+	const bool bFixed = ValueWidth > 0.0f;
 	return SNew(SHorizontalBox)
 		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Bottom)
 		[
-			SNew(STextBlock).Font(ValueFont(Size)).ColorAndOpacity_Lambda([]() { return FSlateColor(P().Text); })
-			.Text_Lambda([Formatted]()
-			{
-				FString Value;
-				FString Unit;
-				SplitValueUnit(Formatted.Get(), Value, Unit);
-				return FText::FromString(Value);
-			})
+			// Rio 06.10 (audit: an oversized value ran over the divider in a fixed box): a minimum width, so values that fit
+			// sit right-justified as before and a longer one widens the box.
+			SNew(SBox).MinDesiredWidth(bFixed ? FOptionalSize(ValueWidth) : FOptionalSize())
+			[
+				SNew(STextBlock).Font(ValueFont(Size)).ColorAndOpacity_Lambda([]() { return FSlateColor(P().Text); })
+				.Justification(bFixed ? ETextJustify::Right : ETextJustify::Left)
+				.Text_Lambda([Formatted]()
+				{
+					FString Value;
+					FString Unit;
+					SplitValueUnit(Formatted.Get(), Value, Unit);
+					return FText::FromString(Value);
+				})
+			]
 		]
 		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Bottom).Padding(5.0f, 0.0f, 0.0f, 2.0f)
 		[

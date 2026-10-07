@@ -1,4 +1,7 @@
 #include "ShipNavigationComponent.h"
+#include "APSShipFlightModel.h"
+#include "Spaceship.h"
+#include "HAL/IConsoleManager.h"
 
 #include "APS_ALPHA/Core/World/APSWorldOriginSubsystem.h"
 #include "APS_ALPHA/Actors/Astro/CelestialBody.h"
@@ -37,6 +40,13 @@ namespace APSShipNavigation
 		TEXT("Rio 04.10 (\"outside a system its separate planets make no sense, show the system and its star\"): a star system ")
 		TEXT("whose worlds lie within 1/N of the distance to it (N = this; 6 is about 9.5 degrees) shows as one card at its ")
 		TEXT("star, its worlds, colonies, sites and fleet ships folded into it. 0 never folds."));
+
+	// Rio 06.10 (audit: T and the autopilot): in the night's batch T while the autopilot flew retargeted it, or switched
+	// it off on a contact without an actor; T is the HUD's browse key, as in 61532ed6, unless this asks otherwise.
+	TAutoConsoleVariable<int32> CVarCycleRetargetsAutopilot(TEXT("aps.Nav.CycleRetargetsAutopilot"), 0,
+		TEXT("1: T while the autopilot flies retargets it to the picked contact (contacts without an actor leave it alone). ")
+		TEXT("0: T only browses the HUD selection, as in 61532ed6; the autopilot's own target stays listed so T comes back ")
+		TEXT("to it."));
 
 	/** A star's spectral colour, lifted toward white so a card's text stays readable on the dark sky. */
 	FLinearColor CardColour(const FLinearColor& Star)
@@ -585,6 +595,9 @@ bool UShipNavigationComponent::SelectContact(const FString& StableId)
 
 bool UShipNavigationComponent::SetCourse(const FString& StableId)
 {
+	// Rio 06.10 (audit): a course that cannot be charted gives back the pin it replaced (a terminal course, the autopilot's
+	// target) instead of dropping it.
+	const FString PreviousPin = PinnedCourseId;
 	PinnedCourseId = StableId;
 	if (const AActor* Owner = GetOwner())
 	{
@@ -594,14 +607,22 @@ bool UShipNavigationComponent::SetCourse(const FString& StableId)
 	{
 		return true;
 	}
-	PinnedCourseId.Reset();
+	PinnedCourseId = PreviousPin;
 	return false;
 }
 
 void UShipNavigationComponent::CycleTarget(int32 Direction)
 {
-	// A target picked by hand releases a course pinned from the terminal.
-	PinnedCourseId.Reset();
+	static IConsoleVariable* const SetsCourse = IConsoleManager::Get().FindConsoleVariable(TEXT("aps.Nav.AutopilotSetsCourse"));
+	const ASpaceship* Ship = Cast<ASpaceship>(GetOwner());
+	// A target picked by hand releases a course pinned from the terminal. Rio 06.10 (audit: T split from the autopilot):
+	// the autopilot's own target, pinned when it engaged (aps.Nav.AutopilotSetsCourse), stays pinned and listed, so T
+	// browses the contacts and comes back to it.
+	const AActor* ApTarget = (Ship && Ship->FlightModel) ? Ship->FlightModel->GetAutopilotTarget() : nullptr;
+	if (!(ApTarget && SetsCourse && SetsCourse->GetInt() != 0 && PinnedCourseId == ApTarget->GetPathName()))
+	{
+		PinnedCourseId.Reset();
+	}
 	if (Contacts.IsEmpty())
 	{
 		SelectedContactIndex = INDEX_NONE;
@@ -611,6 +632,23 @@ void UShipNavigationComponent::CycleTarget(int32 Direction)
 	SelectedContactIndex = SelectedContactIndex == INDEX_NONE
 		? 0
 		: (SelectedContactIndex + Step + Contacts.Num()) % Contacts.Num();
+	// Rio 06.10 (the HUD course and the autopilot must never name two targets): with aps.Nav.CycleRetargetsAutopilot 1 a
+	// target picked by hand while the autopilot flies retargets it; a contact without an actor (a catalogue entry it
+	// cannot fly to) leaves the autopilot as it is.
+	if (SetsCourse && SetsCourse->GetInt() != 0 && APSShipNavigation::CVarCycleRetargetsAutopilot.GetValueOnGameThread() != 0
+		&& Ship && Ship->FlightModel && Ship->FlightModel->IsAutopilotEngaged())
+	{
+		const FShipNavigationContact* Selected = GetSelectedContact();
+		if (AActor* Target = Selected ? Selected->Actor.Get() : nullptr)
+		{
+			if (Target != Ship->FlightModel->GetAutopilotTarget())
+			{
+				// The pin kept above belonged to the target the autopilot now leaves (the night's batch dropped it here too).
+				PinnedCourseId.Reset();
+				Ship->FlightModel->EngageAutopilot(Target);
+			}
+		}
+	}
 }
 
 FString UShipNavigationComponent::FormatDistance(double DistanceCentimeters)

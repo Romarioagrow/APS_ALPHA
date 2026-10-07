@@ -6,7 +6,9 @@
 #include "APS_ALPHA/Actors/Astro/Moon.h"
 #include "APS_ALPHA/Actors/Astro/Planet.h"
 #include "APS_ALPHA/Actors/Astro/PlanetaryBody.h"
+#include "APS_ALPHA/Actors/Astro/PlanetarySystem.h"
 #include "APS_ALPHA/Actors/Astro/Star.h"
+#include "APS_ALPHA/Actors/Astro/StarSystem.h"
 #include "APS_ALPHA/Actors/Tech/AutonomousOutpost.h"
 #include "APS_ALPHA/Actors/Tech/Colony.h"
 #include "APS_ALPHA/Actors/Tech/SpaceHeadquarters.h"
@@ -691,13 +693,93 @@ void APSObjectActions::Describe(UWorld* World, const AActor* Object, TArray<TPai
 			}
 		}
 	}
+	// Rio 06.10 ("for the star its size, mass, age, luminosity; for a planet more of its figures"): the star's own figures,
+	// the same the generation menu's LIVE MODEL card shows.
+	const AStar* Star = Cast<AStar>(Object);
+	if (const AStarSystem* StarSystem = Cast<AStarSystem>(Object); !Star && StarSystem)
+	{
+		Star = StarSystem->MainStar;
+	}
+	if (IsValid(Star))
+	{
+		const auto Figure = [](const double Value)
+		{
+			FNumberFormattingOptions Options;
+			Options.SetMaximumFractionalDigits(Value < 0.01 ? 4 : Value < 1.0 ? 3 : 2);
+			return APSUINumber::Number(Value, &Options);
+		};
+		if (const UEnum* Enum = StaticEnum<EStellarType>())
+		{
+			Add(LOCTEXT("FieldStarClass", "CLASS"),
+				FText::FromString(Enum->GetDisplayNameTextByValue(static_cast<int64>(Star->StellarClass)).ToString().ToUpper()));
+		}
+		const double StarRadiusKm = Star->RadiusKM > 0.0 ? Star->RadiusKM : static_cast<double>(Star->StarRadiusKM);
+		if (StarRadiusKm > 0.0)
+		{
+			Add(LOCTEXT("FieldStarRadius", "RADIUS"), FText::Format(LOCTEXT("StarRadiusValue", "{0} R sun  /  {1} km"),
+				Figure(StarRadiusKm / 695700.0), APSUINumber::Number(FMath::RoundToInt64(StarRadiusKm))));
+		}
+		if (Star->Mass > 0.0)
+		{
+			Add(LOCTEXT("FieldStarMass", "MASS"), FText::Format(LOCTEXT("StarMassValue", "{0} M sun"), Figure(Star->Mass)));
+		}
+		if (Star->Luminosity > 0.0f)
+		{
+			Add(LOCTEXT("FieldStarLuminosity", "LUMINOSITY"), FText::Format(LOCTEXT("StarLuminosityValue", "{0} L sun"),
+				Figure(Star->Luminosity)));
+		}
+		if (Star->SurfaceTemperature > 0)
+		{
+			Add(LOCTEXT("FieldStarSurface", "SURFACE"), FText::Format(LOCTEXT("StarSurfaceValue", "{0} K"),
+				APSUINumber::Number(Star->SurfaceTemperature)));
+		}
+		if (!Star->Age.IsEmpty() && !Star->Age.Equals(TEXT("Unknown"), ESearchCase::IgnoreCase))
+		{
+			Add(LOCTEXT("FieldStarAge", "AGE"), FText::FromString(Star->Age));
+		}
+		if (IsValid(Star->PlanetarySystem))
+		{
+			Add(LOCTEXT("FieldStarPlanets", "PLANETS"), APSUINumber::Number(Star->PlanetarySystem->PlanetsActorsList.Num()));
+		}
+	}
 	if (const APlanetaryBody* Body = Cast<APlanetaryBody>(Object))
 	{
 		Add(LOCTEXT("FieldType", "TYPE"), StaticEnum<EPlanetType>()
 			? FText::FromString(StaticEnum<EPlanetType>()->GetDisplayNameTextByValue(static_cast<int64>(Body->PlanetType)).ToString().ToUpper())
 			: FText::GetEmpty());
-		Add(LOCTEXT("FieldRadius", "RADIUS"), FText::Format(LOCTEXT("RadiusKm", "{0} km"),
-			APSUINumber::Number(FMath::RoundToInt(Body->GetWorldScapeBodyRadiusCm() / 100000.0))));
+		{
+			const double BodyRadiusKm = Body->GetWorldScapeBodyRadiusCm() / 100000.0;
+			FNumberFormattingOptions Two;
+			Two.SetMaximumFractionalDigits(2);
+			Add(LOCTEXT("FieldRadius", "RADIUS"), FText::Format(LOCTEXT("RadiusKmEarth", "{0} km  /  {1} R earth"),
+				APSUINumber::Number(FMath::RoundToInt(BodyRadiusKm)), APSUINumber::Number(BodyRadiusKm / 6371.0, &Two)));
+		}
+		// Rio 06.10: more of the world's figures.
+		if (const UEnum* Enum = StaticEnum<EPlanetHabitability>())
+		{
+			Add(LOCTEXT("FieldHabitability", "HABITABILITY"),
+				FText::FromString(Enum->GetDisplayNameTextByValue(static_cast<int64>(Body->PlanetHabitability)).ToString().ToUpper()));
+		}
+		if (const APlanet* Planet = Cast<APlanet>(Body))
+		{
+			const double OrbitAu = Planet->PlanetData.PlanetModel.IsValid() ? Planet->PlanetData.PlanetModel->OrbitDistance
+				: Planet->PlanetData.OrbitRadius;
+			if (OrbitAu > 0.0)
+			{
+				FNumberFormattingOptions Two;
+				Two.SetMaximumFractionalDigits(2);
+				Add(LOCTEXT("FieldOrbit", "ORBIT"), FText::Format(LOCTEXT("OrbitAu", "{0} AU"), APSUINumber::Number(OrbitAu, &Two)));
+			}
+			Add(LOCTEXT("FieldMoons", "MOONS"), APSUINumber::Number(Planet->Moons.Num()));
+		}
+		if (const AMoon* Moon = Cast<AMoon>(Body); Moon && IsValid(Moon->ParentPlanet))
+		{
+			Add(LOCTEXT("FieldMoonOf", "ORBITS"), Moon->ParentPlanet->AstroName.IsNone() ? LOCTEXT("ParentPlanet", "ITS PLANET")
+				: FText::FromString(Moon->ParentPlanet->AstroName.ToString().ToUpper()));
+		}
+		Add(LOCTEXT("FieldAtmosphere", "ATMOSPHERE"), Body->AtmosphereHeight > 0.0
+			? FText::Format(LOCTEXT("AtmosphereHigh", "{0} km high"), APSUINumber::Number(FMath::RoundToInt(Body->AtmosphereHeight)))
+			: LOCTEXT("NoAtmosphere", "none"));
 		// Rio 03.10: where this world's megastructures would stand (a world with ground: the elevator needs it).
 		APSMegastructures::FWorldLayout Layout;
 		if (Body->PlanetType != EPlanetType::GasGiant && Body->PlanetType != EPlanetType::HotGiant

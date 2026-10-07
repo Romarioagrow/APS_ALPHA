@@ -32,8 +32,9 @@ namespace APSHud
 
 	/** A label in small spaced capitals. */
 	APS_ALPHA_API TSharedRef<SWidget> Label(const TAttribute<FText>& Text, const TAttribute<FSlateColor>& Colour);
-	/** A value with its unit after it ("9.0314" "ly"), both read from one formatted string. */
-	APS_ALPHA_API TSharedRef<SWidget> ValueWithUnit(const TAttribute<FString>& Formatted, int32 Size);
+	/** A value with its unit after it ("9.0314" "ly"), both read from one formatted string. With a ValueWidth the number
+	 * is right-aligned in a box that wide, so the unit stays put while the digits change (Rio 06.10: "the m/s jumps"). */
+	APS_ALPHA_API TSharedRef<SWidget> ValueWithUnit(const TAttribute<FString>& Formatted, int32 Size, float ValueWidth = 0.0f);
 	/** A one-pixel rule in the frame colour. */
 	APS_ALPHA_API TSharedRef<SWidget> Rule(bool bVertical = false);
 

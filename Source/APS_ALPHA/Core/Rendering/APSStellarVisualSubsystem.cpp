@@ -285,6 +285,8 @@ void UAPSStellarVisualSubsystem::Deinitialize()
 {
 	FCoreDelegates::PostWorldOriginOffset.RemoveAll(this);
 	APSWorldShiftEvents::OnPostDoubleShift().RemoveAll(this);
+	// Rio 06.10 (audit: hygiene): the sky-offset listener bound in Initialize (a weak lambda) goes with the subsystem.
+	UAPSWorldOriginSubsystem::OnSkyOffsetChanged().RemoveAll(this);
 	ResetGameplayStellarView();
 	if (ADirectionalLight* FillLight = PreviewFillLight.Get())
 	{

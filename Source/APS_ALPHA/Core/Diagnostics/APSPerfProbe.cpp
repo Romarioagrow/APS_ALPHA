@@ -16,7 +16,8 @@ namespace APSPerfProbePrivate
 	TAutoConsoleVariable<int32> CVarAutoDump(TEXT("aps.Perf.AutoDumpHitches"), 3,
 		TEXT("How many times per world a hitch (after the world's first 20 s, and 30 s after the last dump) turns on ")
 		TEXT("'stat dumphitches' for aps.Perf.DumpSeconds, so the log names what each hitch frame spent its time on. The ")
-		TEXT("editor going to the background ends a dump at once. 0: off."));
+		TEXT("editor going to the background or the world ending ends a dump at once. 0: off; set 0 when using ")
+		TEXT("'stat dumphitches' by hand (the probe's -stop ends a manual dump)."));
 	TAutoConsoleVariable<float> CVarDumpSeconds(TEXT("aps.Perf.DumpSeconds"), 20.0f,
 		TEXT("How long the automatic 'stat dumphitches' stays on."));
 
@@ -71,8 +72,9 @@ namespace APSPerfProbePrivate
 	{
 #if STATS
 		if (bOn == bGDumpRunning) return;
-		// 'stat dumphitches' is a toggle; the probe only flips what it turned on itself.
-		DirectStatsCommand(TEXT("stat dumphitches"), true);
+		// Rio 06.10 (audit: the blind toggle inverted a dump started by hand): UE 5.4's StatsCommand takes -start / -stop,
+		// which do nothing when the dump already is in that state. The probe still only stops what it started itself.
+		DirectStatsCommand(bOn ? TEXT("stat dumphitches -start") : TEXT("stat dumphitches -stop"), true);
 		bGDumpRunning = bOn;
 		if (GEngine)
 		{
@@ -95,7 +97,7 @@ void APSPerfProbe::Tick(UWorld* World, const float DeltaSeconds)
 {
 	using namespace APSPerfProbePrivate;
 	const double Interval = CVarLogSeconds.GetValueOnGameThread();
-	if (!World || Interval <= 0.0) return;
+	if (!World) return;
 	const double Now = FPlatformTime::Seconds();
 	if (GDumpWorld.Get() != World)
 	{
@@ -109,6 +111,9 @@ void APSPerfProbe::Tick(UWorld* World, const float DeltaSeconds)
 	{
 		SetHitchDump(false, TEXT("time is up"));
 	}
+	// Rio 06.10 (audit: aps.Perf.LogSeconds 0 mid-dump left the dump on for good): the two blocks above run with the
+	// log off too; without a running dump they only note the world.
+	if (Interval <= 0.0) return;
 	if (GWindow.World.Get() != World)
 	{
 		GWindow = FWindow();
@@ -177,4 +182,16 @@ void APSPerfProbe::Tick(UWorld* World, const float DeltaSeconds)
 	GWindow = FWindow();
 	GWindow.World = Kept;
 	GWindow.Start = Now;
+}
+
+void APSPerfProbe::WorldEnded(UWorld* World)
+{
+	using namespace APSPerfProbePrivate;
+	// Rio 06.10 (audit: a dump started in a world that ended kept running into the menu or the next load, with nothing
+	// left to tick it off).
+	if (bGDumpRunning && (!GDumpWorld.IsValid() || GDumpWorld.Get() == World))
+	{
+		SetHitchDump(false, TEXT("world end"));
+		GDumpEnd = FPlatformTime::Seconds();
+	}
 }

@@ -3,10 +3,12 @@
 
 #include "HAL/FileManager.h"
 #include "HAL/PlatformProcess.h"
+#include "HAL/PlatformProperties.h"
 #include "Misc/CommandLine.h"
 #include "Misc/CoreMisc.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
+#include "Modules/ModuleManager.h"
 
 namespace APSStarRenderer::Private
 {
@@ -15,7 +17,9 @@ namespace APSStarRenderer::Private
 		TEXT("Rio 03.10: 1 compiles the GPU star and galaxy glow global shaders at start-up (set it in [SystemSettings] or with ")
 		TEXT("-ini:Engine:[SystemSettings]:aps.Stars.CompileShaders=1 and restart). 0: the shaders never enter the shader ")
 		TEXT("map, the feature cannot run and nothing else changes. Default 1 since Rio 03.10 09:10 (\"enable it by default\"). A start that dies during the global shader compile turns it off ")
-		TEXT("until the shader sources change (Saved/APSStarRenderer/ShaderCompileAttempt.txt)."),
+		TEXT("until the shader sources or the plugin binary change (Saved/APSStarRenderer/ShaderCompileAttempt.txt), unless the ")
+		TEXT("same sources and binary started fine before (ShaderCompileGood.txt). A packaged (cooked) build must run with the ")
+		TEXT("value it was cooked with: it has no crash guard and expects exactly the cooked shaders."),
 		ECVF_ReadOnly);
 
 	TAutoConsoleVariable<int32> CVarGpuPoints(
@@ -139,10 +143,34 @@ namespace APSStarRenderer::Private
 		bool GCompileBlockedByCrashGuard = false;
 		std::atomic<bool> GCrashGuardWritten{false};
 		std::atomic<bool> GStartupFinished{false};
+		// Rio 06.10 (audit: crash guard): the key written to the attempt file; set before GCrashGuardWritten.
+		uint32 GCrashGuardKey = 0;
 
 		FString GetCrashGuardPath()
 		{
 			return FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("APSStarRenderer"), TEXT("ShaderCompileAttempt.txt"));
+		}
+
+		// Rio 06.10 (audit: crash guard): the key of the last sources and binary whose start-up finished with the shaders on.
+		FString GetCompileGoodPath()
+		{
+			return FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("APSStarRenderer"), TEXT("ShaderCompileGood.txt"));
+		}
+
+		bool ReadCompileGoodKey(uint32& OutKey)
+		{
+			FString Text;
+			if (!FFileHelper::LoadFileToString(Text, *GetCompileGoodPath()))
+			{
+				return false;
+			}
+			Text.TrimStartAndEndInline();
+			if (Text.IsEmpty())
+			{
+				return false;
+			}
+			OutKey = static_cast<uint32>(FCString::Strtoui64(*Text, nullptr, 16));
+			return true;
 		}
 
 		uint32 HashShaderSources()
@@ -164,6 +192,25 @@ namespace APSStarRenderer::Private
 			return Hash;
 		}
 
+		/**
+		 * Rio 06.10 (audit: crash guard): the shader sources and the plugin binary that compiles them. A rebuilt DLL (or
+		 * executable in a monolithic build) is a new attempt, so a crash of an older build no longer blocks a fixed one.
+		 */
+		uint32 ComputeCrashGuardKey()
+		{
+#if IS_MONOLITHIC
+			const FString Binary = FPlatformProcess::ExecutablePath();
+#else
+			// GetModuleFilename asserts on an unknown module; this module is loaded whenever this code runs.
+			const FString Binary = FModuleManager::Get().IsModuleLoaded(TEXT("APSStarRenderer"))
+				? FModuleManager::Get().GetModuleFilename(TEXT("APSStarRenderer")) : FString();
+#endif
+			IFileManager& FileManager = IFileManager::Get();
+			const FDateTime Stamp = Binary.IsEmpty() ? FDateTime::MinValue() : FileManager.GetTimeStamp(*Binary);
+			const int64 Size = Binary.IsEmpty() ? -1 : FileManager.FileSize(*Binary);
+			return HashCombine(HashShaderSources(), HashCombine(GetTypeHash(Stamp), GetTypeHash(Size)));
+		}
+
 		bool DecideShaderCompile()
 		{
 			if (CVarCompileShaders.GetValueOnAnyThread() == 0)
@@ -171,6 +218,13 @@ namespace APSStarRenderer::Private
 				UE_LOG(LogAPSStarRenderer, Log,
 					TEXT("[APS.GpuStars] shaders not compiled (aps.Stars.CompileShaders=0): GPU points and glow are unavailable"));
 				return false;
+			}
+			// Rio 06.10 (audit: packaged builds): a cooked runtime never maps shader directories (APSStarRendererModule.cpp)
+			// and the cook commandlet already returned true below, so the cooked global shader map holds exactly these
+			// permutations; there is no start-up compile to guard.
+			if (FPlatformProperties::RequiresCookedData())
+			{
+				return true;
 			}
 			if (GShaderSourceDirectory.IsEmpty())
 			{
@@ -184,9 +238,12 @@ namespace APSStarRenderer::Private
 			}
 
 			// Crash guard: a global shader compile error is fatal by default (r.AreShaderErrorsFatal). If the last
-			// start with these exact sources died before start-up finished, do not try them again.
+			// start with these exact sources and this exact binary died before start-up finished, do not try them again.
+			// Rio 06.10 (audit: any start killed during start-up, for whatever reason, switched the GPU stars off until the
+			// .usf changed): the key also covers the plugin binary, so a rebuilt DLL or an old-format file is ignored and
+			// overwritten, and a key that started fine before (ShaderCompileGood.txt) is never blocked. No time expiry.
 			const FString GuardPath = GetCrashGuardPath();
-			const uint32 SourceHash = HashShaderSources();
+			const uint32 GuardKey = ComputeCrashGuardKey();
 			const uint32 ProcessId = FPlatformProcess::GetCurrentProcessId();
 			FString Previous;
 			if (FFileHelper::LoadFileToString(Previous, *GuardPath))
@@ -195,23 +252,34 @@ namespace APSStarRenderer::Private
 				Previous.ParseIntoArrayWS(Parts);
 				if (Parts.Num() >= 2)
 				{
-					const uint32 PreviousHash = static_cast<uint32>(FCString::Strtoui64(*Parts[0], nullptr, 16));
+					const uint32 PreviousKey = static_cast<uint32>(FCString::Strtoui64(*Parts[0], nullptr, 16));
 					const uint32 PreviousProcess = static_cast<uint32>(FCString::Strtoui64(*Parts[1], nullptr, 10));
-					if (PreviousHash == SourceHash && PreviousProcess != ProcessId
+					if (PreviousKey == GuardKey && PreviousProcess != ProcessId
 						&& !FPlatformProcess::IsApplicationRunning(PreviousProcess))
 					{
-						GCompileBlockedByCrashGuard = true;
-						UE_LOG(LogAPSStarRenderer, Error,
-							TEXT("[APS.GpuStars] a previous start (pid %u) with these shader sources stopped during start-up: ")
-							TEXT("GPU star shaders stay off. Fix the shader error or delete %s to retry."),
-							PreviousProcess, *GuardPath);
-						return false;
+						uint32 GoodKey = 0;
+						if (ReadCompileGoodKey(GoodKey) && GoodKey == GuardKey)
+						{
+							UE_LOG(LogAPSStarRenderer, Warning,
+								TEXT("[APS.GpuStars] previous start pid %u died during start-up; these sources/binaries started ")
+								TEXT("fine before: compiling"), PreviousProcess);
+						}
+						else
+						{
+							GCompileBlockedByCrashGuard = true;
+							UE_LOG(LogAPSStarRenderer, Error,
+								TEXT("[APS.GpuStars] a previous start (pid %u) with these shader sources and binary stopped during ")
+								TEXT("start-up: GPU star shaders stay off. Fix the shader error or delete %s to retry."),
+								PreviousProcess, *GuardPath);
+							return false;
+						}
 					}
 				}
 			}
+			GCrashGuardKey = GuardKey;
 			GCrashGuardWritten.store(
-				FFileHelper::SaveStringToFile(FString::Printf(TEXT("%08x %u"), SourceHash, ProcessId), *GuardPath));
-			UE_LOG(LogAPSStarRenderer, Log, TEXT("[APS.GpuStars] compiling the GPU star shaders (sources %08x)"), SourceHash);
+				FFileHelper::SaveStringToFile(FString::Printf(TEXT("%08x %u"), GuardKey, ProcessId), *GuardPath));
+			UE_LOG(LogAPSStarRenderer, Log, TEXT("[APS.GpuStars] compiling the GPU star shaders (sources+binary %08x)"), GuardKey);
 			return true;
 		}
 	}
@@ -239,6 +307,12 @@ namespace APSStarRenderer::Private
 		if (GCrashGuardWritten.exchange(false))
 		{
 			IFileManager::Get().Delete(*GetCrashGuardPath(), false, true, true);
+			// Rio 06.10 (audit: crash guard): these sources and this binary started fine with the shaders on; a later start
+			// killed for another reason does not switch them off.
+			if (ShouldCompileShaders() && !GCompileBlockedByCrashGuard)
+			{
+				FFileHelper::SaveStringToFile(FString::Printf(TEXT("%08x"), GCrashGuardKey), *GetCompileGoodPath());
+			}
 		}
 	}
 }

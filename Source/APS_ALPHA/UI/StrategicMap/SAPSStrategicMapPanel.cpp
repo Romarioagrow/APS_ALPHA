@@ -389,9 +389,25 @@ void SAPSStrategicMapPanel::OpenView()
 		ActivePreset = EPreset::None;
 		return;
 	}
-	if (Containing == INDEX_NONE && Pilot && HomeStar && PilotFromHome.Size() > Scene->GetHomeRoomCm())
+	// Rio 06.10: HOME SYSTEM now frames the home system's bodies (aps.Map.HomeSystemFrame), not its ~1e5 AU catalogue
+	// room, so a pilot still inside the home room but far out of that frame (twice it) gets the map on himself too.
+	// With the cvar at 0 the frame is the room and this is the 04.10 test exactly.
+	const double HomeRoom = Scene->GetHomeRoomCm();
+	const double HomeFrame = Scene->GetHomeSystemFrameCm();
+	const double FarFromHome = HomeFrame != HomeRoom ? 2.0 * HomeFrame : HomeRoom;
+	if ((Containing == INDEX_NONE || Containing == Stars->GetHomeIndex()) && Pilot && HomeStar
+		&& PilotFromHome.Size() > FarFromHome)
 	{
-		ApplyPreset(EPreset::MyShip);
+		// Rio 06.10 (audit): MY SHIP finds no ship for a pilot on foot without a fleet and did nothing, leaving the camera
+		// where F10 started it; the map then opens on the player himself.
+		if (Scene->GetMyShip())
+		{
+			ApplyPreset(EPreset::MyShip);
+		}
+		else if (APawn* Self = Scene->GetPilot())
+		{
+			FocusOn(APSStrategicMap::FSelection::OfActor(Self), -18.0);
+		}
 		return;
 	}
 	ApplyPreset(EPreset::HomeSystem);
@@ -520,6 +536,8 @@ FReply SAPSStrategicMapPanel::ApplyPreset(const EPreset Preset)
 	case EPreset::HomeSystem:
 	{
 		// The whole home system in the view: its sphere, not the star (Rio 02.10: "the camera falls into the star").
+		// Rio 06.10 ("HOME SYSTEM does not show the home system, the camera is very far"): that sphere is the home
+		// system's bodies with the generation menu's margin, not the catalogue room (~1e5 AU under REAL SCALE).
 		FAPSStrategicMapCamera::FFocus Focus;
 		AActor* Star = Scene->GetHomeStar();
 		if (Star)
@@ -529,7 +547,7 @@ FReply SAPSStrategicMapPanel::ApplyPreset(const EPreset Preset)
 			const int32 Index = Scene->FindObject(Star);
 			Focus.RadiusCm = Scene->GetObjects().IsValidIndex(Index) ? Scene->GetObjects()[Index].RadiusCm : 0.0;
 		}
-		Camera->FlyTo(Focus, Scene->GetHomeRoomCm(), -38.0);
+		Camera->FlyTo(Focus, Scene->GetHomeSystemFrameCm(), -38.0);
 		FocusTitle = Star ? FText::Format(LOCTEXT("HomeSystemTitle", "HOME SYSTEM  /  {0}"), Scene->NameOf(
 			APSStrategicMap::FSelection::OfActor(Star))) : LOCTEXT("HomeSystemPlain", "HOME SYSTEM");
 		break;

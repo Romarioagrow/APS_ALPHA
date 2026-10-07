@@ -79,6 +79,7 @@ public:
 	virtual void Tick(const FGeometry& AllottedGeometry, double InCurrentTime, float InDeltaTime) override;
 	virtual FReply OnMouseButtonDown(const FGeometry& Geometry, const FPointerEvent& Event) override;
 	virtual FReply OnMouseButtonUp(const FGeometry& Geometry, const FPointerEvent& Event) override;
+	virtual void OnMouseCaptureLost(const FCaptureLostEvent& CaptureLostEvent) override;
 	virtual FReply OnMouseButtonDoubleClick(const FGeometry& Geometry, const FPointerEvent& Event) override;
 	virtual FReply OnMouseMove(const FGeometry& Geometry, const FPointerEvent& Event) override;
 	virtual FReply OnMouseWheel(const FGeometry& Geometry, const FPointerEvent& Event) override;

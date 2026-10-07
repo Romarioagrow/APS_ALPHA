@@ -68,6 +68,11 @@ namespace APSColonyUI
 	TAutoConsoleVariable<FString> CVarPreviewTest(TEXT("aps.Colony.PreviewTest"), TEXT(""),
 		TEXT("Tests: picks the studied planet or moon whose name contains this text as the fleet target (B1 preview)."));
 
+	/** Rio 06.10 (audit: a clicked terminal button kept keyboard focus, so Space/Enter repeated it and Tab/K/F10 could miss
+	 * the terminal). Read when a button is built; the terminal is rebuilt on every open. Other panels look it up by name. */
+	TAutoConsoleVariable<int32> CVarTerminalButtonsNoFocus(TEXT("aps.UI.TerminalButtonsNoFocus"), 1,
+		TEXT("1: terminal buttons never take keyboard focus (a click no longer makes Space/Enter repeat it, and Tab/K/F10 always reach the terminal). 0: focusable buttons as before."));
+
 	template <typename TEnum>
 	FText EnumText(const TEnum Value)
 	{
@@ -107,6 +112,8 @@ namespace APSColonyUI
 		const TSharedRef<SButton> Button = SNew(SButton)
 			.ButtonStyle(FAppStyle::Get(), "NoBorder")
 			.ContentPadding(0.0f)
+			// Rio 06.10 (audit: focus stayed on the clicked button): aps.UI.TerminalButtonsNoFocus, 0 = focusable as before.
+			.IsFocusable(CVarTerminalButtonsNoFocus.GetValueOnGameThread() == 0)
 			.OnClicked(OnClicked);
 		const TWeakPtr<SButton> WeakButton = Button;
 		Button->SetContent(
@@ -162,6 +169,8 @@ namespace APSColonyUI
 			.ButtonStyle(FAppStyle::Get(), "NoBorder")
 			.ContentPadding(0.0f)
 			.IsEnabled(CanClick)
+			// Rio 06.10 (audit: Space after SET COURSE repeated the order): aps.UI.TerminalButtonsNoFocus, 0 = focusable as before.
+			.IsFocusable(CVarTerminalButtonsNoFocus.GetValueOnGameThread() == 0)
 			.OnClicked(OnClicked);
 		const TWeakPtr<SButton> WeakButton = Button;
 		Button->SetContent(
@@ -2895,10 +2904,9 @@ FReply SAPSColonyTerminal::OpenMap()
 	return FReply::Handled();
 }
 
-FReply SAPSColonyTerminal::OnKeyDown(const FGeometry& Geometry, const FKeyEvent& Event)
+TOptional<FReply> SAPSColonyTerminal::HandleTerminalHotKey(const FKey& Key)
 {
-	const FKey Key = Event.GetKey();
-	if (Key == EKeys::Tab || Key == EKeys::Escape)
+	if (Key == EKeys::Tab)
 	{
 		return Close();
 	}
@@ -2911,7 +2919,35 @@ FReply SAPSColonyTerminal::OnKeyDown(const FGeometry& Geometry, const FKeyEvent&
 	{
 		return OpenMap();
 	}
+	return TOptional<FReply>();
+}
+
+FReply SAPSColonyTerminal::OnKeyDown(const FGeometry& Geometry, const FKeyEvent& Event)
+{
+	const FKey Key = Event.GetKey();
+	if (Key == EKeys::Escape)
+	{
+		return Close();
+	}
+	if (TOptional<FReply> HotKeyReply = HandleTerminalHotKey(Key))
+	{
+		return HotKeyReply.GetValue();
+	}
 	return SCompoundWidget::OnKeyDown(Geometry, Event);
+}
+
+FReply SAPSColonyTerminal::OnPreviewKeyDown(const FGeometry& Geometry, const FKeyEvent& Event)
+{
+	// Rio 06.10 (audit: Tab after clicking a terminal tab moved Slate's focus instead of closing): with the CVar on, the
+	// terminal's hot keys win over any focused child; 0 leaves them to OnKeyDown as before.
+	if (APSColonyUI::CVarTerminalButtonsNoFocus.GetValueOnGameThread() != 0)
+	{
+		if (TOptional<FReply> HotKeyReply = HandleTerminalHotKey(Event.GetKey()))
+		{
+			return HotKeyReply.GetValue();
+		}
+	}
+	return SCompoundWidget::OnPreviewKeyDown(Geometry, Event);
 }
 
 void SAPSColonyTerminal::Tick(const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime)

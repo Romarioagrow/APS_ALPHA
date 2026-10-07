@@ -17,8 +17,14 @@ inline bool Build(IAssetTools& Tools)
 {
     if(APSPlanetCloudWeather::CandidateRequested() && APSPlanetCloudWeather::LayeredRequested())
     { UE_LOG(LogTemp,Error,TEXT("[APS.CloudBake] Select ONE isolated cloud candidate")); return false; }
+    // Rio 06.10 (clouds vanish at an altitude): V33 two-crossing is a third exclusive candidate.
+    const bool TwoCrossing=APSPlanetCloudWeather::TwoCrossingRequested();
+    if(TwoCrossing && (APSPlanetCloudWeather::CandidateRequested() || APSPlanetCloudWeather::LayeredRequested()))
+    { UE_LOG(LogTemp,Error,TEXT("[APS.CloudBake] Select ONE isolated cloud candidate")); return false; }
     using FCore = APSSharedTerrainMaterialBuilder::FBuild;
     const FString ObjectPath(APSPlanetCloudWeather::SelectedMaterialPath());
+    if(TwoCrossing && ObjectPath!=APSPlanetCloudWeather::TwoCrossingMaterialPath)
+    { UE_LOG(LogTemp,Error,TEXT("[APS.CloudBake] Two-crossing output must be its own V33 package")); return false; }
     const FString PackagePath = FPackageName::ObjectPathToPackageName(ObjectPath);
     const FString Folder = FPackageName::GetLongPackagePath(PackagePath);
     const FString Name = FPackageName::GetShortName(PackagePath);
@@ -27,9 +33,10 @@ inline bool Build(IAssetTools& Tools)
     const bool Layered=APSPlanetCloudWeather::LayeredRequested();
     const bool Refined=APSPlanetCloudWeather::CandidateRequested();
     const FString Shader=Layered?APSPlanetCloudLayeredHlsl::Code()
-        :(Refined?APSPlanetCloudRefinedHlsl::Code():APSPlanetCloudHlsl::Code());
+        :(Refined?APSPlanetCloudRefinedHlsl::Code()
+        :(TwoCrossing?APSPlanetCloudHlsl::TwoCrossingCode():APSPlanetCloudHlsl::Code()));
     if(Shader.IsEmpty())
-    { UE_LOG(LogTemp,Error,TEXT("[APS.CloudBake] Refined shader anchors changed; no asset created")); return false; }
+    { UE_LOG(LogTemp,Error,TEXT("[APS.CloudBake] Candidate shader anchors changed; no asset created")); return false; }
     FCore B(Tools,*Folder);
     auto* M=Cast<UMaterial>(Tools.CreateAsset(Name,Folder,UMaterial::StaticClass(),NewObject<UMaterialFactoryNew>()));
     if (!M) return false;
@@ -80,6 +87,7 @@ inline bool Build(IAssetTools& Tools)
         C->Description=TEXT("Isolated V30 three-shell clouds; one32-tap budget, ordered compositing");
     }
     if(Refined) C->Description=TEXT("Isolated V31: filtered light taps and far-only phase stability; unchanged V27 cloud field");
+    if(TwoCrossing) C->Description=TEXT("Isolated V33: unchanged V27 cloud field; a ray dipping under the deck marches both crossings in one16-32 sample budget");
     Scalar(TEXT("Visibility"),TEXT("CloudVisibility"),1);
     Scalar(TEXT("Debug"),TEXT("CloudDebug"),0);
     Scalar(TEXT("Aerial"),TEXT("CloudAerial"),1);

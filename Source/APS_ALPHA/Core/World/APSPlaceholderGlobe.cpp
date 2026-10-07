@@ -13,10 +13,21 @@
 #include "GameFramework/PlayerController.h"
 #include "GameFramework/Pawn.h"
 #include "RenderCommandFence.h"
+#include "APS_ALPHA/Core/Controllers/GravityPlayerController.h"
+#include "Camera/PlayerCameraManager.h"
+#include "HAL/IConsoleManager.h"
 
 namespace APSNativeGlobePrivate
 {
 	using namespace APSClosedGlobeMesh;
+	TAutoConsoleVariable<int32> CVarMapSolidBodies(TEXT("aps.Map.SolidBodies"), 1,
+		TEXT("Rio 06.10 (F10: transparent planets, stars and the galactic band through the disc): WorldScape relief is a patch built ")
+		TEXT("for one observer; once it is ready the closed globe was hidden, so the map's free camera looked through the rest of the ")
+		TEXT("body (only atmosphere and cloud shells, no depth). 1: while the strategic map is open, and 0.5 s of its blend back, every ")
+		TEXT("body with ready relief also shows its closed globe from aps.Map.SolidBodyAltitude radii up. 0: the old rule."));
+	TAutoConsoleVariable<float> CVarMapSolidBodyAltitude(TEXT("aps.Map.SolidBodyAltitude"), 0.5f,
+		TEXT("Rio 06.10: aps.Map.SolidBodies shows a body's closed globe from this altitude (in body radii above the surface); once on it ")
+		TEXT("stays on down to 80% of it."));
 	struct FVisual
 	{
 		TWeakObjectPtr<USceneComponent> Frame;
@@ -62,12 +73,16 @@ namespace APSNativeGlobePrivate
 		uint32 DesiredIdentity = 0, ReadyIdentity = 0, PendingIdentity = 0;
 		double IdentityCheckedAt = -1.0, RetryAt = 0.0, StartedAt = 0.0;
 		bool bRequestedVisible = true, bAwaitingFence = false;
+		// Rio 06.10 (F10 transparent planets): the strategic map holds this body's closed globe on next to its relief patch.
+		bool bMapSolid = false;
 		FString LastError;
 	};
 	struct FWorldState
 	{
 		TMap<TWeakObjectPtr<APlanetaryBody>, TSharedPtr<FRecord>> Bodies;
 		TSharedPtr<FRecord> Running;
+		// Rio 06.10: last time the strategic map was seen open (keeps solid bodies through its 0.5 s blend back).
+		double LastMapSeconds = -1.0e9;
 	};
 	TMap<TWeakObjectPtr<UWorld>, TSharedPtr<FWorldState>> Worlds;
 
@@ -223,7 +238,7 @@ namespace APSNativeGlobePrivate
 			Record.ReadyIdentity = Record.PendingIdentity;
 			Record.bAwaitingFence = false;
 			Record.Job.Reset();
-			Record.Ready.Show(Record.bRequestedVisible && !Body->bWorldScapeSurfaceReady);
+			Record.Ready.Show((Record.bRequestedVisible && !Body->bWorldScapeSurfaceReady) || Record.bMapSolid);
 			HideAuthoredGlobes(Body);
 			UE_LOG(LogTemp, Display, TEXT("[APS.NativeGlobe] published body=%s identity=%u seconds=%.3f terrain=%s sameNativeParent=1"),
 				*Body->GetName(), Record.ReadyIdentity, FPlatformTime::Seconds() - Record.StartedAt,
@@ -299,7 +314,8 @@ bool APSPlaceholderGlobe::SetVisible(APlanetaryBody* Body, bool bVisible)
 	Record->bRequestedVisible = bVisible;
 	// Preserve the last complete same-body surface during an explicit profile edit.
 	// Ordinary camera movement never invalidates this cache or its material.
-	Record->Ready.Show(bVisible);
+	// Rio 06.10 (F10 transparent planets): the 0.5 s readiness cadence never hides a globe the open map holds solid.
+	Record->Ready.Show(bVisible || Record->bMapSolid);
 	return true;
 }
 
@@ -329,6 +345,42 @@ void APSPlaceholderGlobe::Tick(UWorld* World)
 			if (!S.Running || S.Running != It.Value()) It.Value()->Pending.Destroy();
 			It.RemoveCurrent();
 		}
+	const double Now = FPlatformTime::Seconds();
+	// Rio 06.10 (F10 transparent planets: SORYX/TETHOR showed GPU stars and the galactic band through the disc): the
+	// WorldScape relief patch is built for one observer (the pawn, a frozen far direction, or the map camera only for the
+	// anchored body), so once it is ready and the closed globe hides, the map's free camera sees through the rest of the
+	// body. Map only: while the strategic map is open (plus 0.5 s of its blend back) every ready body above
+	// aps.Map.SolidBodyAltitude radii keeps its existing closed globe on next to the patch, so the whole disc is opaque and
+	// writes depth. The patch, its observer, collision, streaming and this job scheduling stay exactly as they are.
+	// Placed before the running job's early return so a pending build never delays it.
+	const AGravityPlayerController* MapController = World ? Cast<AGravityPlayerController>(World->GetFirstPlayerController()) : nullptr;
+	if (MapController && MapController->IsStrategicMapOpen()) S.LastMapSeconds = Now;
+	const bool bMapView = CVarMapSolidBodies.GetValueOnGameThread() != 0 && Now - S.LastMapSeconds < 0.5
+		&& MapController && IsValid(MapController->PlayerCameraManager);
+	const FVector MapCamera = bMapView ? MapController->PlayerCameraManager->GetCameraLocation() : FVector::ZeroVector;
+	const float Altitude = FMath::Max(CVarMapSolidBodyAltitude.GetValueOnGameThread(), 0.0f);
+	for (auto& Pair : S.Bodies)
+	{
+		FRecord& R = *Pair.Value;
+		APlanetaryBody* Body = R.Body.Get();
+		bool bSolid = false;
+		if (bMapView && IsValid(Body) && Body->bWorldScapeSurfaceReady && Current(R))
+		{
+			const double Rad = Body->GetWorldScapeBodyRadiusCm();
+			if (Rad > 0.0)
+			{
+				const double Alt = (FVector::Dist(MapCamera, Body->GetActorLocation()) - Rad) / Rad;
+				bSolid = Alt >= (R.bMapSolid ? 0.8 * Altitude : Altitude);
+			}
+		}
+		if (bSolid != R.bMapSolid)
+		{
+			R.bMapSolid = bSolid;
+			// Same rule as Finish(): a body without ready relief keeps today's visibility.
+			R.Ready.Show((R.bRequestedVisible && !(IsValid(Body) && Body->bWorldScapeSurfaceReady)) || bSolid);
+			UE_LOG(LogTemp, Log, TEXT("[APS.Map] solid body %s: closed globe %s"), *GetNameSafe(Body), bSolid ? TEXT("on") : TEXT("off"));
+		}
+	}
 	if (S.Running)
 	{
 		if (!Finish(*S.Running)) return;
@@ -338,7 +390,6 @@ void APSPlaceholderGlobe::Tick(UWorld* World)
 	const FVector ObserverPosition = Observer ? Observer->GetActorLocation() : FVector::ZeroVector;
 	TSharedPtr<FRecord> Next;
 	double BestScore = TNumericLimits<double>::Max();
-	const double Now = FPlatformTime::Seconds();
 	for (auto& Pair : S.Bodies)
 	{
 		const auto& R = Pair.Value;

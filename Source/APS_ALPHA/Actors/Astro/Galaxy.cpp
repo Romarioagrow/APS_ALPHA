@@ -1,5 +1,6 @@
 #include "Galaxy.h"
 #include "APS_ALPHA/Core/Rendering/APSGalaxyGpuStars.h"
+#include "APS_ALPHA/Core/Rendering/APSStarCatalogueInstancesComponent.h"
 #include "APS_ALPHA/Core/Rendering/APSStellarMaterialContract.h"
 #include "APS_ALPHA/Generation/APSGalaxyMorphology.h"
 #include "Async/ParallelFor.h"
@@ -301,7 +302,11 @@ AGalaxy::AGalaxy()
 {
     PrimaryActorTick.bCanEverTick = false;
 
-    StarMeshInstances = CreateDefaultSubobject<UHierarchicalInstancedStaticMeshComponent>(TEXT("StarMeshInstances"));
+    // Rio 06.10 (aps.Stars.CatalogueParallelGather): the catalogue's own HISM subclass, a HISM to everything that reads it
+    // (StarMeshInstances' type, BP_Galaxy's serialized mesh and custom floats); APSStarCatalogue::bSubclass false: the engine class.
+    StarMeshInstances = APSStarCatalogue::bSubclass
+        ? CreateDefaultSubobject<UHierarchicalInstancedStaticMeshComponent, UAPSStarCatalogueInstancesComponent>(TEXT("StarMeshInstances"))
+        : CreateDefaultSubobject<UHierarchicalInstancedStaticMeshComponent>(TEXT("StarMeshInstances"));
     RootComponent = Cast<USceneComponent>(StarMeshInstances);
 	// Stellar points use an additive material. Nanite does not support that blend
 	// mode, so make the fallback an invariant of the component rather than relying

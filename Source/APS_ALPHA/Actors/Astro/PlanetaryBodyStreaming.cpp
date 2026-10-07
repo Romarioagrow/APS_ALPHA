@@ -5,7 +5,10 @@
 #include "APS_ALPHA/Core/Planetary/APSPlanetSurfaceProfile.h"
 #include "APS_ALPHA/Core/Planetary/APSWorldScapeReadinessPolicy.h"
 #include "APS_ALPHA/Core/World/APSPlaceholderGlobe.h"
+#include "APS_ALPHA/Core/World/APSPlanetEnvironmentStreamingSubsystem.h"
+#include "Engine/World.h"
 #include "HAL/IConsoleManager.h"
+#include "HAL/PlatformTime.h"
 #include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
 #include "APS_ALPHA/Generation/WorldScapePayloadValidation.h"
 
@@ -268,6 +271,243 @@ namespace
 	}
 }
 
+/**
+ * Rio 06.10 (planet freezes): the first reveal of a published surface unhid the whole root at once, and every terrain and
+ * ocean LOD mesh (about 20) built its render proxy in that one frame: 54-84 ms, 2-6 times per arrival. Now the meshes stay
+ * hidden when the root is shown, get their proxies a few per frame with every section still invisible, and once all have
+ * one the sections turn visible and the placeholder hides in the same frame. The swap itself stays a single frame, as
+ * before; only the proxy work is spread. Advanced every frame by UAPSPlanetEnvironmentStreamingSubsystem::Tick.
+ */
+namespace APSWorldScapeReveal
+{
+	TAutoConsoleVariable<int32> CVarRevealMeshesPerFrame(TEXT("aps.Surface.RevealMeshesPerFrame"), 2,
+		TEXT("Rio 06.10 (planet freezes): terrain and ocean LOD meshes of a newly published surface that build their render ")
+		TEXT("proxies per frame, still invisible; the surface then replaces the placeholder in one frame. 0: all in the reveal ")
+		TEXT("frame (the old way, 54-84 ms)."));
+
+	struct FStagedMesh
+	{
+		TWeakObjectPtr<UWorldScapeMeshComponent> Mesh;
+		/** The sections that were visible before staging; only these are made visible again. */
+		uint32 VisibleSections{0};
+	};
+
+	struct FStagedReveal
+	{
+		TWeakObjectPtr<APlanetaryBody> Body;
+		TWeakObjectPtr<AWorldScapeRoot> Root;
+		TArray<FStagedMesh> Meshes;
+		int32 Next{0};
+		int32 Frames{0};
+		uint64 LastShowFrame{0};
+		double StartSeconds{0.0};
+	};
+
+	TArray<FStagedReveal> GStagedReveals;
+
+	/** The placeholder switch of SetWorldScapeStreamingState and RefreshWorldScapeSurfaceVisibility, without the staging check. */
+	void ShowPlaceholder(APlanetaryBody* Body, const bool bVisible)
+	{
+		if (APSPlaceholderGlobe::SetVisible(Body, bVisible)) return;
+		if (APlanet* Planet = Cast<APlanet>(Body))
+		{
+			bVisible ? Planet->EnableSphereMesh() : Planet->DisableSphereMesh();
+		}
+		else if (AMoon* Moon = Cast<AMoon>(Body))
+		{
+			bVisible ? Moon->EnableSphereMesh() : Moon->DisableSphereMesh();
+		}
+	}
+
+	int32 FindIndex(const APlanetaryBody* Body)
+	{
+		return GStagedReveals.IndexOfByPredicate([Body](const FStagedReveal& Reveal) { return Reveal.Body.Get() == Body; });
+	}
+
+	bool IsStaging(const APlanetaryBody* Body)
+	{
+		return !GStagedReveals.IsEmpty() && FindIndex(Body) != INDEX_NONE;
+	}
+
+	/** Why a staged reveal cannot go on (its body, root or readiness changed under it), or null. */
+	const TCHAR* Interruption(const FStagedReveal& Reveal)
+	{
+		const APlanetaryBody* Body = Reveal.Body.Get();
+		const AWorldScapeRoot* Root = Reveal.Root.Get();
+		if (!IsValid(Body) || !IsValid(Root)) return TEXT("gone");
+		if (!IsValid(Body->PlanetaryEnvironmentGenerator) || Body->PlanetaryEnvironmentGenerator->WorldScapeRootInstance != Root)
+			return TEXT("root replaced");
+		if (!Body->bWorldScapeSurfaceReady) return TEXT("readiness revoked");
+		if (Root->IsHidden()) return TEXT("root hidden");
+		// A paused or stalled world must not keep the placeholder for long: finish the reveal the old way.
+		if (FPlatformTime::Seconds() - Reveal.StartSeconds > 2.0) return TEXT("timed out");
+		return nullptr;
+	}
+
+	void HideSections(const FStagedMesh& Staged, UWorldScapeMeshComponent* Mesh)
+	{
+		// An old-path publication (CreateMeshSection) recreates a section visible: hide it again until the swap.
+		for (int32 Section = 0; Section < FMath::Min(Mesh->GetNumSections(), 32); ++Section)
+		{
+			if (((Staged.VisibleSections >> Section) & 1u) != 0 && Mesh->IsMeshSectionVisible(Section))
+			{
+				Mesh->SetMeshSectionVisible(Section, false);
+			}
+		}
+	}
+
+	/** Restores every staged mesh (sections visible, component shown) and, if the surface is ready, hides the placeholder. */
+	void End(const int32 Index, const TCHAR* Interrupted)
+	{
+		FStagedReveal Reveal = MoveTemp(GStagedReveals[Index]);
+		GStagedReveals.RemoveAt(Index);
+		int32 Restored = 0;
+		for (const FStagedMesh& Staged : Reveal.Meshes)
+		{
+			UWorldScapeMeshComponent* Mesh = Staged.Mesh.Get();
+			if (!IsValid(Mesh)) continue;
+			for (int32 Section = 0; Section < 32; ++Section)
+			{
+				if (((Staged.VisibleSections >> Section) & 1u) != 0 && Section < Mesh->GetNumSections())
+				{
+					Mesh->SetMeshSectionVisible(Section, true);
+				}
+			}
+			if (Mesh->bHiddenInGame)
+			{
+				Mesh->SetHiddenInGame(false);
+				++Restored;
+			}
+		}
+		// Only a ready surface whose current root is shown replaces the placeholder (a replaced root's successor included).
+		APlanetaryBody* Body = Reveal.Body.Get();
+		const AWorldScapeRoot* CurrentRoot = IsValid(Body) && IsValid(Body->PlanetaryEnvironmentGenerator)
+			? Body->PlanetaryEnvironmentGenerator->WorldScapeRootInstance : nullptr;
+		if (IsValid(Body) && Body->bWorldScapeSurfaceReady && IsValid(CurrentRoot) && !CurrentRoot->IsHidden())
+		{
+			ShowPlaceholder(Body, false);
+		}
+		UE_LOG(LogTemp, Log, TEXT("[APS.WorldScape] staged reveal %s body=%s meshes=%d frames=%d shownAtEnd=%d %.0f ms"),
+			Interrupted ? Interrupted : TEXT("done"), *GetNameSafe(Body), Reveal.Meshes.Num(), Reveal.Frames, Restored,
+			(FPlatformTime::Seconds() - Reveal.StartSeconds) * 1000.0);
+	}
+
+	/** Ends a staged reveal of Body that can no longer go on, before its readiness is evaluated again. */
+	void Validate(const APlanetaryBody* Body)
+	{
+		if (GStagedReveals.IsEmpty()) return;
+		const int32 Index = FindIndex(Body);
+		if (Index == INDEX_NONE) return;
+		if (const TCHAR* Interrupted = Interruption(GStagedReveals[Index]))
+		{
+			End(Index, Interrupted);
+		}
+	}
+
+	/** Called while the root is still hidden, right before it is shown for the first time. False: reveal at once. */
+	bool Begin(APlanetaryBody* Body, AWorldScapeRoot* Root)
+	{
+		if (CVarRevealMeshesPerFrame.GetValueOnGameThread() <= 0 || !IsValid(Body) || !IsValid(Root) || !Root->IsHidden()) return false;
+		// Only where the streaming subsystem advances it every frame (game and PIE worlds, not editor tools).
+		const UWorld* World = Body->GetWorld();
+		if (!World || !World->IsGameWorld() || !World->GetSubsystem<UAPSPlanetEnvironmentStreamingSubsystem>()) return false;
+		if (const int32 Existing = FindIndex(Body); Existing != INDEX_NONE)
+		{
+			End(Existing, TEXT("restarted"));
+		}
+		FStagedReveal Reveal;
+		Reveal.Body = Body;
+		Reveal.Root = Root;
+		Reveal.StartSeconds = FPlatformTime::Seconds();
+		const auto Stage = [&Reveal](const TArray<UWorldScapeLod*>& Lods)
+		{
+			for (const UWorldScapeLod* Lod : Lods)
+			{
+				UWorldScapeMeshComponent* Mesh = IsValid(Lod) ? Lod->Mesh : nullptr;
+				if (!IsValid(Mesh) || !Mesh->IsRegistered() || Mesh->bHiddenInGame || !Mesh->IsVisible()) continue;
+				FStagedMesh& Staged = Reveal.Meshes.AddDefaulted_GetRef();
+				Staged.Mesh = Mesh;
+				for (int32 Section = 0; Section < FMath::Min(Mesh->GetNumSections(), 32); ++Section)
+				{
+					if (Mesh->IsMeshSectionVisible(Section))
+					{
+						Staged.VisibleSections |= 1u << Section;
+						Mesh->SetMeshSectionVisible(Section, false);
+					}
+				}
+				// The root is hidden: no proxy exists, so neither call recreates one.
+				Mesh->SetHiddenInGame(true);
+			}
+		};
+		Stage(Root->WorldScapeLod);
+		Stage(Root->WorldScapeLodOcean);
+		if (Reveal.Meshes.IsEmpty()) return false;
+		GStagedReveals.Add(MoveTemp(Reveal));
+		return true;
+	}
+
+	void AdvanceStagedReveals(UWorld* World)
+	{
+		if (GStagedReveals.IsEmpty()) return;
+		const int32 PerFrame = CVarRevealMeshesPerFrame.GetValueOnGameThread();
+		int32 Budget = PerFrame;
+		for (int32 Index = 0; Index < GStagedReveals.Num();)
+		{
+			FStagedReveal& Reveal = GStagedReveals[Index];
+			APlanetaryBody* Body = Reveal.Body.Get();
+			if (IsValid(Body) && Body->GetWorld() != World)
+			{
+				++Index;
+				continue;
+			}
+			if (const TCHAR* Interrupted = Interruption(Reveal))
+			{
+				End(Index, Interrupted);
+				continue;
+			}
+			if (PerFrame <= 0)
+			{
+				End(Index, TEXT("switched off"));
+				continue;
+			}
+			++Reveal.Frames;
+			// Rio 06.10 (review): the placeholder stays until the swap. APSPlaceholderGlobe::Tick, earlier in the same subsystem
+			// tick, decides by readiness alone when it publishes a new globe or ends the map's solid globe, and readiness is
+			// already latched here: it would hide the placeholder while the staged meshes are still invisible (a frame with
+			// neither). Showing it again is a no-op when nothing changed.
+			if (APSPlaceholderGlobe::Handles(Body))
+			{
+				APSPlaceholderGlobe::SetVisible(Body, true);
+			}
+			for (int32 Shown = 0; Shown < Reveal.Next; ++Shown)
+			{
+				if (UWorldScapeMeshComponent* Mesh = Reveal.Meshes[Shown].Mesh.Get(); IsValid(Mesh))
+				{
+					HideSections(Reveal.Meshes[Shown], Mesh);
+				}
+			}
+			// Shown now, still invisible: their proxies are built at the end of this frame.
+			while (Budget > 0 && Reveal.Next < Reveal.Meshes.Num())
+			{
+				FStagedMesh& Staged = Reveal.Meshes[Reveal.Next++];
+				UWorldScapeMeshComponent* Mesh = Staged.Mesh.Get();
+				if (!IsValid(Mesh)) continue;
+				HideSections(Staged, Mesh);
+				Mesh->SetHiddenInGame(false);
+				Reveal.LastShowFrame = GFrameCounter;
+				--Budget;
+			}
+			// Every proxy was built in an earlier frame: the surface replaces the placeholder in this one.
+			if (Reveal.Next >= Reveal.Meshes.Num() && GFrameCounter > Reveal.LastShowFrame)
+			{
+				End(Index, nullptr);
+				continue;
+			}
+			++Index;
+		}
+	}
+}
+
 bool APlanetaryBody::HasWorldScapeReplacementCoverage(AWorldScapeRoot* Root) const
 {
 	if (!IsValid(Root) || !Root->WorldScapeLodInGeneration.IsEmpty()) return false;
@@ -288,6 +528,8 @@ void APlanetaryBody::SetWorldScapeStreamingState(EWorldScapeSurfaceState NewStat
 
 	auto SetPlaceholderVisible = [this](bool bVisible)
 	{
+		// Rio 06.10 (planet freezes): a staged first reveal keeps the placeholder until the surface swaps in.
+		if (!bVisible && APSWorldScapeReveal::IsStaging(this)) return;
 		if (APSPlaceholderGlobe::SetVisible(this, bVisible)) return;
 		if (APlanet* Planet = Cast<APlanet>(this))
 		{
@@ -449,8 +691,13 @@ void APlanetaryBody::SetWorldScapeStreamingState(EWorldScapeSurfaceState NewStat
 
 bool APlanetaryBody::RefreshWorldScapeSurfaceVisibility()
 {
+	// Rio 06.10 (planet freezes): a staged reveal whose root or readiness changed ends first, so that the checks below see
+	// its meshes as they were.
+	APSWorldScapeReveal::Validate(this);
 	auto SetPlaceholderVisible = [this](bool bVisible)
 	{
+		// Rio 06.10 (planet freezes): a staged first reveal keeps the placeholder until the surface swaps in.
+		if (!bVisible && APSWorldScapeReveal::IsStaging(this)) return;
 		if (APSPlaceholderGlobe::SetVisible(this, bVisible)) return;
 		if (APlanet* Planet = Cast<APlanet>(this))
 		{
@@ -577,6 +824,12 @@ bool APlanetaryBody::RefreshWorldScapeSurfaceVisibility()
 		&& (bWasSurfaceReady || bHasStableTerrainCoverage);
 	if (IsValid(Root))
 	{
+		// Rio 06.10 (planet freezes): the first reveal builds its mesh proxies over a few frames, invisibly, and swaps the
+		// whole surface in at once (APSWorldScapeReveal, aps.Surface.RevealMeshesPerFrame).
+		if (bWorldScapeSurfaceReady && !bWasSurfaceReady && Root->IsHidden())
+		{
+			APSWorldScapeReveal::Begin(this, Root);
+		}
 		Root->SetActorHiddenInGame(!bWorldScapeSurfaceReady);
 	}
 	SetPlaceholderVisible(!bWorldScapeSurfaceReady);

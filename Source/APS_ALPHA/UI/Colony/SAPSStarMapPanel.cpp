@@ -182,6 +182,49 @@ namespace APSStarMapPanelPrivate
 	}
 }
 
+namespace APSStarMapPanelPrivate
+{
+	/**
+	 * Rio 06.10 ("CATALOGUED does not fit and is too much: an icon or a mark"): what is known of a system as three bars,
+	 * like a signal: one catalogued, two scanned, three surveyed; home and claimed systems fill all three in their colour.
+	 */
+	class SKnowledgeBars final : public SLeafWidget
+	{
+	public:
+		SLATE_BEGIN_ARGS(SKnowledgeBars) : _Level(1), _Colour(FLinearColor::White) {}
+			SLATE_ARGUMENT(int32, Level)
+			SLATE_ARGUMENT(FLinearColor, Colour)
+		SLATE_END_ARGS()
+
+		void Construct(const FArguments& InArgs)
+		{
+			Level = InArgs._Level;
+			Colour = InArgs._Colour;
+		}
+
+		virtual FVector2D ComputeDesiredSize(float) const override { return FVector2D(15.0f, 11.0f); }
+
+		virtual int32 OnPaint(const FPaintArgs&, const FGeometry& Geometry, const FSlateRect&, FSlateWindowElementList& Elements,
+			int32 LayerId, const FWidgetStyle&, bool) const override
+		{
+			const FVector2D Size = Geometry.GetLocalSize();
+			const FLinearColor Empty = APSChrome::Muted().CopyWithNewOpacity(0.28f);
+			for (int32 Bar = 0; Bar < 3; ++Bar)
+			{
+				const double Height = Size.Y * (0.45 + 0.275 * Bar);
+				FSlateDrawElement::MakeBox(Elements, LayerId, Geometry.ToPaintGeometry(FVector2D(3.0, Height),
+					FSlateLayoutTransform(FVector2D(Bar * 6.0, Size.Y - Height))), FAppStyle::GetBrush("WhiteBrush"),
+					ESlateDrawEffect::None, Bar < Level ? Colour : Empty);
+			}
+			return LayerId;
+		}
+
+	private:
+		int32 Level{1};
+		FLinearColor Colour{FLinearColor::White};
+	};
+}
+
 // ---------------------------------------------------------------------------------------------------------------------
 // Shared pieces
 
@@ -670,10 +713,26 @@ void SAPSStarMapPanel::ReadCard()
 	Card.Name = FText::FromString(Info->Name);
 	Card.Designation = FText::FromString(System ? System->Designation : FString(TEXT("A")));
 	Card.Colour = System ? System->Colour : White();
-	Card.Kind = FText::Format(LOCTEXT("CardKind", "{0}  /  {1}  /  {2}"),
-		FText::FromString(Info->Spectral.IsEmpty() ? FString(TEXT("STAR")) : Info->Spectral),
-		System ? System->Kind : LOCTEXT("KindStar", "STAR"),
-		Info->StarCount <= 1 ? LOCTEXT("OneStar", "1 STAR") : FText::Format(LOCTEXT("SomeStars", "{0} STARS"), APSUINumber::Number(Info->StarCount)));
+	// Rio 06.10 ("STAR / STAR / 1 STAR under the name"): the spectral class when known, the kind, and the count only for
+	// several stars; a part that repeats another is left out.
+	{
+		TArray<FString> Parts;
+		const auto AddPart = [&Parts](const FString& Part)
+		{
+			const FString Clean = Part.TrimStartAndEnd();
+			if (!Clean.IsEmpty() && !Parts.ContainsByPredicate([&Clean](const FString& Other) { return Other.Equals(Clean, ESearchCase::IgnoreCase); }))
+			{
+				Parts.Add(Clean);
+			}
+		};
+		AddPart(Info->Spectral);
+		AddPart(System ? System->Kind.ToString() : FString());
+		if (Info->StarCount > 1)
+		{
+			AddPart(FText::Format(LOCTEXT("SomeStars", "{0} STARS"), APSUINumber::Number(Info->StarCount)).ToString());
+		}
+		Card.Kind = Parts.IsEmpty() ? LOCTEXT("KindStar", "STAR") : FText::FromString(FString::Join(Parts, TEXT("  /  ")));
+	}
 
 	// Where it is: how far from the map's centre and, among the 25 nearest, its rank.
 	const FAPSStarSystemInfo* CentreInfo = Snap.Systems.Num() > 0 ? Stars->Find(Snap.Systems[0].Id) : nullptr;
@@ -861,19 +920,26 @@ void SAPSStarMapPanel::RebuildList()
 								.Dashed(bUncharted)
 							]
 						]
-						+ SHorizontalBox::Slot().FillWidth(0.36f).VAlign(VAlign_Center)
+						+ SHorizontalBox::Slot().FillWidth(0.58f).VAlign(VAlign_Center)
 						[
 							SNew(STextBlock).Text(FText::FromString(System.Name)).Font(APSUITheme::BodyFont("Bold", 10))
+							.OverflowPolicy(ETextOverflowPolicy::Ellipsis)
 							.ColorAndOpacity_Lambda([IsPicked]() { return FSlateColor(IsPicked() ? Amber() : White()); })
 						]
-						+ SHorizontalBox::Slot().FillWidth(0.2f).VAlign(VAlign_Center)
+						+ SHorizontalBox::Slot().FillWidth(0.42f).VAlign(VAlign_Center).Padding(6.0f, 0.0f, 0.0f, 0.0f)
 						[
 							SNew(STextBlock).Text(FText::FromString(Spectral)).Font(Font("Regular", 9)).ColorAndOpacity(Muted())
+							.OverflowPolicy(ETextOverflowPolicy::Ellipsis)
 						]
-						+ SHorizontalBox::Slot().FillWidth(0.3f).VAlign(VAlign_Center)
+						// Rio 06.10: what is known as three bars instead of the word (the word in the tooltip).
+						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(6.0f, 0.0f, 4.0f, 0.0f)
 						[
-							SNew(STextBlock).Text(APSStarMap::StateName(System)).Font(Font("Regular", 9))
-							.ColorAndOpacity(APSStarMap::StateColour(System))
+							SNew(SBox).WidthOverride(15.0f).HeightOverride(11.0f).ToolTipText(APSStarMap::StateName(System))
+							[
+								SNew(SKnowledgeBars)
+								.Level(System.bHome || System.bClaimed ? 3 : static_cast<int32>(System.Knowledge) + 1)
+								.Colour(APSStarMap::StateColour(System).CopyWithNewOpacity(1.0f))
+							]
 						]
 						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(4.0f, 0.0f, 10.0f, 0.0f)
 						[

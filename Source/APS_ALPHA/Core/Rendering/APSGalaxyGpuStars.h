@@ -56,6 +56,11 @@ namespace APSGalaxyGpuStars
 	/** Gameplay daylight: a GPU layer of the world fades like the catalogue points (no-op without a layer). */
 	void SetWorldDaylightVisibility(const UWorld* World, float Visibility);
 
+	/** Rio 06.10 (aps.Stars.SystemGlare, each gameplay stellar view frame): Others multiplies the gameplay layer: every level set
+	 * (so every twin), the galaxy glow and every approach point through its level's value; the approach point of OwnCatalogIndex
+	 * takes Own. Both already carry the day blend; the daylight scene value multiplies on top. (1, INDEX_NONE, 1): exactly as before. */
+	void SetWorldSystemGlare(const UWorld* World, float Others, int64 OwnCatalogIndex, float Own);
+
 	/** Rio 03.10 ("every star must be reachable"): a drawn catalogue star near a point of the gameplay world. */
 	struct FNearStar
 	{
@@ -102,6 +107,41 @@ namespace APSGalaxyGpuStars
 	 * aps.Stars.ApproachPoint 0.
 	 */
 	void UpdateApproachPoints(UWorld* World, const FVector& Camera, double PixelTangent);
+
+	/** Rio 06.10 (star approach v2, stage B, change 12 "pilot's eyes"): who decides and who draws. */
+	struct FApproachEyes
+	{
+		/** The frame's view (the F10 map's camera while it is open): fade, visibility, where the dot is drawn. */
+		FVector ViewCamera = FVector::ZeroVector;
+		double ViewPixelTangent = 0.0;
+		/** The pilot's eyes: takes, releases, glide, speed, the course star's take radius (the view itself while attached). */
+		FVector PilotCamera = FVector::ZeroVector;
+		double PilotPixelTangent = 0.0;
+		/** The view is not the pilot's: the map is open or the view stands farther than aps.Stars.ApproachPilotViewKm. */
+		bool bDetached = false;
+	};
+	/** Stage B entry (APSFarStarGlyphs::Update). The (Camera, PixelTangent) overload stays: eyes = that view, attached. */
+	void UpdateApproachPoints(UWorld* World, const FApproachEyes& Eyes);
+
+	/** Rio 06.10 (stage B, change 9): where the course star comes from (polled from the piloted ship, never pushed). */
+	enum class ECourseSource : uint8 { None, Autopilot, Navigation, Boresight };
+	/** The course star now (INDEX_NONE: none, or aps.Stars.ApproachCourseMaxLy 0) and its source (trace, bench). */
+	int64 GetCourseStar(const UWorld* World, ECourseSource* OutSource = nullptr);
+
+	/** Test and diagnostics: how the gameplay GPU layer draws a catalogue star. */
+	struct FGpuStarInfo
+	{
+		bool bGpu = false;
+		int32 Ordinal = INDEX_NONE;
+		int32 Level = INDEX_NONE;
+		double TwinOffsetCm = 0.0;
+		/** The course far-take radius with the last pilot pixel tangent: unclamped, and clamped to [aps.Stars.ApproachPointLy,
+		 * cap] with cap = aps.Stars.ApproachCourseMaxLy, or 500 ly while that is 0 (so an OFF run still reports it). */
+		double CourseTakeRawCm = 0.0;
+		double CourseTakeCm = 0.0;
+		FVector ExactWorld = FVector::ZeroVector;
+	};
+	bool DescribeGpuStar(const UWorld* World, int64 CatalogIndex, FGpuStarInfo& Out);
 
 	/** Rio 05.10 night: aps.Stars.ApproachPoint is on and the world is a REAL SCALE one. */
 	bool AreApproachPointsActive(const UWorld* World);

@@ -84,6 +84,8 @@ public:
 	virtual FReply OnMouseButtonDoubleClick(const FGeometry& Geometry, const FPointerEvent& Event) override;
 	virtual FReply OnMouseMove(const FGeometry& Geometry, const FPointerEvent& Event) override;
 	virtual void OnMouseLeave(const FPointerEvent& Event) override;
+	/** Rio 06.10 (audit: Alt-Tab during a drag left the press armed): a lost capture ends the press and the drag. */
+	virtual void OnMouseCaptureLost(const FCaptureLostEvent& CaptureLostEvent) override;
 	virtual FCursorReply OnCursorQuery(const FGeometry& Geometry, const FPointerEvent& Event) const override;
 
 private:

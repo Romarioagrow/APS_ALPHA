@@ -12,6 +12,12 @@
 #include "APS_ALPHA/Gameplay/Construction/APSConstructionMode.h"
 #include "APS_ALPHA/Gameplay/Construction/APSShipBuildComponent.h"
 #include "APS_ALPHA/Gameplay/Expansion/APSStarSystems.h"
+#include "APS_ALPHA/Gameplay/Expansion/APSSystemMaterializer.h"
+#include "APS_ALPHA/Actors/Astro/Galaxy.h"
+#include "APS_ALPHA/Core/Rendering/APSGalaxyGpuStars.h"
+#include "APS_ALPHA/Core/Rendering/APSStellarViewOptics.h"
+#include "Misc/OutputDeviceRedirector.h"
+#include "Misc/ScopeLock.h"
 #include "APS_ALPHA/Actors/Astro/StarCluster.h"
 #include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
 #include "Camera/CameraComponent.h"
@@ -42,11 +48,12 @@
 #include "RenderTimer.h"
 #include "UnrealClient.h"
 #include "WorldScapeCore/Public/WorldScapeRoot.h"
+// Rio 06.10 (packaged build): aps.Test.DumpHome walks AAstroGenerator in every configuration, so its header is not test-only.
+#include "APS_ALPHA/Generation/AstroGenerator.h"
 #if WITH_DEV_AUTOMATION_TESTS
 #include "APS_ALPHA/Actors/Tech/SpaceHeadquarters.h"
 #include "APS_ALPHA/Core/Controllers/MainMenuController.h"
 #include "APS_ALPHA/Core/Model/SpawnParameters.h"
-#include "APS_ALPHA/Generation/AstroGenerator.h"
 #include "APS_ALPHA/UI/MainMenu/WorldGenerationViewModel.h"
 #endif
 
@@ -1334,9 +1341,13 @@ namespace APSShipBenchmark
 			return false;
 		}
 		const double Now = FPlatformTime::Seconds();
-		if (Now - GAutoRun.StartSeconds > 900.0)
+		// Rio 06.10 (star approach harness, the 900 s course leg): a hold longer than the old 15 min budget gets its warmup,
+		// its hold and five minutes of loading; every shorter run keeps the 15 min timeout.
+		const double TimeoutSeconds = FMath::Max(900.0, GAutoRun.WarmupSeconds + GAutoRun.HoldSeconds + 300.0);
+		if (Now - GAutoRun.StartSeconds > TimeoutSeconds)
 		{
-			EndAutoRun(TEXT("timeout after 15 min"));
+			EndAutoRun(TimeoutSeconds > 900.0 ? *FString::Printf(TEXT("timeout after %.0f s"), TimeoutSeconds)
+				: TEXT("timeout after 15 min"));
 			return false;
 		}
 		APawn* Pawn = FindPlayerPawn(nullptr);
@@ -1506,7 +1517,8 @@ namespace APSShipBenchmark
 			}
 			else if (Args[Index].StartsWith(TEXT("hold="), ESearchCase::IgnoreCase))
 			{
-				GAutoRun.HoldSeconds = FMath::Clamp(FCString::Atod(*Args[Index].RightChop(5)), 0.0, 600.0);
+				// Rio 06.10 (star approach harness): up to 30 min (the course leg holds 900 s); was 600 s.
+				GAutoRun.HoldSeconds = FMath::Clamp(FCString::Atod(*Args[Index].RightChop(5)), 0.0, 1800.0);
 			}
 			else if (Args[Index].StartsWith(TEXT("map="), ESearchCase::IgnoreCase))
 			{
@@ -1642,6 +1654,978 @@ namespace APSShipBenchmark
 			Controller ? TEXT(" (player input)") : TEXT(""));
 	}
 
+	// -----------------------------------------------------------------------------------------------------------------
+	// Rio 06.10 (star approach v2, stage A harness): galaxy targets, a registration watch, arrival stages and a steering
+	// pilot for the offscreen star approach runs (F:/ChatGPT/APOSFERA/work/flight/run_star_approach.ps1, checked by
+	// star_approach_check.py). Test-only: nothing here runs unless a run's console commands ask for it.
+
+	constexpr double TestLightYearCm = 9.4607304725808e17;
+	constexpr double TestAuCm = 1.495978707e13;
+
+	TAutoConsoleVariable<FString> CVarSteerDrawnDir(
+		TEXT("aps.Test.SteerDrawnDir"), TEXT(""),
+		TEXT("Rio 06.10 (star approach harness): '<frame> <x> <y> <z>', the unit direction from the view to the traced star's ")
+		TEXT("drawn dot as the approach trace (aps.Stars.ApproachTrace) writes it; aps.Test.Steer aims there while it is fresh. ")
+		TEXT("Empty or stale: the pilot aims at the star's exact catalogue place."));
+
+	/** The exact place where the sky draws a galaxy catalogue star now (its record through the indexed galaxy). */
+	bool GalaxyStarExactPlace(const UWorld* World, const int64 CatalogIndex, FVector& OutPlace)
+	{
+		const AGalaxy* Galaxy = APSGalaxyGpuStars::GetIndexedGalaxy(World);
+		FGalaxyCatalogStarRecord Record;
+		return IsValid(Galaxy) && CatalogIndex != INDEX_NONE && Galaxy->StarCatalog.ResolveStar(CatalogIndex, Record)
+			&& APSGalaxyGpuStars::ProjectCatalogueLocation(World, Record.GalaxyLocalLocation, OutPlace);
+	}
+
+	/** The approach trace's star (aps.Stars.ApproachTraceTarget, APSGalaxyGpuStars.cpp; found by name); INDEX_NONE without one. */
+	int64 TracedCatalogIndex()
+	{
+		const IConsoleVariable* Variable = IConsoleManager::Get().FindConsoleVariable(TEXT("aps.Stars.ApproachTraceTarget"));
+		const FString Value = Variable ? Variable->GetString() : FString();
+		return Value.IsNumeric() ? FCString::Atoi64(*Value) : static_cast<int64>(INDEX_NONE);
+	}
+
+	/** What the registration watch saw when a galaxy system came into the registry. */
+	struct FWatchedGalaxySystem
+	{
+		/** The owed travel grew in that frame: a registration of the failing class (its place may carry that frame's step). */
+		bool bInFlight{false};
+		double OwedLy{0.0};
+		double StepLy{0.0};
+	};
+
+	/** aps.Test.WatchRegistrations: every frame, the galaxy systems the registry added since the last one. */
+	struct FRegistrationWatch
+	{
+		bool bActive{false};
+		TWeakObjectPtr<UWorld> World;
+		int32 Seen{0};
+		FVector LastSky{FVector::ZeroVector};
+		TMap<int64, FWatchedGalaxySystem> Galaxy;
+		FTSTicker::FDelegateHandle Ticker;
+	};
+	FRegistrationWatch GWatch;
+
+	bool TickRegistrationWatch(float)
+	{
+		if (!GWatch.bActive)
+		{
+			return false;
+		}
+		APawn* Pawn = FindPlayerPawn(nullptr);
+		UWorld* World = Pawn ? Pawn->GetWorld() : nullptr;
+		const FAPSStarSystems* Systems = World ? APSStarSystemsFind(World) : nullptr;
+		if (!Systems)
+		{
+			return true;
+		}
+		// The core ticker runs between frames: the sky offset's change since the last one is the frame's owed step (a pay
+		// clears it, so a frame that also paid reads as not in flight).
+		const FVector Sky = UAPSWorldOriginSubsystem::SkyOffsetOf(World);
+		const bool bFirstLook = GWatch.World.Get() != World || GWatch.Seen > Systems->Num();
+		if (bFirstLook)
+		{
+			GWatch.World = World;
+			GWatch.Seen = 0;
+			GWatch.Galaxy.Reset();
+			GWatch.LastSky = Sky;
+		}
+		const double StepLy = FVector::Dist(Sky, GWatch.LastSky) / TestLightYearCm;
+		GWatch.LastSky = Sky;
+		for (; GWatch.Seen < Systems->Num(); ++GWatch.Seen)
+		{
+			const FAPSStarSystemInfo* Info = Systems->Get(GWatch.Seen);
+			if (!Info || Info->GalaxyIndex == INDEX_NONE)
+			{
+				continue;
+			}
+			FWatchedGalaxySystem& Entry = GWatch.Galaxy.FindOrAdd(Info->GalaxyIndex);
+			Entry.OwedLy = Sky.Size() / TestLightYearCm;
+			Entry.StepLy = StepLy;
+			Entry.bInFlight = !bFirstLook && Entry.OwedLy > 0.0 && StepLy > 0.0;
+			FVector Exact = FVector::ZeroVector;
+			const double AeKm = GalaxyStarExactPlace(World, Info->GalaxyIndex, Exact) ? FVector::Dist(Info->Location, Exact) / 1.0e5 : -1.0;
+			const double RadiusKm = Info->StarRadiusCm / 1.0e5;
+			UE_LOG(LogTemp, Log,
+				TEXT("[APS.Test] galaxy system registered: %s catalogue %lld radius %.0f km, AE %.6g km (%.4g radii), owed %.6g ly, ")
+				TEXT("sky step %.6g ly (%s)"),
+				*Info->Name.Replace(TEXT(" "), TEXT("_")), Info->GalaxyIndex, RadiusKm, AeKm,
+				RadiusKm > 0.0 && AeKm >= 0.0 ? AeKm / RadiusKm : -1.0, Entry.OwedLy, StepLy,
+				bFirstLook ? TEXT("first look") : Entry.bInFlight ? TEXT("in flight") : TEXT("at rest"));
+		}
+		return true;
+	}
+
+	void TestWatchRegistrations(const TArray<FString>& Args, UWorld*)
+	{
+		const bool bOn = Args.IsEmpty() || FCString::Atoi(*Args[0]) != 0;
+		if (bOn && !GWatch.bActive)
+		{
+			GWatch = FRegistrationWatch();
+			GWatch.bActive = true;
+			GWatch.Ticker = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateStatic(&TickRegistrationWatch), 0.0f);
+		}
+		else if (!bOn && GWatch.bActive)
+		{
+			GWatch.bActive = false;
+			FTSTicker::GetCoreTicker().RemoveTicker(GWatch.Ticker);
+		}
+		UE_LOG(LogTemp, Log, TEXT("[APS.Test] galaxy registration watch %s"), GWatch.bActive ? TEXT("on") : TEXT("off"));
+	}
+
+	/** The ship's flight up axis in the world (ASpaceship::GetShipUpVector is protected): its rotation times the local flight
+	 * frame that FAPSShipFlightBenchmark::GetRotationForFlightAxes turns onto the world axes. */
+	FVector TestShipUpVector(const ASpaceship& Ship)
+	{
+		const FQuat ToWorldAxes = FAPSShipFlightBenchmark::GetRotationForFlightAxes(Ship, FVector::ForwardVector, FVector::UpVector);
+		return Ship.GetActorQuat().RotateVector(ToWorldAxes.Inverse().RotateVector(FVector::UpVector)).GetSafeNormal(
+			UE_DOUBLE_SMALL_NUMBER, Ship.GetActorUpVector());
+	}
+
+	/** The player view's pixel tangent as the stellar view measures it (aps.Test.Pose disc, the far<N> selector's log). */
+	double TestViewPixelTangent(APlayerController& Controller)
+	{
+		int32 Width = 0;
+		int32 Height = 0;
+		Controller.GetViewportSize(Width, Height);
+		const double Fov = Controller.PlayerCameraManager ? Controller.PlayerCameraManager->GetFOVAngle() : 90.0;
+		return APSStellarViewOptics::PixelTangent(&Controller, 2.0 * FMath::Tan(FMath::DegreesToRadians(Fov * 0.5)) / FMath::Max(Width, 320));
+	}
+
+	/**
+	 * Rio 06.10 (star approach v2, stage B harness, selector far<N>): a GPU-drawn galaxy star about N ly from the ship whose
+	 * course far take falls well inside the flight: around the six points N ly along the ship's forward, back, right, left, up
+	 * and down (the index box is only ~4600 ly, so one direction may leave it), the 256 drawn stars nearest each within 200 ly;
+	 * kept when the GPU layer draws it (aps.Stars.ApproachTrace's DescribeGpuStar), its unclamped course take radius lies in
+	 * [30, 0.9 x 500] ly (the clamp never applies, so a run with aps.Stars.ApproachCourseMaxLy 0 picks the same star and still
+	 * fails the far take) and the ship starts at least 1.5 radii from it. The one whose twin stands farthest off its exact place
+	 * is registered (direct, at rest) and returned as a registry index; INDEX_NONE (a Warning) when none qualifies.
+	 */
+	int32 FindFarGalaxyStar(const UWorld* World, const FVector& From, const double DistanceLy)
+	{
+		FAPSStarSystems* Registry = World ? APSStarSystemsFind(World) : nullptr;
+		APlayerController* Controller = World ? World->GetFirstPlayerController() : nullptr;
+		const APawn* Pawn = Controller ? Controller->GetPawn() : nullptr;
+		if (!Registry || !Pawn || !(DistanceLy > 0.0))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[APS.Test] far%.0f: no registry, no pawn or no distance"), DistanceLy);
+			return INDEX_NONE;
+		}
+		constexpr double CourseCapLy = 500.0;
+		constexpr double MinRawLy = 30.0;
+		constexpr double MaxRawLy = 0.9 * CourseCapLy;
+		const ASpaceship* PilotedShip = Cast<ASpaceship>(Pawn);
+		const FVector Forward = (PilotedShip ? PilotedShip->GetShipForwardVector() : Pawn->GetActorForwardVector()).GetSafeNormal(
+			UE_DOUBLE_SMALL_NUMBER, FVector::ForwardVector);
+		const FVector Up = (PilotedShip ? TestShipUpVector(*PilotedShip) : Pawn->GetActorUpVector()).GetSafeNormal(
+			UE_DOUBLE_SMALL_NUMBER, FVector::UpVector);
+		const FVector Aside = FVector::CrossProduct(Up, Forward).GetSafeNormal(UE_DOUBLE_SMALL_NUMBER, Pawn->GetActorRightVector());
+		const FVector Directions[] = {Forward, -Forward, Aside, -Aside, Up, -Up};
+		const TCHAR* const DirectionNames[] = {TEXT("forward"), TEXT("back"), TEXT("right"), TEXT("left"), TEXT("up"), TEXT("down")};
+		struct FFarCandidate
+		{
+			int64 CatalogIndex{INDEX_NONE};
+			APSGalaxyGpuStars::FGpuStarInfo Info;
+			double DistanceCm{0.0};
+			int32 Direction{0};
+		};
+		TArray<FFarCandidate> Candidates;
+		TSet<int64> Seen;
+		int32 Considered = 0;
+		int32 GpuDrawn = 0;
+		for (int32 DirectionIndex = 0; DirectionIndex < static_cast<int32>(UE_ARRAY_COUNT(Directions)); ++DirectionIndex)
+		{
+			TArray<APSGalaxyGpuStars::FNearStar> Near;
+			if (!APSGalaxyGpuStars::FindNearStars(World, From + Directions[DirectionIndex] * DistanceLy * TestLightYearCm, 256,
+				200.0 * TestLightYearCm, Near))
+			{
+				continue;
+			}
+			for (const APSGalaxyGpuStars::FNearStar& Star : Near)
+			{
+				bool bSeen = false;
+				Seen.Add(Star.CatalogIndex, &bSeen);
+				if (bSeen)
+				{
+					continue;
+				}
+				++Considered;
+				FFarCandidate Candidate;
+				if (!APSGalaxyGpuStars::DescribeGpuStar(World, Star.CatalogIndex, Candidate.Info) || !Candidate.Info.bGpu)
+				{
+					continue;
+				}
+				++GpuDrawn;
+				const double RawLy = Candidate.Info.CourseTakeRawCm / TestLightYearCm;
+				Candidate.DistanceCm = FVector::Dist(From, Candidate.Info.ExactWorld);
+				if (RawLy < MinRawLy || RawLy > MaxRawLy || Candidate.DistanceCm < 1.5 * Candidate.Info.CourseTakeRawCm)
+				{
+					continue;
+				}
+				Candidate.CatalogIndex = Star.CatalogIndex;
+				Candidate.Direction = DirectionIndex;
+				Candidates.Add(Candidate);
+			}
+		}
+		Candidates.Sort([](const FFarCandidate& A, const FFarCandidate& B)
+		{
+			return A.Info.TwinOffsetCm > B.Info.TwinOffsetCm;
+		});
+		// The farthest twin first; one the registry refuses (the home sphere, a cluster room) gives way to the next.
+		for (int32 Attempt = 0; Attempt < FMath::Min(Candidates.Num(), 8); ++Attempt)
+		{
+			const FFarCandidate& Best = Candidates[Attempt];
+			int32 Index = Registry->IndexOfGalaxyStar(Best.CatalogIndex);
+			if (Index == INDEX_NONE)
+			{
+				Index = Registry->RegisterGalaxyStar(Best.CatalogIndex);
+			}
+			const FAPSStarSystemInfo* Info = Index != INDEX_NONE ? Registry->Get(Index) : nullptr;
+			if (!Info)
+			{
+				continue;
+			}
+			const double PixelTangent = TestViewPixelTangent(*Controller);
+			UE_LOG(LogTemp, Log,
+				TEXT("[APS.Test] far galaxy star %s catalogue %lld: %.6g ly, L%d, twin %.4g AU off (%.3f px at 3 ly), course take radius ")
+				TEXT("%.4g ly (unclamped %.4g ly); %s of the ship, %d drawn star(s) looked at, %d GPU-drawn, %d qualified"),
+				*Info->Name.Replace(TEXT(" "), TEXT("_")), Best.CatalogIndex, Best.DistanceCm / TestLightYearCm, Best.Info.Level,
+				Best.Info.TwinOffsetCm / TestAuCm,
+				PixelTangent > 0.0 ? Best.Info.TwinOffsetCm / (3.0 * TestLightYearCm * PixelTangent) : -1.0,
+				Best.Info.CourseTakeCm / TestLightYearCm, Best.Info.CourseTakeRawCm / TestLightYearCm,
+				DirectionNames[Best.Direction], Considered, GpuDrawn, Candidates.Num());
+			return Index;
+		}
+		UE_LOG(LogTemp, Warning,
+			TEXT("[APS.Test] far%.0f: no galaxy star qualifies (%d drawn star(s) looked at, %d GPU-drawn, %d with an unclamped course ")
+			TEXT("take radius in %.0f-%.0f ly at 1.5 radii or more; none registered)"),
+			DistanceLy, Considered, GpuDrawn, Candidates.Num(), MinRawLy, MaxRawLy);
+		return INDEX_NONE;
+	}
+
+	/** galaxyN, galaxyowedN, cat<index>, far<ly> or traced (FindGalaxyTarget); anything else is a name. */
+	bool IsGalaxySelector(const FString& Selector)
+	{
+		const auto Ranked = [&Selector](const TCHAR* Prefix)
+		{
+			const int32 Length = FCString::Strlen(Prefix);
+			return Selector.Len() > Length && Selector.StartsWith(Prefix, ESearchCase::IgnoreCase)
+				&& Selector.RightChop(Length).IsNumeric();
+		};
+		return Ranked(TEXT("galaxyowed")) || Ranked(TEXT("galaxy")) || Ranked(TEXT("cat")) || Ranked(TEXT("far"))
+			|| Selector.Equals(TEXT("traced"), ESearchCase::IgnoreCase);
+	}
+
+	/**
+	 * A registered galaxy system for a run, as a registry index (INDEX_NONE: none). galaxy<N>: the N-th nearest by its exact
+	 * place (the same order with and without a registry skew); galaxyowed<N>: the same among those the registration watch
+	 * saw registered while the owed travel grew (the failing class); cat<index>: by catalogue index; far<ly>: a GPU star about
+	 * that far whose course far take falls inside the flight (FindFarGalaxyStar, registered now); traced: the one
+	 * aps.Stars.ApproachTraceTarget follows. The ranked ones skip the home, systems inside it and the materialized one.
+	 */
+	int32 FindGalaxyTarget(const UWorld* World, const FVector& From, const FString& Selector)
+	{
+		const FAPSStarSystems* Systems = APSStarSystemsFind(World);
+		if (!Systems)
+		{
+			return INDEX_NONE;
+		}
+		if (Selector.Equals(TEXT("traced"), ESearchCase::IgnoreCase))
+		{
+			const int64 Traced = TracedCatalogIndex();
+			return Traced != INDEX_NONE ? Systems->IndexOfGalaxyStar(Traced) : INDEX_NONE;
+		}
+		if (Selector.StartsWith(TEXT("cat"), ESearchCase::IgnoreCase))
+		{
+			const int64 Wanted = FCString::Atoi64(*Selector.RightChop(3));
+			const int32 Known = Systems->IndexOfGalaxyStar(Wanted);
+			if (Known != INDEX_NONE)
+			{
+				return Known;
+			}
+			// The pair's fix run flies the off run's star (run_star_approach.ps1 -Set both): when this run's neighbour scan has
+			// not registered it, it is registered now (direct, at rest), so the run still flies to the same star.
+			FAPSStarSystems* Registry = APSStarSystemsFind(World);
+			const int32 Added = Registry ? Registry->RegisterGalaxyStar(Wanted) : INDEX_NONE;
+			UE_LOG(LogTemp, Warning, TEXT("[APS.Test] %s: not registered by this run's scan; %s"), *Selector,
+				Added != INDEX_NONE ? TEXT("registered now (direct, at rest)")
+				: TEXT("it cannot be (no nearest-star index, the home sphere or a cluster room)"));
+			return Added;
+		}
+		if (Selector.StartsWith(TEXT("far"), ESearchCase::IgnoreCase))
+		{
+			// Rio 06.10 (star approach v2, stage B harness): the course star's far take (FindFarGalaxyStar).
+			return FindFarGalaxyStar(World, From, FCString::Atod(*Selector.RightChop(3)));
+		}
+		const bool bOwed = Selector.StartsWith(TEXT("galaxyowed"), ESearchCase::IgnoreCase);
+		const int32 Rank = FMath::Max(FCString::Atoi(*Selector.RightChop(bOwed ? 10 : 6)), 1);
+		const FAPSSystemMaterializer* Materializer = Systems->GetMaterializer();
+		const int32 Active = Materializer ? Materializer->GetActiveIndex() : INDEX_NONE;
+		TArray<TPair<double, int32>> Candidates;
+		for (int32 Index = 0; Index < Systems->Num(); ++Index)
+		{
+			const FAPSStarSystemInfo* Info = Systems->Get(Index);
+			const FWatchedGalaxySystem* Watched = Info ? GWatch.Galaxy.Find(Info->GalaxyIndex) : nullptr;
+			FVector Exact = FVector::ZeroVector;
+			if (!Info || Info->GalaxyIndex == INDEX_NONE || Info->bHome || Info->bInsideHome || Index == Active
+				|| (bOwed && !(Watched && Watched->bInFlight)) || !GalaxyStarExactPlace(World, Info->GalaxyIndex, Exact))
+			{
+				continue;
+			}
+			Candidates.Emplace(FVector::DistSquared(From, Exact), Index);
+		}
+		Candidates.Sort([](const TPair<double, int32>& Left, const TPair<double, int32>& Right) { return Left.Key < Right.Key; });
+		if (!Candidates.IsValidIndex(Rank - 1))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[APS.Test] %s: only %d galaxy system(s) qualify%s"), *Selector, Candidates.Num(),
+				bOwed && !GWatch.bActive ? TEXT(" (aps.Test.WatchRegistrations is off)") : TEXT(""));
+			return INDEX_NONE;
+		}
+		return Candidates[Rank - 1].Value;
+	}
+
+	/** Logs a galaxy run target with what the check needs (its radius, its exact place against the registry's, how it was
+	 * registered) and makes it the approach trace's star unless told not to. */
+	void AnnounceGalaxyTarget(const UWorld* World, const FAPSStarSystemInfo& Info, const FVector& From, const bool bTrace)
+	{
+		FVector Exact = Info.Location;
+		const bool bExact = GalaxyStarExactPlace(World, Info.GalaxyIndex, Exact);
+		const FWatchedGalaxySystem* Watched = GWatch.Galaxy.Find(Info.GalaxyIndex);
+		const double RadiusKm = Info.StarRadiusCm / 1.0e5;
+		const double AeKm = bExact ? FVector::Dist(Info.Location, Exact) / 1.0e5 : -1.0;
+		const FString How = !Watched ? FString(TEXT("unwatched")) : Watched->bInFlight
+			? FString::Printf(TEXT("in flight (owed %.6g ly, step %.6g ly)"), Watched->OwedLy, Watched->StepLy) : FString(TEXT("at rest"));
+		const FString Name = Info.Name.Replace(TEXT(" "), TEXT("_"));
+		UE_LOG(LogTemp, Log,
+			TEXT("[APS.Test] galaxy target %s catalogue %lld radius %.0f km: %.6g ly to its exact place, AE %.6g km (%.4g radii), ")
+			TEXT("registered %s"),
+			*Name, Info.GalaxyIndex, RadiusKm, FVector::Dist(From, Exact) / TestLightYearCm, AeKm,
+			RadiusKm > 0.0 && AeKm >= 0.0 ? AeKm / RadiusKm : -1.0, *How);
+		if (!bTrace)
+		{
+			return;
+		}
+		IConsoleVariable* TraceTarget = IConsoleManager::Get().FindConsoleVariable(TEXT("aps.Stars.ApproachTraceTarget"));
+		if (!TraceTarget)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[APS.Test] no aps.Stars.ApproachTraceTarget in this build: %s is not traced"), *Name);
+			return;
+		}
+		TraceTarget->Set(*FString::Printf(TEXT("%lld"), Info.GalaxyIndex), ECVF_SetByConsole);
+		UE_LOG(LogTemp, Log, TEXT("[APS.Test] trace target %s catalogue %lld (aps.Stars.ApproachTraceTarget)"), *Name, Info.GalaxyIndex);
+	}
+
+	/** Turns the pawn (a ship by its flight axes) and the view to a direction, N degrees aside about the view's up, as
+	 * aps.Test.Pose star does; bStop stops a ship first. */
+	void FaceForTest(APlayerController& Controller, APawn& Pawn, const FVector& Direction, const double AsideDegrees, const bool bStop)
+	{
+		const FVector To = Direction.GetSafeNormal(UE_DOUBLE_SMALL_NUMBER, Pawn.GetActorForwardVector());
+		FVector Up = FVector::VectorPlaneProject(FVector::UpVector, To).GetSafeNormal();
+		if (Up.IsNearlyZero())
+		{
+			Up = FVector::VectorPlaneProject(FVector::ForwardVector, To).GetSafeNormal();
+		}
+		const FVector Forward = FQuat(Up, FMath::DegreesToRadians(-AsideDegrees)).RotateVector(To);
+		if (ASpaceship* Ship = Cast<ASpaceship>(&Pawn))
+		{
+			if (bStop)
+			{
+				FAPSShipFlightBenchmark::SetKinematicVelocity(*Ship, FVector::ZeroVector);
+			}
+			Pawn.SetActorRotation(FAPSShipFlightBenchmark::GetRotationForFlightAxes(*Ship, Forward, Up), ETeleportType::TeleportPhysics);
+		}
+		Controller.SetControlRotation(Forward.Rotation());
+	}
+
+	/**
+	 * aps.Test.OnArrival / aps.Test.OnLog: test stages that wait for a log line. Rio 06.10 (star approach v2, stage B harness):
+	 * the arrival watch generalised to a token table. arrived: the piloted ship's autopilot arrivals, read from the flight
+	 * model's own line ("[APS.Autopilot] <ship> off: arrived"), so an abort or a helm takeover never counts (critique: not
+	 * IsAutopilotEngaged going false); coursetake: the course star's far take ("[APS.Stars] approach point <index> is the
+	 * course star's far take"); standup: a system stands ("[APS.Stars] <name> stands: "). The autopilot watchdog also reads
+	 * the flight model's contact lines ("[APS.Flight] <ship> contact <actor.component> ..."). Any thread may log: the hits wait
+	 * under a lock until the core ticker takes them.
+	 */
+	struct FTestLogToken
+	{
+		const TCHAR* Name;
+		const TCHAR* Head;
+		const TCHAR* Tail;
+	};
+	/** The text between Head and Tail is the hit's payload (arrived: the ship, which must be the piloted one). */
+	const FTestLogToken GTestLogTokens[] = {
+		{TEXT("arrived"), TEXT("[APS.Autopilot] "), TEXT(" off: arrived")},
+		{TEXT("coursetake"), TEXT("[APS.Stars] approach point "), TEXT(" is the course star's far take")},
+		{TEXT("standup"), TEXT("[APS.Stars] "), TEXT(" stands: ")},
+	};
+	constexpr int32 TestLogArrived = 0;
+	constexpr int32 NumTestLogTokens = static_cast<int32>(UE_ARRAY_COUNT(GTestLogTokens));
+
+	class FArrivalLogWatch final : public FOutputDevice
+	{
+	public:
+		virtual void Serialize(const TCHAR* Message, ELogVerbosity::Type, const FName&) override
+		{
+			if (!Message)
+			{
+				return;
+			}
+			for (int32 Token = 0; Token < NumTestLogTokens; ++Token)
+			{
+				const TCHAR* Start = FCString::Strstr(Message, GTestLogTokens[Token].Head);
+				const TCHAR* Payload = Start ? Start + FCString::Strlen(GTestLogTokens[Token].Head) : nullptr;
+				const TCHAR* End = Payload ? FCString::Strstr(Payload, GTestLogTokens[Token].Tail) : nullptr;
+				if (End)
+				{
+					FScopeLock Lock(&Mutex);
+					Hits.Emplace(Token, FString(Payload).Left(static_cast<int32>(End - Payload)));
+				}
+			}
+			const TCHAR* Flight = FCString::Strstr(Message, TEXT("[APS.Flight] "));
+			const TCHAR* Contact = Flight ? FCString::Strstr(Flight, TEXT(" contact ")) : nullptr;
+			if (Contact)
+			{
+				const TCHAR* ShipName = Flight + FCString::Strlen(TEXT("[APS.Flight] "));
+				const TCHAR* What = Contact + FCString::Strlen(TEXT(" contact "));
+				const TCHAR* WhatEnd = FCString::Strchr(What, TEXT(' '));
+				FScopeLock Lock(&Mutex);
+				ContactShip = FString(ShipName).Left(static_cast<int32>(Contact - ShipName));
+				LastContact = WhatEnd ? FString(What).Left(static_cast<int32>(WhatEnd - What)) : FString(What);
+				++ContactLines;
+			}
+		}
+		virtual bool CanBeUsedOnAnyThread() const override { return true; }
+		virtual bool CanBeUsedOnMultipleThreads() const override { return true; }
+		/** The hits since the last call: (token, payload) in log order. */
+		TArray<TPair<int32, FString>> Take()
+		{
+			FScopeLock Lock(&Mutex);
+			TArray<TPair<int32, FString>> Taken = MoveTemp(Hits);
+			Hits.Reset();
+			return Taken;
+		}
+		/** The last contact line of that ship since ResetContacts, and how many contact lines came. */
+		bool LastContactOf(const FString& Ship, FString& OutWhat, int32& OutLines)
+		{
+			FScopeLock Lock(&Mutex);
+			OutLines = ContactLines;
+			OutWhat = ContactShip == Ship ? LastContact : FString();
+			return !OutWhat.IsEmpty();
+		}
+		void ResetContacts()
+		{
+			FScopeLock Lock(&Mutex);
+			ContactShip.Reset();
+			LastContact.Reset();
+			ContactLines = 0;
+		}
+
+	private:
+		FCriticalSection Mutex;
+		TArray<TPair<int32, FString>> Hits;
+		FString ContactShip;
+		FString LastContact;
+		int32 ContactLines{0};
+	};
+
+	/** A command of a stage that fired, in world seconds. */
+	struct FDueTestCommand
+	{
+		double Seconds{0.0};
+		FString Command;
+		int32 Token{0};
+		int32 Hit{0};
+	};
+
+	/** The queued stages (one per aps.Test.OnLog / OnArrival call, each with its token) and the commands of those that fired. */
+	struct FArrivalStages
+	{
+		TArray<TPair<int32, TArray<TPair<double, FString>>>> Waiting;
+		TArray<FDueTestCommand> Due;
+		int32 HitCounts[NumTestLogTokens] = {};
+		/** Made once and never freed: the log may still hold it while the engine shuts down. */
+		FArrivalLogWatch* Log{nullptr};
+		bool bListening{false};
+		bool bTicking{false};
+		FTSTicker::FDelegateHandle Ticker;
+	};
+	FArrivalStages GArrivals;
+
+	/**
+	 * Rio 06.10 (star approach v2, stage B harness; the ctl stall: the autopilot engaged on the HQ pad, 338 pad contacts, speed
+	 * 0 to the end, no 'off' line): after each aps.Test.Autopilot engage, the piloted ship 15 world seconds later. Still under
+	 * 5 m/s with its autopilot on: a Warning with its last contact; otherwise one Log line. It runs 20 s.
+	 */
+	struct FAutopilotWatch
+	{
+		bool bActive{false};
+		bool bChecked{false};
+		TWeakObjectPtr<ASpaceship> Ship;
+		FString TargetName;
+		double EngageSeconds{0.0};
+		FTSTicker::FDelegateHandle Ticker;
+	};
+	FAutopilotWatch GAutopilotWatch;
+
+	/** The log device listens while a stage waits or is due, or the autopilot watchdog runs. */
+	void UpdateTestLogListening()
+	{
+		const bool bWanted = !GArrivals.Waiting.IsEmpty() || !GArrivals.Due.IsEmpty() || GAutopilotWatch.bActive;
+		if (bWanted == GArrivals.bListening)
+		{
+			return;
+		}
+		if (bWanted && !GArrivals.Log)
+		{
+			GArrivals.Log = new FArrivalLogWatch();
+		}
+		GArrivals.bListening = bWanted;
+		if (GLog && GArrivals.Log)
+		{
+			if (bWanted)
+			{
+				GLog->AddOutputDevice(GArrivals.Log);
+			}
+			else
+			{
+				GLog->RemoveOutputDevice(GArrivals.Log);
+			}
+		}
+	}
+
+	bool TickArrivals(float)
+	{
+		APawn* Pawn = FindPlayerPawn(nullptr);
+		UWorld* World = Pawn ? Pawn->GetWorld() : nullptr;
+		const double Now = World ? World->GetTimeSeconds() : 0.0;
+		const FString Piloted = Cast<ASpaceship>(Pawn) ? Pawn->GetName() : FString();
+		TArray<TPair<int32, FString>> Hits;
+		if (GArrivals.Log)
+		{
+			Hits = GArrivals.Log->Take();
+		}
+		for (const TPair<int32, FString>& Hit : Hits)
+		{
+			const int32 Token = Hit.Key;
+			if (Token == TestLogArrived && (Piloted.IsEmpty() || Hit.Value != Piloted))
+			{
+				continue;
+			}
+			const int32 Count = ++GArrivals.HitCounts[Token];
+			const int32 Stage = GArrivals.Waiting.IndexOfByPredicate([Token](const TPair<int32, TArray<TPair<double, FString>>>& Each)
+			{
+				return Each.Key == Token;
+			});
+			if (Stage == INDEX_NONE)
+			{
+				if (Token == TestLogArrived)
+				{
+					UE_LOG(LogTemp, Log, TEXT("[APS.Test] arrival %d of %s: no stage waits"), Count, *Hit.Value);
+				}
+				continue;
+			}
+			for (const TPair<double, FString>& Step : GArrivals.Waiting[Stage].Value)
+			{
+				FDueTestCommand& Due = GArrivals.Due.AddDefaulted_GetRef();
+				Due.Seconds = Now + Step.Key;
+				Due.Command = Step.Value;
+				Due.Token = Token;
+				Due.Hit = Count;
+			}
+			if (Token == TestLogArrived)
+			{
+				UE_LOG(LogTemp, Log, TEXT("[APS.Test] arrival %d of %s: its stage runs %d command(s)"), Count, *Hit.Value,
+					GArrivals.Waiting[Stage].Value.Num());
+			}
+			else
+			{
+				UE_LOG(LogTemp, Log, TEXT("[APS.Test] log %s %d (%s): its stage runs %d command(s)"), GTestLogTokens[Token].Name, Count,
+					*Hit.Value, GArrivals.Waiting[Stage].Value.Num());
+			}
+			GArrivals.Waiting.RemoveAt(Stage);
+		}
+		for (int32 Index = 0; World && Index < GArrivals.Due.Num(); ++Index)
+		{
+			if (Now >= GArrivals.Due[Index].Seconds)
+			{
+				const FDueTestCommand Command = GArrivals.Due[Index];
+				GArrivals.Due.RemoveAt(Index--);
+				if (Command.Token == TestLogArrived)
+				{
+					UE_LOG(LogTemp, Log, TEXT("[APS.Test] arrival %d stage: %s"), Command.Hit, *Command.Command);
+				}
+				else
+				{
+					UE_LOG(LogTemp, Log, TEXT("[APS.Test] log %s %d stage: %s"), GTestLogTokens[Command.Token].Name, Command.Hit,
+						*Command.Command);
+				}
+				GEngine->Exec(World, *Command.Command);
+			}
+		}
+		if (GArrivals.Waiting.IsEmpty() && GArrivals.Due.IsEmpty())
+		{
+			GArrivals.bTicking = false;
+			UpdateTestLogListening();
+			return false;
+		}
+		return true;
+	}
+
+	/** Queues one stage ("<s>:<command>;<s>:<command>") for the next hit of the token. */
+	void QueueLogStage(const int32 Token, const TArray<FString>& StepArgs, const TCHAR* CommandName)
+	{
+		// The console split it at spaces, the stage splits at ';' and a step at its first ':'.
+		TArray<FString> Steps;
+		FString::Join(StepArgs, TEXT(" ")).ParseIntoArray(Steps, TEXT(";"));
+		TArray<TPair<double, FString>> Stage;
+		for (const FString& Step : Steps)
+		{
+			FString Seconds;
+			FString Command;
+			if (Step.Split(TEXT(":"), &Seconds, &Command) && Seconds.TrimStartAndEnd().IsNumeric() && !Command.TrimStartAndEnd().IsEmpty())
+			{
+				Stage.Emplace(FMath::Max(FCString::Atod(*Seconds.TrimStartAndEnd()), 0.0), Command.TrimStartAndEnd());
+			}
+			else
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[APS.Test] %s: '%s' is not <seconds>:<command>"), CommandName, *Step);
+			}
+		}
+		if (Stage.IsEmpty())
+		{
+			return;
+		}
+		const int32 Commands = Stage.Num();
+		GArrivals.Waiting.Emplace(Token, MoveTemp(Stage));
+		UpdateTestLogListening();
+		if (!GArrivals.bTicking)
+		{
+			GArrivals.bTicking = true;
+			GArrivals.Ticker = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateStatic(&TickArrivals), 0.1f);
+		}
+		const int32 Waiting = GArrivals.Waiting.FilterByPredicate([Token](const TPair<int32, TArray<TPair<double, FString>>>& Each)
+		{
+			return Each.Key == Token;
+		}).Num();
+		if (Token == TestLogArrived)
+		{
+			UE_LOG(LogTemp, Log, TEXT("[APS.Test] arrival stage queued: %d command(s), %d stage(s) waiting, %d arrival(s) so far"),
+				Commands, Waiting, GArrivals.HitCounts[Token]);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Log, TEXT("[APS.Test] log stage queued for %s: %d command(s), %d stage(s) waiting, %d hit(s) so far"),
+				GTestLogTokens[Token].Name, Commands, Waiting, GArrivals.HitCounts[Token]);
+		}
+	}
+
+	void TestOnArrival(const TArray<FString>& Args, UWorld*)
+	{
+		QueueLogStage(TestLogArrived, Args, TEXT("aps.Test.OnArrival"));
+	}
+
+	void TestOnLog(const TArray<FString>& Args, UWorld*)
+	{
+		int32 Token = INDEX_NONE;
+		for (int32 Index = 0; !Args.IsEmpty() && Index < NumTestLogTokens; ++Index)
+		{
+			if (Args[0].Equals(GTestLogTokens[Index].Name, ESearchCase::IgnoreCase))
+			{
+				Token = Index;
+			}
+		}
+		if (Token == INDEX_NONE || Args.Num() < 2)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[APS.Test] aps.Test.OnLog <arrived|coursetake|standup> <s>:<command>[;...]: unknown token or no stage"));
+			return;
+		}
+		QueueLogStage(Token, TArray<FString>(Args.GetData() + 1, Args.Num() - 1), TEXT("aps.Test.OnLog"));
+	}
+
+	bool TickAutopilotWatch(float)
+	{
+		if (!GAutopilotWatch.bActive)
+		{
+			return false;
+		}
+		ASpaceship* Ship = GAutopilotWatch.Ship.Get();
+		const UWorld* World = Ship ? Ship->GetWorld() : nullptr;
+		if (!World)
+		{
+			GAutopilotWatch.bActive = false;
+			UpdateTestLogListening();
+			return false;
+		}
+		const double Elapsed = World->GetTimeSeconds() - GAutopilotWatch.EngageSeconds;
+		if (!GAutopilotWatch.bChecked && Elapsed >= 15.0)
+		{
+			GAutopilotWatch.bChecked = true;
+			const double SpeedMps = Ship->GetKinematicVelocity().Size() / 100.0;
+			const bool bEngaged = Ship->FlightModel && Ship->FlightModel->IsAutopilotEngaged();
+			FString What;
+			int32 ContactLines = 0;
+			const bool bContact = GArrivals.Log && GArrivals.Log->LastContactOf(Ship->GetName(), What, ContactLines);
+			// The approach layer's course star now (stage B; -1 none or aps.Stars.ApproachCourseMaxLy 0) beside it.
+			APSGalaxyGpuStars::ECourseSource CourseSource = APSGalaxyGpuStars::ECourseSource::None;
+			const int64 CourseStar = APSGalaxyGpuStars::GetCourseStar(World, &CourseSource);
+			const TCHAR* CourseSourceText = CourseSource == APSGalaxyGpuStars::ECourseSource::Autopilot ? TEXT("ap")
+				: CourseSource == APSGalaxyGpuStars::ECourseSource::Navigation ? TEXT("nav")
+				: CourseSource == APSGalaxyGpuStars::ECourseSource::Boresight ? TEXT("bore") : TEXT("none");
+			const FString Contacts = (bContact
+				? FString::Printf(TEXT("to %s; last contact %s, %d contact line(s) since the engage"), *GAutopilotWatch.TargetName, *What, ContactLines)
+				: FString::Printf(TEXT("to %s; no contact line since the engage"), *GAutopilotWatch.TargetName))
+				+ FString::Printf(TEXT("; course star %lld (%s)"), static_cast<long long>(CourseStar), CourseSourceText);
+			if (bEngaged && SpeedMps < 5.0)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[APS.Test] autopilot stuck: %s at %.1f m/s %.0f s after the engage (%s)"), *Ship->GetName(),
+					SpeedMps, Elapsed, *Contacts);
+			}
+			else
+			{
+				UE_LOG(LogTemp, Log, TEXT("[APS.Test] autopilot moving: %s at %.1f m/s %.0f s after the engage (autopilot %s, %s)"),
+					*Ship->GetName(), SpeedMps, Elapsed, bEngaged ? TEXT("on") : TEXT("off"), *Contacts);
+			}
+		}
+		if (Elapsed >= 20.0)
+		{
+			GAutopilotWatch.bActive = false;
+			UpdateTestLogListening();
+			return false;
+		}
+		return true;
+	}
+
+	/** Starts (or restarts) the autopilot watchdog for an engage of this ship. */
+	void ArmAutopilotWatch(ASpaceship& Ship, const AActor& Target)
+	{
+		const UWorld* World = Ship.GetWorld();
+		if (!World)
+		{
+			return;
+		}
+		if (GAutopilotWatch.bActive)
+		{
+			FTSTicker::GetCoreTicker().RemoveTicker(GAutopilotWatch.Ticker);
+		}
+		GAutopilotWatch.bActive = true;
+		GAutopilotWatch.bChecked = false;
+		GAutopilotWatch.Ship = &Ship;
+		GAutopilotWatch.TargetName = Target.GetName();
+		GAutopilotWatch.EngageSeconds = World->GetTimeSeconds();
+		UpdateTestLogListening();
+		if (GArrivals.Log)
+		{
+			GArrivals.Log->ResetContacts();
+		}
+		GAutopilotWatch.Ticker = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateStatic(&TickAutopilotWatch), 0.25f);
+	}
+
+	/** aps.Test.Steer: a pilot without navigation who keeps the nose on the traced star's dot. */
+	struct FSteerPilot
+	{
+		bool bActive{false};
+		double PeriodSeconds{0.5};
+		double HandOverAu{0.0};
+		bool bCarry{true};
+		/** Rio 07.10 (sb-boresight-fix-x4 never arrived): the 5th argument, in steer periods (0 = none). Every frame the speed
+		 * is held to the way left to the exact place over BrakePeriods x PeriodSeconds, so inside that many seconds of flight
+		 * from the star the way left shrinks about e-fold per that time and no frame carries the ship through the hand-over
+		 * sphere; near the star a drawn dot whose line misses that sphere gives way to the exact place. */
+		double BrakePeriods{0.0};
+		/** Logged once per 'on': the brake held the speed / the pilot left a missing drawn dot for the exact place. */
+		bool bBrakeLogged{false};
+		bool bExactLogged{false};
+		double NextSeconds{0.0};
+		double NextLogSeconds{0.0};
+		FTSTicker::FDelegateHandle Ticker;
+	};
+	FSteerPilot GSteer;
+
+	/** The traced star's drawn dot as the approach trace wrote it (aps.Test.SteerDrawnDir), while it is from the last frames. */
+	bool SteerDrawnDirection(FVector& OutDirection)
+	{
+		TArray<FString> Parts;
+		CVarSteerDrawnDir.GetValueOnGameThread().ParseIntoArrayWS(Parts);
+		if (Parts.Num() != 4)
+		{
+			return false;
+		}
+		const uint64 Frame = FCString::Strtoui64(*Parts[0], nullptr, 10);
+		OutDirection = FVector(FCString::Atod(*Parts[1]), FCString::Atod(*Parts[2]), FCString::Atod(*Parts[3]));
+		return Frame + 3 >= GFrameCounter && OutDirection.Normalize();
+	}
+
+	bool TickSteer(float)
+	{
+		if (!GSteer.bActive)
+		{
+			return false;
+		}
+		ASpaceship* Ship = FindPilotedShip(nullptr);
+		UWorld* World = Ship ? Ship->GetWorld() : nullptr;
+		APlayerController* Controller = World ? World->GetFirstPlayerController() : nullptr;
+		if (!Controller)
+		{
+			return true;
+		}
+		const double Now = World->GetTimeSeconds();
+		const bool bSteerTick = Now >= GSteer.NextSeconds;
+		// Rio 07.10 (sb-boresight-fix-x4 never arrived: at 700-2000 ly/s the ship flew 10-30 ly a frame, through the 1000 AU
+		// sphere between two 0.5 s ticks, and was turned back 180 deg on every tick): the hand-over distance and the brake are
+		// looked at every frame; the aim, the carry and the log stay on the steer period. Without either nothing runs between ticks.
+		if (!bSteerTick && GSteer.HandOverAu <= 0.0 && GSteer.BrakePeriods <= 0.0)
+		{
+			return true;
+		}
+		if (bSteerTick)
+		{
+			GSteer.NextSeconds = Now + GSteer.PeriodSeconds;
+		}
+		const int64 Traced = TracedCatalogIndex();
+		// The registry name, only for the log lines (not every frame).
+		const auto TracedName = [World, Traced]() -> FString
+		{
+			const FAPSStarSystems* Systems = APSStarSystemsFind(World);
+			const int32 Registered = Systems && Traced != INDEX_NONE ? Systems->IndexOfGalaxyStar(Traced) : INDEX_NONE;
+			const FAPSStarSystemInfo* Info = Systems && Registered != INDEX_NONE ? Systems->Get(Registered) : nullptr;
+			return Info ? Info->Name : FString(TEXT("the traced star"));
+		};
+		FVector Exact = FVector::ZeroVector;
+		if (!GalaxyStarExactPlace(World, Traced, Exact))
+		{
+			return true;
+		}
+		FVector Camera = FVector::ZeroVector;
+		FRotator ViewRotation = FRotator::ZeroRotator;
+		Controller->GetPlayerViewPoint(Camera, ViewRotation);
+		const double DistanceCm = FVector::Dist(Camera, Exact);
+		if (GSteer.HandOverAu > 0.0 && DistanceCm <= GSteer.HandOverAu * TestAuCm)
+		{
+			// The last stretch as a pilot would fly it once there: the drive released, the autopilot to the same star.
+			GSteer.bActive = false;
+			UE_LOG(LogTemp, Log, TEXT("[APS.Test] steer: %.6g AU from the exact place of %s, the autopilot takes over"),
+				DistanceCm / TestAuCm, *TracedName());
+			GEngine->Exec(World, *FString::Printf(TEXT("aps.Ship.Drive 0 0 0 shotlabel=%s"), *GDrive.ShotLabel));
+			GEngine->Exec(World, TEXT("aps.Test.Autopilot system traced notrace"));
+			return false;
+		}
+		// The brake: per frame, because the flight model's power ramp (REAL SCALE STELLAR grows the speed up to e^2 a second,
+		// the star drive follows its set speed in log space) rebuilds a cut speed within one steer period. Only the size of
+		// the velocity changes; the drive keeps W held, so the ship never stalls short of the sphere.
+		const FVector ShipVelocity = Ship->GetKinematicVelocity();
+		double Speed = ShipVelocity.Size();
+		const double BrakeSeconds = GSteer.BrakePeriods * FMath::Max(GSteer.PeriodSeconds, 0.1);
+		const bool bBrakeOn = BrakeSeconds > 0.0;
+		const double BrakeSpeed = bBrakeOn ? DistanceCm / BrakeSeconds : 0.0;
+		if (bBrakeOn && Speed > BrakeSpeed)
+		{
+			if (!GSteer.bBrakeLogged)
+			{
+				GSteer.bBrakeLogged = true;
+				UE_LOG(LogTemp, Log,
+					TEXT("[APS.Test] steer brake f=%llu: %.6g ly from the exact place of %s at %.4g ly/s, the speed held to the way ")
+					TEXT("left over %.2f s"),
+					static_cast<unsigned long long>(GFrameCounter), DistanceCm / TestLightYearCm, *TracedName(),
+					Speed / TestLightYearCm, BrakeSeconds);
+			}
+			FAPSShipFlightBenchmark::SetKinematicVelocity(*Ship, ShipVelocity * (BrakeSpeed / Speed));
+			Speed = BrakeSpeed;
+		}
+		if (!bSteerTick)
+		{
+			return true;
+		}
+		FVector Drawn = FVector::ZeroVector;
+		const bool bDrawnFresh = SteerDrawnDirection(Drawn);
+		const FVector ToExact = (Exact - Camera).GetSafeNormal();
+		// With the brake: a drawn dot whose line passes the exact place wider than half the hand-over distance would hold the
+		// ship off the sphere for good (sb-boresight-fix-x4: the twin drawn a steady 0.047 ly, about 3000 AU, off the exact
+		// place); within 20 such misses of the star the pilot flies at the exact place instead.
+		const double DrawnAlong = bDrawnFresh ? FVector::DotProduct(Drawn, ToExact) : 1.0;
+		const double DrawnMissCm = !bDrawnFresh ? 0.0
+			: DrawnAlong > 0.0 ? DistanceCm * FVector::CrossProduct(Drawn, ToExact).Size() : DistanceCm;
+		const bool bDrawnMisses = bBrakeOn && GSteer.HandOverAu > 0.0 && DrawnMissCm > 0.5 * GSteer.HandOverAu * TestAuCm
+			&& DistanceCm < 20.0 * DrawnMissCm;
+		if (bDrawnMisses && !GSteer.bExactLogged)
+		{
+			GSteer.bExactLogged = true;
+			UE_LOG(LogTemp, Log,
+				TEXT("[APS.Test] steer brake f=%llu: the drawn dot of %s passes %.6g AU from its exact place, %.6g ly away: ")
+				TEXT("the pilot aims at the exact place"),
+				static_cast<unsigned long long>(GFrameCounter), *TracedName(), DrawnMissCm / TestAuCm, DistanceCm / TestLightYearCm);
+		}
+		const bool bDrawn = bDrawnFresh && !bDrawnMisses;
+		const FVector Direction = bDrawn ? Drawn : ToExact;
+		const FVector OldForward = Ship->GetShipForwardVector().GetSafeNormal();
+		FaceForTest(*Controller, *Ship, Direction, 0.0, false);
+		if (GSteer.bCarry && Speed > 0.0)
+		{
+			// The pilot's correction is taken at once (the band model would bring the velocity round over a few seconds).
+			FAPSShipFlightBenchmark::SetKinematicVelocity(*Ship, Direction * Speed);
+		}
+		if (Now >= GSteer.NextLogSeconds)
+		{
+			GSteer.NextLogSeconds = Now + 1.0;
+			UE_LOG(LogTemp, Log,
+				TEXT("[APS.Test] steer f=%llu at the %s of %s: %.6g ly, turned %.4f deg, the drawn dot %.4f deg off the exact place, ")
+				TEXT("%.4g ly/s"),
+				static_cast<unsigned long long>(GFrameCounter), bDrawn ? TEXT("drawn dot") : TEXT("exact place"),
+				*TracedName(), DistanceCm / TestLightYearCm,
+				FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(FVector::DotProduct(OldForward, Direction), -1.0, 1.0))),
+				bDrawn ? FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(FVector::DotProduct(Drawn, ToExact), -1.0, 1.0))) : -1.0,
+				Speed / TestLightYearCm);
+		}
+		return true;
+	}
+
+	void TestSteer(const TArray<FString>& Args, UWorld*)
+	{
+		if (!Args.IsEmpty() && Args[0].Equals(TEXT("on"), ESearchCase::IgnoreCase))
+		{
+			GSteer.PeriodSeconds = Args.Num() > 1 ? FMath::Clamp(FCString::Atod(*Args[1]), 0.0, 10.0) : 0.5;
+			GSteer.HandOverAu = Args.Num() > 2 ? FMath::Max(FCString::Atod(*Args[2]), 0.0) : 0.0;
+			GSteer.bCarry = Args.Num() <= 3 || FCString::Atoi(*Args[3]) != 0;
+			GSteer.BrakePeriods = Args.Num() > 4 ? FMath::Clamp(FCString::Atod(*Args[4]), 0.0, 100.0) : 0.0;
+			GSteer.bBrakeLogged = false;
+			GSteer.bExactLogged = false;
+			GSteer.NextSeconds = 0.0;
+			GSteer.NextLogSeconds = 0.0;
+			if (!GSteer.bActive)
+			{
+				GSteer.bActive = true;
+				GSteer.Ticker = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateStatic(&TickSteer), 0.0f);
+			}
+		}
+		else if (GSteer.bActive)
+		{
+			GSteer.bActive = false;
+			FTSTicker::GetCoreTicker().RemoveTicker(GSteer.Ticker);
+		}
+		UE_LOG(LogTemp, Log, TEXT("[APS.Test] steer %s: every %.2f s, hand over at %.0f AU, carry %d, brake %.2f periods, drawn dot %s"),
+			GSteer.bActive ? TEXT("on") : TEXT("off"), GSteer.PeriodSeconds, GSteer.HandOverAu, GSteer.bCarry ? 1 : 0,
+			GSteer.BrakePeriods, CVarSteerDrawnDir.GetValueOnGameThread().IsEmpty() ? TEXT("not written yet") : TEXT("written"));
+	}
+
+	/**
+	 * Rio 06.10 (star approach v2, stage B harness; the ctl stall): the ship off its pad, at rest, N km along its own up axis
+	 * (an autopilot engaged on the HQ's pads toward a target behind the station stalls on them). The aps.Test.Pose back teleport.
+	 */
+	void UndockForTest(UWorld& World, APawn& Pawn, const double Km)
+	{
+		const UAPSWorldOriginSubsystem* OriginSubsystem = World.GetSubsystem<UAPSWorldOriginSubsystem>();
+		const FVector Origin = OriginSubsystem ? OriginSubsystem->GetOriginOffset() : FVector(World.OriginLocation);
+		const FVector From = Origin + Pawn.GetActorLocation();
+		ASpaceship* UndockedShip = Cast<ASpaceship>(&Pawn);
+		const FVector Up = (UndockedShip ? TestShipUpVector(*UndockedShip) : Pawn.GetActorUpVector()).GetSafeNormal(
+			UE_DOUBLE_SMALL_NUMBER, Pawn.GetActorUpVector());
+		if (UndockedShip)
+		{
+			FAPSShipFlightBenchmark::SetKinematicVelocity(*UndockedShip, FVector::ZeroVector);
+		}
+		Pawn.SetActorLocation(Pawn.GetActorLocation() + Up * Km * 1.0e5, false, nullptr, ETeleportType::TeleportPhysics);
+		UE_LOG(LogTemp, Log, TEXT("[APS.Test] undock: %.0f km up the ship's axis from %s"), Km, *From.ToCompactString());
+	}
+
 	void TestAutopilot(const TArray<FString>& Args, UWorld* World)
 	{
 		// Rio 04.10 checks: the piloted ship's autopilot to the nearest actor whose name (or a body's name) holds the filter;
@@ -1694,6 +2678,15 @@ namespace APSShipBenchmark
 						Found.RemoveAt(0, Found.Num() - 1);
 					}
 				}
+				else if (IsGalaxySelector(Name))
+				{
+					// Rio 06.10 (star approach harness): galaxyN, galaxyowedN, cat<index> or traced (FindGalaxyTarget).
+					const int32 Picked = FindGalaxyTarget(World, Ship->GetActorLocation(), Name);
+					if (Picked != INDEX_NONE)
+					{
+						Found.Add(Picked);
+					}
+				}
 				else
 				{
 					Systems->Search(Name, 1, Found);
@@ -1704,6 +2697,20 @@ namespace APSShipBenchmark
 					UE_LOG(LogTemp, Log, TEXT("[APS.Test] autopilot system %s (%s), %.4f ly from home, room %.0f AU"), *Info->Name,
 						Info->GalaxyIndex != INDEX_NONE ? TEXT("galaxy") : TEXT("cluster"), Info->HomeDistanceCm / 9.4607304725808e17,
 						Info->RoomCm / 1.495978707e13);
+					// Rio 06.10 (star approach harness): a galaxy system becomes the approach trace's star unless "notrace"
+					// follows; "surveyed" lets the civilization know it surveyed first (the screenshot 192 case).
+					if (Info->GalaxyIndex != INDEX_NONE)
+					{
+						const auto HasWord = [&Args](const TCHAR* Word)
+						{
+							return Args.ContainsByPredicate([Word](const FString& Each) { return Each.Equals(Word, ESearchCase::IgnoreCase); });
+						};
+						if (HasWord(TEXT("surveyed")))
+						{
+							Systems->Learn(Info->Id, APSStars::EKnowledge::Surveyed, FText::FromString(TEXT("by a test run")));
+						}
+						AnnounceGalaxyTarget(World, *Info, Ship->GetActorLocation(), !HasWord(TEXT("notrace")));
+					}
 				}
 			}
 		}
@@ -1732,9 +2739,62 @@ namespace APSShipBenchmark
 			UE_LOG(LogTemp, Warning, TEXT("[APS.Test] aps.Test.Autopilot: no target for %s"), *Args[0]);
 			return;
 		}
+		// Rio 06.10 (star approach v2, stage B harness): "undock[=km]" lifts the ship off its pad first (default 20 km), and a
+		// watchdog reports an autopilot that does not get going.
+		double UndockKm = -1.0;
+		for (int32 Index = 1; Index < Args.Num(); ++Index)
+		{
+			if (Args[Index].Equals(TEXT("undock"), ESearchCase::IgnoreCase))
+			{
+				UndockKm = 20.0;
+			}
+			else if (Args[Index].StartsWith(TEXT("undock="), ESearchCase::IgnoreCase))
+			{
+				UndockKm = FMath::Max(FCString::Atod(*Args[Index].RightChop(7)), 0.0);
+			}
+		}
+		if (UndockKm >= 0.0)
+		{
+			UndockForTest(*World, *Ship, UndockKm);
+		}
 		Ship->FlightModel->EngageAutopilot(Target);
+		ArmAutopilotWatch(*Ship, *Target);
 		UE_LOG(LogTemp, Log, TEXT("[APS.Test] autopilot to %s, %.0f km away"), *Target->GetName(),
 			FVector::Dist(Target->GetActorLocation(), Ship->GetActorLocation()) / 1.0e5);
+	}
+
+	// Rio 07.10 ("buildings on the worlds of other systems must not vanish"): the materialized system's worlds get new names
+	// in every generated world, so a run names them through this: %P = its first planet, %N = the system.
+	void TestForeign(const TArray<FString>& Args, UWorld* World)
+	{
+		FAPSStarSystems* Systems = World ? APSStarSystemsFind(World) : nullptr;
+		FAPSSystemMaterializer* Materializer = Systems ? Systems->GetMaterializer() : nullptr;
+		const int32 Active = Materializer ? Materializer->GetActiveIndex() : INDEX_NONE;
+		const FAPSStarSystemInfo* Info = Active != INDEX_NONE ? Systems->Get(Active) : nullptr;
+		TArray<APlanet*> Planets;
+		if (Materializer)
+		{
+			Materializer->GetPlanets(Planets);
+		}
+		APlanet* First = nullptr;
+		for (APlanet* Planet : Planets)
+		{
+			if (IsValid(Planet) && !Planet->AstroName.IsNone())
+			{
+				First = Planet;
+				break;
+			}
+		}
+		if (!Info || !First || Args.Num() == 0)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[APS.Test] foreign: no materialized system with a named planet (or no command); nothing run"));
+			return;
+		}
+		FString Command = FString::Join(Args, TEXT(" "));
+		Command.ReplaceInline(TEXT("%P"), *First->AstroName.ToString());
+		Command.ReplaceInline(TEXT("%N"), *Info->Name);
+		UE_LOG(LogTemp, Log, TEXT("[APS.Test] foreign %s (planet %s): %s"), *Info->Name, *First->AstroName.ToString(), *Command);
+		GEngine->Exec(World, *Command);
 	}
 
 	void TestDumpHome(UWorld* World)
@@ -1855,6 +2915,11 @@ namespace APSShipBenchmark
 			Pawn->SetActorLocation(Pawn->GetActorLocation() - View * FCString::Atod(*Args[1]) * 1.495978707e13, false, nullptr,
 				ETeleportType::TeleportPhysics);
 		}
+		else if (Args[0].Equals(TEXT("up"), ESearchCase::IgnoreCase))
+		{
+			// Rio 06.10 (star approach v2, stage B harness): off the pad, at rest, N km (default 20) up the ship's own axis.
+			UndockForTest(*World, *Pawn, Args.Num() > 1 ? FMath::Max(FCString::Atod(*Args[1]), 0.0) : 20.0);
+		}
 		else if (Args[0].Equals(TEXT("star"), ESearchCase::IgnoreCase) || Args[0].Equals(TEXT("system"), ESearchCase::IgnoreCase))
 		{
 			// Faces the nearest star actor (star [deg]) or a catalogue system's point (system <name> [deg]), turned aside
@@ -1972,6 +3037,82 @@ namespace APSShipBenchmark
 					FromCentreKm, RadiusKm);
 			}
 		}
+		else if (Args[0].Equals(TEXT("galaxy"), ESearchCase::IgnoreCase) && Args.Num() > 1)
+		{
+			// Rio 06.10 (star approach harness, a pilot without navigation): stops the ship and faces a registered galaxy
+			// system's star where the sky draws it (its exact catalogue place, not the registry's), N degrees aside (0: dead
+			// ahead, where the hull may hide it): galaxy <galaxyN | galaxyowedN | cat<index> | traced | name> [deg]. It becomes
+			// the traced star.
+			const FAPSStarSystems* Systems = APSStarSystemsFind(World);
+			int32 Picked = INDEX_NONE;
+			if (Systems && IsGalaxySelector(Args[1]))
+			{
+				Picked = FindGalaxyTarget(World, Pawn->GetActorLocation(), Args[1]);
+			}
+			else if (Systems)
+			{
+				TArray<int32> Named;
+				Systems->Search(Args[1], 1, Named);
+				Picked = Named.IsEmpty() ? INDEX_NONE : Named[0];
+			}
+			const FAPSStarSystemInfo* Info = Systems && Picked != INDEX_NONE ? Systems->Get(Picked) : nullptr;
+			FVector Exact = FVector::ZeroVector;
+			if (Info && Info->GalaxyIndex != INDEX_NONE && GalaxyStarExactPlace(World, Info->GalaxyIndex, Exact))
+			{
+				const double Aside = Args.Num() > 2 ? FCString::Atod(*Args[2]) : 0.0;
+				FaceForTest(*Controller, *Pawn, Exact - Pawn->GetActorLocation(), Aside, true);
+				AnnounceGalaxyTarget(World, *Info, Pawn->GetActorLocation(), true);
+				UE_LOG(LogTemp, Log, TEXT("[APS.Test] facing %s at its exact place %.0f deg aside, %.6g ly away"), *Info->Name, Aside,
+					FVector::Dist(Exact, Pawn->GetActorLocation()) / TestLightYearCm);
+			}
+			else
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[APS.Test] pose galaxy: no registered galaxy system for %s"), *Args[1]);
+			}
+		}
+		else if (Args[0].Equals(TEXT("disc"), ESearchCase::IgnoreCase) && Args.Num() > 1)
+		{
+			// Rio 06.10 (star approach harness, the glyph <-> sphere band): stops the ship where the nearest star's disc is N px
+			// as the far glyphs measure it (its radius over the distance from its sky place times the view's pixel tangent),
+			// facing it deg aside (default 8): disc <px> [deg]. The camera arm (metres) is left out at these distances.
+			const AStar* Nearest = nullptr;
+			double NearestSquared = TNumericLimits<double>::Max();
+			for (TActorIterator<AStar> It(World); It; ++It)
+			{
+				const double Squared = IsValid(*It)
+					? FVector::DistSquared(UAPSWorldOriginSubsystem::SkyPlace(**It), Pawn->GetActorLocation()) : TNumericLimits<double>::Max();
+				if (Squared < NearestSquared)
+				{
+					NearestSquared = Squared;
+					Nearest = *It;
+				}
+			}
+			if (Nearest)
+			{
+				int32 Width = 0;
+				int32 Height = 0;
+				Controller->GetViewportSize(Width, Height);
+				const double Fov = Controller->PlayerCameraManager ? Controller->PlayerCameraManager->GetFOVAngle() : 90.0;
+				const double PixelTangent = APSStellarViewOptics::PixelTangent(Controller,
+					2.0 * FMath::Tan(FMath::DegreesToRadians(Fov * 0.5)) / FMath::Max(Width, 320));
+				const double Pixels = FMath::Max(FCString::Atod(*Args[1]), 0.01);
+				const double RadiusCm = FMath::Max(static_cast<double>(Nearest->StarRadiusKM), 1.0) * 100000.0;
+				const FVector StarInSky = UAPSWorldOriginSubsystem::SkyPlace(*Nearest);
+				const double DistanceCm = RadiusCm / FMath::Max(Pixels * PixelTangent, 1.0e-12);
+				const FVector Out = (Pawn->GetActorLocation() - StarInSky).GetSafeNormal(UE_DOUBLE_SMALL_NUMBER, FVector::ForwardVector);
+				if (ASpaceship* Ship = Cast<ASpaceship>(Pawn))
+				{
+					FAPSShipFlightBenchmark::SetKinematicVelocity(*Ship, FVector::ZeroVector);
+				}
+				Pawn->SetActorLocation(StarInSky + Out * DistanceCm, false, nullptr, ETeleportType::TeleportPhysics);
+				const double Aside = Args.Num() > 2 ? FCString::Atod(*Args[2]) : 8.0;
+				FaceForTest(*Controller, *Pawn, StarInSky - Pawn->GetActorLocation(), Aside, true);
+				UE_LOG(LogTemp, Log,
+					TEXT("[APS.Test] pose disc %.3f px: %s (%s, %d km) at %.6g AU from its sky place (pixel tangent %.6g), %.0f deg aside"),
+					Pixels, *Nearest->AstroName.ToString().Replace(TEXT(" "), TEXT("_")), *Nearest->GetName(), Nearest->StarRadiusKM,
+					DistanceCm / TestAuCm, PixelTangent, Aside);
+			}
+		}
 		else if (Args[0].Equals(TEXT("turn"), ESearchCase::IgnoreCase) && Args.Num() > 1)
 		{
 			// About the pawn's own up: the hull and the view turn together.
@@ -2025,9 +3166,15 @@ namespace APSShipBenchmark
 		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TestBuild));
 
 	FAutoConsoleCommandWithWorldAndArgs TestPoseCommand(TEXT("aps.Test.Pose"),
-		TEXT("Test runs: aps.Test.Pose save | load | turn <yaw deg> | back <AU> | star [deg aside] (the pawn's pose, for before/after shots)."),
+		TEXT("Test runs: aps.Test.Pose save | load | turn <yaw deg> | back <AU> | up [km=20] | star [deg aside] | galaxy <galaxyN|")
+		TEXT("galaxyowedN|cat<index>|far<ly>|traced|name> [deg aside] | disc <px> [deg aside] (the pawn's pose, for before/after shots ")
+		TEXT("and the star approach runs)."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TestPose));
 
+	FAutoConsoleCommandWithWorldAndArgs TestForeignCommand(TEXT("aps.Test.Foreign"),
+		TEXT("Test runs: aps.Test.Foreign <console command>: runs it with %P = the materialized system's first planet, %N = that ")
+		TEXT("system (aps.Test.Foreign aps.Mega.Raise SpaceHub %P)."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TestForeign));
 	FAutoConsoleCommandWithWorld TestDumpHomeCommand(TEXT("aps.Test.DumpHome"),
 		TEXT("Test runs: logs the home system's hierarchy (locations, scales, parents)."),
 		FConsoleCommandWithWorldDelegate::CreateStatic(&TestDumpHome));
@@ -2040,12 +3187,35 @@ namespace APSShipBenchmark
 		TEXT("Test runs: aps.Test.Key <Key>: presses and releases a key through Slate, as the player would (G, Y, M...)."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TestKey));
 	FAutoConsoleCommandWithWorldAndArgs TestAutopilotCommand(TEXT("aps.Test.Autopilot"),
-		TEXT("Test runs: aps.Test.Autopilot <name|antipode>: the piloted ship's autopilot to the nearest actor so named, or ")
-		TEXT("to a point 100 km over the far side of the nearest world."),
+		TEXT("Test runs: aps.Test.Autopilot <name|antipode|system <name|nearest|N|galaxyN|galaxyowedN|cat<index>|far<ly>|traced>> ")
+		TEXT("[notrace] [surveyed] [undock[=km]]: the piloted ship's autopilot to the nearest actor so named, to a point 100 km ")
+		TEXT("over the far side of the nearest world, or to a catalogue system; undock lifts the ship off its pad first. A ")
+		TEXT("watchdog logs the ship's speed 15 s after the engage ('autopilot stuck' under 5 m/s)."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TestAutopilot));
 	FAutoConsoleCommandWithWorldAndArgs TestShotCommand(TEXT("aps.Test.Shot"),
 		TEXT("Test runs: aps.Test.Shot <name>: a screenshot with the UI to Saved/Screenshots/ShipDrive/<shotlabel>_t<name>.png."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TestShot));
+	FAutoConsoleCommandWithWorldAndArgs TestWatchRegistrationsCommand(TEXT("aps.Test.WatchRegistrations"),
+		TEXT("Test runs (star approach harness): aps.Test.WatchRegistrations [1|0]: logs every galaxy system as it is registered, ")
+		TEXT("its registry place against its exact place (AE) and whether the owed travel grew in that frame (in flight)."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TestWatchRegistrations));
+	FAutoConsoleCommandWithWorldAndArgs TestOnArrivalCommand(TEXT("aps.Test.OnArrival"),
+		TEXT("Test runs (star approach harness): aps.Test.OnArrival <s>:<command>[;<s>:<command>...]: queues one stage; the ")
+		TEXT("piloted ship's next autopilot arrival (its 'off: arrived' line) runs the stage's commands that many world seconds later."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TestOnArrival));
+	FAutoConsoleCommandWithWorldAndArgs TestOnLogCommand(TEXT("aps.Test.OnLog"),
+		TEXT("Test runs (star approach harness): aps.Test.OnLog <arrived|coursetake|standup> <s>:<command>[;<s>:<command>...]: queues ")
+		TEXT("one stage; the next matching log line (arrived: the piloted ship's autopilot arrival; coursetake: the course star's far ")
+		TEXT("take; standup: a system stands) runs its commands that many world seconds later. aps.Test.OnArrival is OnLog arrived."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TestOnLog));
+	FAutoConsoleCommandWithWorldAndArgs TestSteerCommand(TEXT("aps.Test.Steer"),
+		TEXT("Test runs (star approach harness): aps.Test.Steer on [period s=0.5] [hand over AU=0] [carry 1|0] [brake periods=0] | off: ")
+		TEXT("a pilot without navigation keeps the nose on the traced star's drawn dot (aps.Test.SteerDrawnDir, else its exact place) ")
+		TEXT("every period; within the hand-over distance (checked every frame) the drive is released and the autopilot finishes ")
+		TEXT("(aps.Test.Autopilot system traced). brake N: every frame the speed is held to the way left over N periods, so the ship ")
+		TEXT("closes on the star instead of flying through the hand-over sphere, and near it a drawn dot that misses the sphere ")
+		TEXT("gives way to the exact place."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TestSteer));
 
 	FAutoConsoleCommandWithWorldAndArgs BoardCommand(
 		TEXT("aps.Ship.Board"),
@@ -2319,8 +3489,14 @@ void FAPSShipFlightBenchmark::LogShipReport(const ASpaceship& Ship)
 				Line.Shapes = BodySetup->AggGeom.GetElementCount();
 				Line.bComplexAsSimple = BodySetup->CollisionTraceFlag == CTF_UseComplexAsSimple;
 			}
+			// Rio 06.10 (packaged build): IsNaniteEnabled reads the editor-only build settings; a cooked game asks whether the
+			// mesh carries Nanite data.
 			if (const UStaticMeshComponent* Mesh = Cast<UStaticMeshComponent>(Component);
+#if WITH_EDITORONLY_DATA
 				Mesh && Mesh->GetStaticMesh() && Mesh->GetStaticMesh()->IsNaniteEnabled())
+#else
+				Mesh && Mesh->GetStaticMesh() && Mesh->GetStaticMesh()->HasValidNaniteData())
+#endif
 			{
 				++NaniteMeshes;
 			}

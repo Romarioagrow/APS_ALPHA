@@ -19,12 +19,14 @@
 #include "APS_ALPHA/Gameplay/Fleet/APSFleetCommand.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
 #include "APS_ALPHA/UI/Style/APSMenuChrome.h"
+#include "APS_ALPHA/UI/Style/APSSlateLineGuard.h"
 #include "Brushes/SlateRoundedBoxBrush.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "Fonts/FontMeasure.h"
 #include "Framework/Application/SlateApplication.h"
 #include "GameFramework/PlayerController.h"
+#include "HAL/IConsoleManager.h"
 #include "Rendering/DrawElements.h"
 #include "Rendering/SlateRenderer.h"
 #include "Styling/AppStyle.h"
@@ -51,6 +53,17 @@ namespace APSCivilizationMapPrivate
 	{
 		const AActor* Actor = Object.Actor.Get();
 		return Actor ? Actor->GetActorLocation() : Object.Location;
+	}
+
+	/**
+	 * Rio 06.10 (audit: a clicked terminal button kept keyboard focus): aps.UI.TerminalButtonsNoFocus is registered with the
+	 * terminal buttons elsewhere and looked up by name here; when it is not found or 0 the buttons stay focusable (the
+	 * previous path).
+	 */
+	bool TerminalButtonsNoFocus()
+	{
+		const IConsoleVariable* Variable = IConsoleManager::Get().FindConsoleVariable(TEXT("aps.UI.TerminalButtonsNoFocus"));
+		return Variable && Variable->GetInt() != 0;
 	}
 
 	const FSlateBrush* Disc()
@@ -146,8 +159,11 @@ namespace APSCivilizationMapPrivate
 			const double Angle = UE_TWO_PI * Index / Segments;
 			Points.Add(Centre + FVector2D(FMath::Cos(Angle), FMath::Sin(Angle)) * Radius);
 		}
-		FSlateDrawElement::MakeLines(Out, Layer, Geometry.ToPaintGeometry(), Points, ESlateDrawEffect::None, Colour,
-			true, Thickness);
+		if (APSSlateLineGuard::IsDrawable(Points))
+		{
+			FSlateDrawElement::MakeLines(Out, Layer, Geometry.ToPaintGeometry(), Points, ESlateDrawEffect::None, Colour,
+				true, Thickness);
+		}
 	}
 
 	/** A dashed circle: a boundary, not an orbit. */
@@ -169,8 +185,11 @@ namespace APSCivilizationMapPrivate
 				const double Angle = FMath::Lerp(From, To, Step / 3.0);
 				Points.Add(Centre + FVector2D(FMath::Cos(Angle), FMath::Sin(Angle)) * Radius);
 			}
-			FSlateDrawElement::MakeLines(Out, Layer, Geometry.ToPaintGeometry(), Points, ESlateDrawEffect::None, Colour,
-				true, Thickness);
+			if (APSSlateLineGuard::IsDrawable(Points))
+			{
+				FSlateDrawElement::MakeLines(Out, Layer, Geometry.ToPaintGeometry(), Points, ESlateDrawEffect::None, Colour,
+					true, Thickness);
+			}
 		}
 	}
 
@@ -186,8 +205,11 @@ namespace APSCivilizationMapPrivate
 	void Polyline(FSlateWindowElementList& Out, const int32 Layer, const FGeometry& Geometry,
 		const TArray<FVector2D>& Points, const FLinearColor& Colour, const float Thickness)
 	{
-		FSlateDrawElement::MakeLines(Out, Layer, Geometry.ToPaintGeometry(), Points, ESlateDrawEffect::None, Colour,
-			true, Thickness);
+		if (APSSlateLineGuard::IsDrawable(Points))
+		{
+			FSlateDrawElement::MakeLines(Out, Layer, Geometry.ToPaintGeometry(), Points, ESlateDrawEffect::None, Colour,
+				true, Thickness);
+		}
 	}
 
 	void Label(FSlateWindowElementList& Out, const int32 Layer, const FGeometry& Geometry, const FVector2D& Position,
@@ -1040,7 +1062,10 @@ FReply SAPSCivilizationMap::OnMouseButtonDown(const FGeometry& MyGeometry, const
 	bPanning = false;
 	PressPosition = MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition());
 	PressOffset = MapOffset;
-	return FReply::Handled().CaptureMouse(SharedThis(this));
+	// Rio 06.10 (review of the capture-lost fix): the second button of an overlapping press keeps the capture the map holds.
+	// Capturing again releases it first, so OnMouseCaptureLost would clear the press just made and the map would keep the
+	// capture for good (its button-up returns early without a press). The state above is set as before.
+	return HasMouseCapture() ? FReply::Handled() : FReply::Handled().CaptureMouse(SharedThis(this));
 }
 
 FReply SAPSCivilizationMap::OnMouseButtonUp(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
@@ -1076,6 +1101,7 @@ FReply SAPSCivilizationMap::OnMouseButtonUp(const FGeometry& MyGeometry, const F
 				List->AddSlot().AutoHeight().Padding(0.0f, 1.0f)
 				[
 					SNew(SButton)
+					.IsFocusable(!APSCivilizationMapPrivate::TerminalButtonsNoFocus())
 					.ButtonColorAndOpacity(APSUITheme::Retint(FLinearColor(0.03f, 0.10f, 0.13f, 1.0f)))
 					.ContentPadding(FMargin(14.0f, 5.0f))
 					.OnClicked_Lambda([WeakMap, Id]()
@@ -1177,6 +1203,14 @@ void SAPSCivilizationMap::OnMouseLeave(const FPointerEvent& MouseEvent)
 {
 	SLeafWidget::OnMouseLeave(MouseEvent);
 	HoverIndex = INDEX_NONE;
+}
+
+void SAPSCivilizationMap::OnMouseCaptureLost(const FCaptureLostEvent& CaptureLostEvent)
+{
+	// Rio 06.10 (audit: Alt-Tab during a drag; the next move panned without a held button), as SAPSStrategicMapView does.
+	bPressed = false;
+	bPanning = false;
+	SLeafWidget::OnMouseCaptureLost(CaptureLostEvent);
 }
 
 FCursorReply SAPSCivilizationMap::OnCursorQuery(const FGeometry& MyGeometry, const FPointerEvent& CursorEvent) const

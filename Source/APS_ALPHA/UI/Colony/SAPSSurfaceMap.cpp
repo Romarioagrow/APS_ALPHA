@@ -16,6 +16,7 @@
 #include "APS_ALPHA/Generation/APSWorldScapePlanetNoise.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
 #include "APS_ALPHA/UI/Style/APSMenuChrome.h"
+#include "APS_ALPHA/UI/Style/APSSlateLineGuard.h"
 #include "Async/Async.h"
 #include "Async/ParallelFor.h"
 #include "Engine/Texture2D.h"
@@ -1034,8 +1035,12 @@ void SAPSSurfaceMap::PaintNoSurvey(const FGeometry& Geometry, FSlateWindowElemen
 		double Right = 0.0;
 		if (Span(Y, Left, Right))
 		{
-			FSlateDrawElement::MakeLines(Elements, LayerId + 1, Geometry.ToPaintGeometry(),
-				TArray<FVector2D>{FVector2D(Left, Y), FVector2D(Right, Y)}, ESlateDrawEffect::None, Color, true, Thickness);
+			const TArray<FVector2D> ScanLinePoints{FVector2D(Left, Y), FVector2D(Right, Y)};
+			if (APSSlateLineGuard::IsDrawable(ScanLinePoints))
+			{
+				FSlateDrawElement::MakeLines(Elements, LayerId + 1, Geometry.ToPaintGeometry(),
+					ScanLinePoints, ESlateDrawEffect::None, Color, true, Thickness);
+			}
 		}
 	};
 	// Drifting scanlines, and a brighter sweep top to bottom every few seconds with a fading trail.
@@ -1141,7 +1146,10 @@ int32 SAPSSurfaceMap::OnPaint(const FPaintArgs& Args, const FGeometry& Geometry,
 			const double Angle = UE_TWO_PI * Step / Steps;
 			Points.Add(Centre + FVector2D(FMath::Cos(Angle), FMath::Sin(Angle)) * Radius);
 		}
-		FSlateDrawElement::MakeLines(Elements, Layer, Geometry.ToPaintGeometry(), Points, ESlateDrawEffect::None, Color, true, Thickness);
+		if (APSSlateLineGuard::IsDrawable(Points))
+		{
+			FSlateDrawElement::MakeLines(Elements, Layer, Geometry.ToPaintGeometry(), Points, ESlateDrawEffect::None, Color, true, Thickness);
+		}
 	};
 	const auto PushClip = [&](const FBox2D& Box)
 	{
@@ -1149,7 +1157,11 @@ int32 SAPSSurfaceMap::OnPaint(const FPaintArgs& Args, const FGeometry& Geometry,
 	};
 	const auto Line = [&](const FVector2D& From, const FVector2D& To, const FLinearColor& Color, const int32 Layer)
 	{
-		FSlateDrawElement::MakeLines(Elements, Layer, Geometry.ToPaintGeometry(), TArray<FVector2D>{From, To}, ESlateDrawEffect::None, Color, true, 1.0f);
+		const TArray<FVector2D> GridLinePoints{From, To};
+		if (APSSlateLineGuard::IsDrawable(GridLinePoints))
+		{
+			FSlateDrawElement::MakeLines(Elements, Layer, Geometry.ToPaintGeometry(), GridLinePoints, ESlateDrawEffect::None, Color, true, 1.0f);
+		}
 	};
 	// Rio 02.10 ("labels must not overlap"): a view's icons first, then its labels, the picked marker first, then the
 	// pilot, the colony, anomalies, stations, outposts and ships, each in the first free spot around its icon.
@@ -1406,7 +1418,7 @@ int32 SAPSSurfaceMap::OnPaint(const FPaintArgs& Args, const FGeometry& Geometry,
 			constexpr int32 Steps = 96;
 			const auto Flush = [&]()
 			{
-				if (Run.Num() > 1)
+				if (Run.Num() > 1 && APSSlateLineGuard::IsDrawable(Run))
 				{
 					FSlateDrawElement::MakeLines(Elements, LayerGrid, Geometry.ToPaintGeometry(), Run, ESlateDrawEffect::None, Color, true, 1.0f);
 				}
@@ -1583,9 +1595,13 @@ int32 SAPSSurfaceMap::OnPaint(const FPaintArgs& Args, const FGeometry& Geometry,
 		PlaceLabels(Asks, MapBox);
 	}
 	if (bClip) Elements.PopClip();
-	FSlateDrawElement::MakeLines(Elements, LayerFrame, Geometry.ToPaintGeometry(),
-		TArray<FVector2D>{MapBox.Min, FVector2D(MapBox.Max.X, MapBox.Min.Y), MapBox.Max, FVector2D(MapBox.Min.X, MapBox.Max.Y), MapBox.Min},
-		ESlateDrawEffect::None, APSUITheme::RetintHighlight(FLinearColor(0.45f, 0.75f, 0.9f, 0.55f)), true, 1.2f);
+	const TArray<FVector2D> MapFramePoints{MapBox.Min, FVector2D(MapBox.Max.X, MapBox.Min.Y), MapBox.Max, FVector2D(MapBox.Min.X, MapBox.Max.Y), MapBox.Min};
+	if (APSSlateLineGuard::IsDrawable(MapFramePoints))
+	{
+		FSlateDrawElement::MakeLines(Elements, LayerFrame, Geometry.ToPaintGeometry(),
+			MapFramePoints,
+			ESlateDrawEffect::None, APSUITheme::RetintHighlight(FLinearColor(0.45f, 0.75f, 0.9f, 0.55f)), true, 1.2f);
+	}
 	// How close the view is, and whether finer data is on its way.
 	if (bClip && !bUnknown)
 	{
@@ -1634,6 +1650,15 @@ FReply SAPSSurfaceMap::OnMouseButtonUp(const FGeometry& Geometry, const FPointer
 		SelectedLabel = Markers.IsValidIndex(Index) ? Markers[Index].Label : FString();
 	}
 	return FReply::Handled().ReleaseMouseCapture();
+}
+
+void SAPSSurfaceMap::OnMouseCaptureLost(const FCaptureLostEvent& CaptureLostEvent)
+{
+	// Rio 06.10 (audit: Alt-Tab or a focus steal during a drag left bDragging set: the next move turned the globe without a
+	// held button, and the idle spin never resumed), as SAPSStrategicMapView does. No click is picked here.
+	bDragging = false;
+	LastInputSeconds = FPlatformTime::Seconds();
+	SLeafWidget::OnMouseCaptureLost(CaptureLostEvent);
 }
 
 FReply SAPSSurfaceMap::OnMouseButtonDoubleClick(const FGeometry& Geometry, const FPointerEvent& Event)

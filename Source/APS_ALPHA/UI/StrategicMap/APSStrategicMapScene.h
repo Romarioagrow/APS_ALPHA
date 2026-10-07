@@ -99,6 +99,8 @@ public:
 	FVector GetFrameUp() const;
 	/** The home system's sphere (its room in the catalogue, else its outermost orbit), cm. */
 	double GetHomeRoomCm() const;
+	/** Rio 06.10: the sphere HOME SYSTEM frames: the home star(s), planets and moons (aps.Map.HomeSystemFrame), cm. */
+	double GetHomeSystemFrameCm() const;
 	/** A sphere round home holding its nearest few dozen catalogue neighbours, cm. */
 	double GetClusterFrameRadius() const;
 

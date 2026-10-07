@@ -1,7 +1,8 @@
+#if WITH_DEV_AUTOMATION_TESTS && WITH_EDITOR
+// Rio 06.10 (packaged build): editor-only material/texture APIs inside; game targets skip this file, editor automation is unchanged.
 #include "APSAtmosphereTailProbe.h"
 #include "Misc/AutomationTest.h"
 
-#if WITH_DEV_AUTOMATION_TESTS
 IMPLEMENT_SIMPLE_AUTOMATION_TEST(FAPSAtmosphereTailParserTest,
     "APS.Contracts.FrozenDescent.AtmosphereTail.Parser",
     EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)

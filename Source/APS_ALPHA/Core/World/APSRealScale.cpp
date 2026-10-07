@@ -7,6 +7,7 @@
 #include "APS_ALPHA/Actors/Tech/TechActor.h"
 #include "APS_ALPHA/Gameplay/Colony/APSColonyPlinth.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
+#include "APS_ALPHA/Pawns/Spaceships/APSShipHullComponent.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
 #include "Containers/Ticker.h"
 #include "Engine/Engine.h"
@@ -266,6 +267,13 @@ namespace APSRealScaleLocal
 				// thaw registers them again, where the actor then is.
 				Member->ForEachComponent<UPrimitiveComponent>(false, [&State](UPrimitiveComponent* Primitive)
 				{
+					// Rio 07.10 (aps.Ship.HullHold): a held hull body is inert and gets no transform sends, world shifts
+					// included; the actor's collision switch filters it out. Unregistering it would destroy it and the thaw
+					// would build it again in one synchronous InitBody, the freeze the hold exists to avoid.
+					if (const UAPSShipHullComponent* Hull = Cast<UAPSShipHullComponent>(Primitive); Hull && Hull->IsBodyHeld())
+					{
+						return;
+					}
 					if (Primitive->IsRegistered() && Primitive->IsPhysicsStateCreated())
 					{
 						State.Unregistered.Add(Primitive);

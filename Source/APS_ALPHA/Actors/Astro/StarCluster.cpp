@@ -1,6 +1,7 @@
 #include "StarCluster.h"
 #include "Star.h"
 #include "APS_ALPHA/Core/Enums/StarClusterType.h"
+#include "APS_ALPHA/Core/Rendering/APSStarCatalogueInstancesComponent.h"
 #include "APS_ALPHA/Core/Rendering/APSStarRenderStabilitySubsystem.h"
 #include "APS_ALPHA/Core/Rendering/APSStellarMaterialContract.h"
 #include "Misc/Crc.h"
@@ -10,7 +11,11 @@ AStarCluster::AStarCluster()
 {
     PrimaryActorTick.bCanEverTick = false;
 
-    StarMeshInstances = CreateDefaultSubobject<UHierarchicalInstancedStaticMeshComponent>(TEXT("StarMeshInstances"));
+    // Rio 06.10 (aps.Stars.CatalogueParallelGather): the catalogue's own HISM subclass, a HISM to everything that reads it
+    // (StarMeshInstances' type, BP_StarCluster's serialized mesh and custom floats); APSStarCatalogue::bSubclass false: the engine class.
+    StarMeshInstances = APSStarCatalogue::bSubclass
+        ? CreateDefaultSubobject<UHierarchicalInstancedStaticMeshComponent, UAPSStarCatalogueInstancesComponent>(TEXT("StarMeshInstances"))
+        : CreateDefaultSubobject<UHierarchicalInstancedStaticMeshComponent>(TEXT("StarMeshInstances"));
     RootComponent = Cast<USceneComponent>(StarMeshInstances);
 	// Stellar points use an additive material. Nanite does not support that blend
 	// mode, so make the fallback an invariant of the component rather than relying

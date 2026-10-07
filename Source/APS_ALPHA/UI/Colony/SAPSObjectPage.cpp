@@ -1,5 +1,6 @@
 #include "SAPSObjectPage.h"
 #include "APS_ALPHA/UI/Style/APSUITheme.h"
+#include "Widgets/Layout/SGridPanel.h"
 
 #include "SAPSSurfaceMap.h"
 #include "APS_ALPHA/Actors/Astro/APSBodyDesignation.h"
@@ -24,6 +25,7 @@
 #include "Brushes/SlateRoundedBoxBrush.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
+#include "HAL/IConsoleManager.h"
 #include "Styling/AppStyle.h"
 #include "Styling/CoreStyle.h"
 #include "Widgets/Images/SImage.h"
@@ -55,6 +57,17 @@ namespace APSObjectPagePrivate
 		// The default half-height rounding makes a circle of a square box.
 		static const FSlateRoundedBoxBrush Brush(FLinearColor::White);
 		return &Brush;
+	}
+
+	/**
+	 * Rio 06.10 (audit: a clicked object page button kept keyboard focus): aps.UI.TerminalButtonsNoFocus is registered with
+	 * the terminal's buttons (SAPSColonyTerminal.cpp) and looked up by name here; when it is not found or 0 the buttons stay
+	 * focusable (the previous path).
+	 */
+	bool TerminalButtonsNoFocus()
+	{
+		const IConsoleVariable* Variable = IConsoleManager::Get().FindConsoleVariable(TEXT("aps.UI.TerminalButtonsNoFocus"));
+		return Variable && Variable->GetInt() != 0;
 	}
 
 	/** A part's title: small and bold in its colour, a hairline under it. */
@@ -134,6 +147,8 @@ TSharedRef<SWidget> APSInfrastructureUI::FrameButton(TSharedRef<SWidget> Content
 	const TSharedRef<SButton> Button = SNew(SButton)
 		.ButtonStyle(FAppStyle::Get(), "NoBorder")
 		.ContentPadding(0.0f)
+		// Rio 06.10 (audit: focus stayed on the clicked button): aps.UI.TerminalButtonsNoFocus, 0 = focusable as before.
+		.IsFocusable(!APSObjectPagePrivate::TerminalButtonsNoFocus())
 		.OnClicked(OnClicked);
 	const TWeakPtr<SButton> WeakButton = Button;
 	Button->SetContent(
@@ -187,6 +202,8 @@ TSharedRef<SWidget> APSInfrastructureUI::FilledButton(const FText& Label, FOnCli
 		.ButtonStyle(FAppStyle::Get(), "NoBorder")
 		.ContentPadding(0.0f)
 		.IsEnabled(CanClick)
+		// Rio 06.10 (audit: focus stayed on the clicked button): aps.UI.TerminalButtonsNoFocus, 0 = focusable as before.
+		.IsFocusable(!APSObjectPagePrivate::TerminalButtonsNoFocus())
 		.OnClicked(OnClicked);
 	const TWeakPtr<SButton> WeakButton = Button;
 	Button->SetContent(
@@ -209,7 +226,10 @@ TSharedRef<SWidget> APSInfrastructureUI::FilledButton(const FText& Label, FOnCli
 		]
 		+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center).Padding(FMargin(14.0f, 8.0f))
 		[
-			SNew(STextBlock).Text(Label).Font(Font("Bold", 10)).Justification(ETextJustify::Center).AutoWrapText(true)
+			// Rio 06.10 ("some buttons have two lines"): one line on every button. A centred auto-wrapped label got no
+			// width on its first frame and stayed broken word by word.
+			SNew(STextBlock).Text(Label).Font(Font("Bold", 10)).Justification(ETextJustify::Center)
+			.OverflowPolicy(ETextOverflowPolicy::Ellipsis)
 			.RenderTransform(CapsCenterShift(Font("Bold", 10)))
 			.ColorAndOpacity_Lambda([CanClick]()
 			{
@@ -258,6 +278,8 @@ TSharedRef<SWidget> APSInfrastructureUI::ActionCell(const FAPSObjectAction& Acti
 	const TSharedRef<SButton> Button = SNew(SButton)
 		.ButtonStyle(FAppStyle::Get(), "NoBorder")
 		.ContentPadding(0.0f)
+		// Rio 06.10 (audit: focus stayed on the clicked button): aps.UI.TerminalButtonsNoFocus, 0 = focusable as before.
+		.IsFocusable(!APSObjectPagePrivate::TerminalButtonsNoFocus())
 		.IsEnabled_Lambda([Read, bCanRun]() { return bCanRun || Read().bUnderway; })
 		.OnClicked_Lambda([Read, OnClicked]()
 		{
@@ -305,18 +327,37 @@ TSharedRef<SWidget> APSInfrastructureUI::ActionCell(const FAPSObjectAction& Acti
 		]
 		+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Center).Padding(FMargin(14.0f, 8.0f))
 		[
-			SNew(STextBlock).Font(LabelFont).Justification(ETextJustify::Center).AutoWrapText(true)
-			.RenderTransform(CapsCenterShift(LabelFont))
-			.Text_Lambda([Read, Label]()
-			{
-				return Read().bUnderway ? FText::Format(LOCTEXT("UnderwayLabel", "{0}  {1}%"), Label,
-					APSUINumber::Number(FMath::RoundToInt(Read().Progress * 100.0f))) : Label;
-			})
-			.ColorAndOpacity_Lambda([Read, bCanRun]()
-			{
-				return FSlateColor(Read().bUnderway ? FLinearColor(0.96f, 0.98f, 1.0f, 1.0f)
-					: bCanRun ? APSChrome::OnAmber() : Muted());
-			})
+			// Rio 06.10 (audit: the ellipsis never drew under centred justification, and the % and 'YOURSELF' were cut
+			// mid-letter): the label takes what is left and ends in an ellipsis; the percentage has its own block, so it is
+			// never cut. Short labels stay centred (the box is only as wide as its text then).
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
+			[
+				SNew(STextBlock).Text(Label).Font(LabelFont).Justification(ETextJustify::Left)
+				.OverflowPolicy(ETextOverflowPolicy::Ellipsis)
+				.RenderTransform(CapsCenterShift(LabelFont))
+				.ColorAndOpacity_Lambda([Read, bCanRun]()
+				{
+					return FSlateColor(Read().bUnderway ? FLinearColor(0.96f, 0.98f, 1.0f, 1.0f)
+						: bCanRun ? APSChrome::OnAmber() : Muted());
+				})
+			]
+			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(8.0f, 0.0f, 0.0f, 0.0f)
+			[
+				SNew(STextBlock).Font(LabelFont)
+				.RenderTransform(CapsCenterShift(LabelFont))
+				.Text_Lambda([Read]()
+				{
+					return Read().bUnderway ? FText::Format(LOCTEXT("UnderwayPercent", "{0}%"),
+						APSUINumber::Number(FMath::RoundToInt(Read().Progress * 100.0f))) : FText::GetEmpty();
+				})
+				.ColorAndOpacity_Lambda([Read, bCanRun]()
+				{
+					return FSlateColor(Read().bUnderway ? FLinearColor(0.96f, 0.98f, 1.0f, 1.0f)
+						: bCanRun ? APSChrome::OnAmber() : Muted());
+				})
+				.Visibility_Lambda([Read]() { return Read().bUnderway ? EVisibility::Visible : EVisibility::Collapsed; })
+			]
 		]
 		// The action's own colour on the edge: navigation blue, the fleet's gold, a department's colour.
 		+ SOverlay::Slot()
@@ -827,25 +868,26 @@ void SAPSObjectPage::RefreshFields()
 		];
 		return;
 	}
+	// Rio 06.10 ("use the space, not always down in a column"): the label over its value, three to a row.
+	constexpr int32 Columns = 3;
+	const TSharedRef<SGridPanel> Grid = SNew(SGridPanel).FillColumn(0, 1.0f).FillColumn(1, 1.0f).FillColumn(2, 1.0f);
 	for (int32 Index = 0; Index < Fields.Num(); ++Index)
 	{
-		FieldsBox->AddSlot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)
+		Grid->AddSlot(Index % Columns, Index / Columns).Padding(FMargin(0.0f, 0.0f, 16.0f, 12.0f))
 		[
-			SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Top)
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight()
 			[
-				SNew(SBox).WidthOverride(150.0f)
-				[
-					SNew(STextBlock).Text(Fields[Index].Key).Font(Font("Bold", 9)).ColorAndOpacity(Muted())
-				]
+				SNew(STextBlock).Text(Fields[Index].Key).Font(Font("Bold", 9)).ColorAndOpacity(Muted())
 			]
-			+ SHorizontalBox::Slot().FillWidth(1.0f)
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 3.0f, 0.0f, 0.0f)
 			[
-				SNew(STextBlock).AutoWrapText(true).Font(Font("Bold", 11)).ColorAndOpacity(White())
+				SNew(STextBlock).AutoWrapText(true).Font(Font("Bold", 12)).ColorAndOpacity(White())
 				.Text_Lambda([this, Index]() { return Fields.IsValidIndex(Index) ? Fields[Index].Value : FText::GetEmpty(); })
 			]
 		];
 	}
+	FieldsBox->AddSlot().AutoHeight().Padding(0.0f, 4.0f, 0.0f, 0.0f)[Grid];
 }
 
 void SAPSObjectPage::CollectHere(const AActor* Object, TArray<FRelated>& OutRows) const
@@ -1247,10 +1289,13 @@ void SAPSObjectPage::RefreshActions()
 			const bool bCanRun = Action.bEnabled && static_cast<bool>(Action.Execute);
 			Ready += bCanRun ? 1 : 0;
 			// A dim button says why under it, one under way who is at it; every button's tooltip says what it does.
+			// Rio 06.10 (audit: a long label ends in an ellipsis): the tooltip starts with the whole label.
 			constexpr float CellWidth = 236.0f;
+			const FText CellTip = Action.Detail.IsEmpty() ? Action.Label
+				: FText::Format(LOCTEXT("ActionCellTip", "{0}\n{1}"), Action.Label, Action.Detail);
 			Cells->AddSlot()
 			[
-				SNew(SBox).WidthOverride(CellWidth).ToolTipText(Action.Detail)
+				SNew(SBox).WidthOverride(CellWidth).ToolTipText(CellTip)
 				[
 					APSInfrastructureUI::ActionCell(Action, FOnClicked::CreateSP(this, &SAPSObjectPage::RunAction, Action.Id), bCanRun,
 						CellWidth)

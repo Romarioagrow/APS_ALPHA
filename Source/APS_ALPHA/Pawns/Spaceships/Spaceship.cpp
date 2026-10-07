@@ -2,6 +2,7 @@
 #include "APS_ALPHA/UI/Hud/SAPSShipHud.h"
 #include "APS_ALPHA/UI/Style/APSUITheme.h"
 #include "APSM5HullSweepComponent.h"
+#include "APSShipHullComponent.h"
 #include "APS_ALPHA/Core/Controllers/GravityPlayerController.h"
 #include "APS_ALPHA/Core/Rendering/APSPreviewVisibility.h"
 #include "APS_ALPHA/UI/Style/APSUINumber.h"
@@ -30,6 +31,8 @@
 #include "Camera/CameraComponent.h"
 #include "Components/ArrowComponent.h"
 #include "Components/BoxComponent.h"
+#include "Components/HierarchicalInstancedStaticMeshComponent.h"
+#include "Components/InstancedStaticMeshComponent.h"
 #include "Components/PoseableMeshComponent.h"
 #include "Algo/BinarySearch.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -56,6 +59,7 @@
 #include "Rendering/DrawElements.h"
 #include "Styling/CoreStyle.h"
 #include "APS_ALPHA/Gameplay/Fleet/APSFleetCommand.h"
+#include "APS_ALPHA/UI/Colony/APSColonyTerminalSubsystem.h"
 #include "Fonts/FontMeasure.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Rendering/SlateRenderer.h"
@@ -75,6 +79,7 @@
 #include "Engine/CollisionProfile.h"
 #include "Containers/Ticker.h"
 #include "Misc/DelayedAutoRegister.h"
+#include "TimerManager.h"
 
 class SAPSShipNavigationOverlay final : public SLeafWidget
 {
@@ -195,6 +200,8 @@ namespace APSNavigationHud
 		float KeepOut{6.0f};
 		/** Limb ring of a body; 0 when the body is too large on screen for one. */
 		float RingRadius{0.0f};
+		/** Rio 06.10 (aps.Ship.HudSubPixelRings): the ring's centre, unrounded; Anchor itself stays on whole pixels. */
+		FVector2D RingCenter{FVector2D::ZeroVector};
 		double Distance{0.0};
 		bool bSelected{false};
 		/** Which card leads a shared one: stars and planets, then moons, other contacts, ships. */
@@ -1143,12 +1150,24 @@ namespace APSShipPerf
 	// Rio 06.10 ("20 fps in flight", and he hates freezes): with the flight proxy on by default, every time the pilot gets up
 	// the M5's 13.5k-shape body is built again in one frame (~300 ms in the restore log line). It must be built exactly once,
 	// already carrying its final profile and responses, and not at all for a world or a ship that is going away.
+	// Rio 06.10 afternoon (no regressions from the accepted base): never seen in a run; 0 = the base build's restore path.
 	TAutoConsoleVariable<int32> CVarHullRestoreOnce(
-		TEXT("aps.Ship.HullRestoreOnce"), 1,
+		TEXT("aps.Ship.HullRestoreOnce"), 0,
 		TEXT("Rio 06.10 (freeze when the pilot gets up): 1 gives a hull whose body left the scene in flight its profile, ")
 		TEXT("responses and kinematic state while it is still out, then builds the body once with them; a world being torn ")
 		TEXT("down or a ship being destroyed gets no body back at all. 0 restores profile, type and responses one call ")
 		TEXT("after another (each may build or re-filter the body), as before 06.10."));
+	// Rio 06.10 (review of the night's ship group): the proxy build switches the hull's overlap events off and the 61532ed6
+	// build never gave them back, so after the first flight every hull moved without them. With them on again, a move of the
+	// hull's own body updates its overlaps and the M5 hull sweep stands aside for the engine's body sweep (TryMoveHull
+	// bails on overlap events): a separate switch, so an A/B control can reproduce that build exactly.
+	// Rio 06.10 afternoon: default 0 = exactly the 61532ed6 build (overlaps stay off after the first flight; with them on,
+	// every move of the 13.5k-shape body walked its shapes for overlaps and the M5 sweep stood aside).
+	TAutoConsoleVariable<int32> CVarHullRestoreOverlaps(
+		TEXT("aps.Ship.HullRestoreOverlaps"), 0,
+		TEXT("Rio 06.10 (aps.Ship.HullRestoreOnce 1): 1 gives a restored hull its authored overlap events back (the flight ")
+		TEXT("proxy switches them off); 0 leaves them off after the first flight, as the 61532ed6 build did (set it together ")
+		TEXT("with aps.Ship.KeepHullOutWhileMoving 0 to reproduce that build's walk aboard a moving ship)."));
 	TAutoConsoleVariable<int32> CVarHullSceneLightingInFlight(
 		TEXT("aps.Ship.HullSceneLightingInFlight"), 2,
 		TEXT("2 (default since Rio's check on 29.09) takes a piloted ship out of the global distance field: that copy ")
@@ -1166,6 +1185,165 @@ namespace APSShipPerf
 		TEXT("1 widens the flight camera's field of view with speed (up to +12 deg, the camera before 29.09). Every ")
 		TEXT("frame of that widening re-sizes and re-uploads the full-scale star catalogue (APS_GameplayStellarView), ")
 		TEXT("which cost 6-8 ms per frame and 80-100 ms hitches while accelerating at power 3. 0 keeps the base FOV."));
+	// Rio 06.10 (collisions: "Codex's detailed collisions are good for walking, keep them while the ship stands; whenever it
+	// moves, fly on the primitive ones so ships do not pass through each other; the motion decides, not who sits in the seat").
+	// Walking aboard at speed cost 120 -> 40-60 fps: every character query and every move walked the M5's 13.5k shapes, and
+	// getting up froze 300-470 ms while that body was built again in flight.
+	// Rio 06.10 (audit: default 0): with aps.Ship.WalkOnShellAtSpeed 0 this is exactly the 61532ed6 collision path; the
+	// unpiloted take-out and the proximity rebuild (an unmeasured 330-440 ms freeze on fleet recall) stay off until tested.
+	// Rio 07.10 ("turn the fleet proxies on"; fleet take-off 49 -> 113 fps, flight beside it 103 -> 133 in fl-fly-fix-x2): on
+	// by default. With aps.Ship.HullHold 1 a fleet ship's body is held in the scene, inert, instead of destroyed, so its
+	// return is a teleport and a filter pass, not a build: no freeze when the fleet comes back, and a rested ship takes it
+	// back at once (no invisible proxy boxes left on parked ships). 0 is exactly the 61532ed6 collision path.
+	TAutoConsoleVariable<int32> CVarKeepHullOutWhileMoving(
+		TEXT("aps.Ship.KeepHullOutWhileMoving"), 1,
+		TEXT("Rio 07.10: default 1. A detailed hull (aps.Ship.DetailedHullShapes) moving without a pilot in the seat (a fleet ")
+		TEXT("unit under orders, the autopilot, the world flow or owed travel) flies on its proxy boxes; its own body is held ")
+		TEXT("in the scene, inert (aps.Ship.HullHold 1), or taken out and built again (HullHold 0). The body comes back once ")
+		TEXT("the ship has rested (aps.Ship.HullRestoreRestSeconds), at once for a walker aboard or the player on foot within ")
+		TEXT("its radius (aps.Ship.HullRestoreOnFootInside). 0: fleet units keep their body in flight and only the seated ")
+		TEXT("pilot's flight uses the boxes, as in the 61532ed6 build."));
+	// Rio 06.10 afternoon (regression: "got up at speed on M_P2_03: no gravity, I fall through the floor"): the walk shell
+	// (M5HullShellCollision, ShellCol) is the OUTER hull; the decks inside are the root hull's own walk UCX. On M_P2_02 the
+	// shell happens to carry the deck, on M_P2_03 it does not, so a walker left on the shell alone fell. Until the walk body
+	// is split from the 13.5k-shape hull (interior UCX as its own query body), a walker gets the hull's own body back.
+	TAutoConsoleVariable<int32> CVarWalkOnShellAtSpeed(
+		TEXT("aps.Ship.WalkOnShellAtSpeed"), 0,
+		TEXT("1 (TEST ONLY, broken): a walker aboard a moving ship is left on the walk shell while the hull's own body stays out; ")
+		TEXT("the gravity probe (a Visibility sweep) finds no floor on the shell on any ship tested, so the walker turns ")
+		TEXT("weightless and falls through the decks (Rio 06.10, M_P2_03; q02 M_P2_02 too). 0: a walker gets the hull's own body ")
+		TEXT("back, as before 06.10; ")
+		TEXT("unpiloted moving ships without walkers still fly on their proxy boxes (aps.Ship.KeepHullOutWhileMoving)."));
+	TAutoConsoleVariable<float> CVarHullRestoreMaxSpeedCm(
+		TEXT("aps.Ship.HullRestoreMaxSpeedCm"), 100.0f,
+		TEXT("Rio 06.10 (aps.Ship.KeepHullOutWhileMoving): a ship without a pilot faster than this (cm/s) moves."));
+	TAutoConsoleVariable<float> CVarHullRestoreRestSeconds(
+		TEXT("aps.Ship.HullRestoreRestSeconds"), 1.0f,
+		TEXT("Rio 06.10 (aps.Ship.KeepHullOutWhileMoving): seconds at rest, without a world flow or owed travel, before a ship ")
+		TEXT("kept on its proxy boxes may get its hull's own body back."));
+	TAutoConsoleVariable<int32> CVarHullRestoreWithWalker(
+		TEXT("aps.Ship.HullRestoreWithWalker"), 0,
+		TEXT("Rio 06.10 (aps.Ship.KeepHullOutWhileMoving): 0 builds a rested ship's body when the walker steps off it (the freeze ")
+		TEXT("of the build moves from getting up to leaving the ship); 1 builds it after the rest with the walker still aboard."));
+	TAutoConsoleVariable<float> CVarHullRestoreNearM(
+		TEXT("aps.Ship.HullRestoreNearM"), 50.0f,
+		TEXT("Rio 06.10 (aps.Ship.KeepHullOutWhileMoving): a rested ship with nobody aboard (a fleet unit back from an order, a ")
+		TEXT("ship just left) gets its body back once the player's character on foot is within its radius + this many metres; far ")
+		TEXT("away it stays on its proxy boxes (no build nobody walks on). 0: right after the rest. Rio 07.10: only for a body ")
+		TEXT("that is built again (aps.Ship.HullHold 0); a held body comes back right after the rest."));
+	// Rio 07.10 ("turn the fleet proxies on", without the freeze): UE 5.4 builds a body in one synchronous InitBody over all
+	// its shapes (~22 us a shape: 297-675 ms per return of the M02's 13.5k in the 06.10 runs, still ~20-60 ms after Codex's
+	// phase 1), it cannot be sliced or made async. A filter change that keeps the physics bit and one teleport only walk the
+	// shapes (FBodyInstance::SetCollisionEnabled rebuilds only when that bit flips), so the body stays in the scene.
+	TAutoConsoleVariable<int32> CVarHullHold(
+		TEXT("aps.Ship.HullHold"), 1,
+		TEXT("Rio 07.10 (fleet on proxies without the restore freeze): 1: a detailed hull flying on its proxy boxes with nobody ")
+		TEXT("in the seat keeps its body in the physics scene, held where the ship began to move and inert (PhysicsOnly, every ")
+		TEXT("channel ignored; its moves and world shifts not sent to physics, UAPSShipHullComponent); its return is one ")
+		TEXT("teleport and its authored filters, no build. 2: the seated pilot's flight holds it too (no build when the pilot ")
+		TEXT("gets up). 0: the body leaves the scene and is built again, as before 07.10."));
+	TAutoConsoleVariable<int32> CVarHullRestoresPerFrame(
+		TEXT("aps.Ship.HullRestoresPerFrame"), 1,
+		TEXT("Rio 07.10 (fleet on proxies): at most this many rested ships get their hull's body back in one frame; the others ")
+		TEXT("retry at their next 0.1 s check (a fleet back from one order rests together). A walker aboard never waits. 0: no limit."));
+	TAutoConsoleVariable<float> CVarHullRestoreSpacingSeconds(
+		TEXT("aps.Ship.HullRestoreSpacingSeconds"), 0.75f,
+		TEXT("Rio 07.10 (fleet on proxies, audit): a body that has to be BUILT again (aps.Ship.HullHold 0, or a hull that cannot ")
+		TEXT("be held) waits until this many real seconds have passed since the last build ended (a pilot getting up included), ")
+		TEXT("so two builds never land in one hitch. A walker aboard never waits. 0: no spacing."));
+	TAutoConsoleVariable<int32> CVarHullRestoreOnFootInside(
+		TEXT("aps.Ship.HullRestoreOnFootInside"), 1,
+		TEXT("Rio 07.10 (fleet on proxies, audit): 1 gives a ship flying on its boxes its body back whenever the player's ")
+		TEXT("character on foot is within its radius, moving or not (a fleet unit arriving on top of him, a ship drifting past): ")
+		TEXT("boxes wider than the hull would push him away. 0: only after the rest, as on 06.10."));
+	TAutoConsoleVariable<float> CVarHullTakeOutClearM(
+		TEXT("aps.Ship.HullTakeOutClearM"), 30.0f,
+		TEXT("Rio 07.10 (fleet on proxies, audit; with aps.Ship.HullRestoreOnFootInside): a moving ship without a pilot leaves ")
+		TEXT("its body to the boxes only once the player on foot is farther than its radius + this many metres, so walking ")
+		TEXT("along the radius does not swap them back and forth."));
+	// Rio 07.10 ("fix the ship stuck on the pad too"): a proxy box that STARTS inside something is only let go when the move
+	// leaves along the overlap's own push-out direction (the engine's rule). For a box sunk through a thin plate (the colony
+	// pad's 0.5 m deck, after the nose was pitched up on the pad) that direction points down through the plate, so every move
+	// up counted as "into" it and the ship stayed pinned for good; nothing ever pushed it out.
+	TAutoConsoleVariable<int32> CVarProxyUnstick(
+		TEXT("aps.Ship.ProxyUnstick"), 1,
+		TEXT("Rio 07.10 (ship pinned on the colony pad): 1: a ship flying on its proxy boxes that starts a move already inside ")
+		TEXT("something under it (the ground, a pad; never a ceiling, a ship or a pawn) climbs out of it when the move goes 30 deg ")
+		TEXT("or more above the horizon of a planet's or a moon's gravity and the overlap is deeper than ")
+		TEXT("aps.Ship.ProxyUnstickDepthCm; what is ahead of that box still blocks. Any other move held by such an overlap slides ")
+		TEXT("along it (never deeper). Hits ahead of the ship (not overlaps) block as before. 0: the overlap holds the ship, as before."));
+	TAutoConsoleVariable<float> CVarProxyUnstickDepthCm(
+		TEXT("aps.Ship.ProxyUnstickDepthCm"), 50.0f,
+		TEXT("Rio 07.10 (aps.Ship.ProxyUnstick): how deep (cm, at least 1) a proxy box must already be inside something for a ")
+		TEXT("move up to climb out of it; resting and grazing contacts are shallower and stay as they were. Depth and push-out ")
+		TEXT("direction of a triangle-mesh body come from its first overlapped triangle (engine)."));
+	TAutoConsoleVariable<int32> CVarInstancedResend(
+		TEXT("aps.Ship.InstancedResend"), 1,
+		TEXT("Rio 07.10 (GPUScene.cpp:367 ensure, a 0.8-1.2 s freeze in the editor, ceiling fixtures left behind the hull): UE 5.4 ")
+		TEXT("re-sends an instanced mesh's instances a new primitive transform only when it changed by more than 1e-4 since ")
+		TEXT("the last frame while its scene proxy takes every change. 1: a ship's own plain instanced meshes re-send all ")
+		TEXT("their instances whenever the hull's render matrix changed at all, in the same end-of-frame update. 0: as before."));
+	// Rio 07.10: one budget for the restores of all ships in a frame (aps.Ship.HullRestoresPerFrame).
+	bool TakeHullRestoreBudget()
+	{
+		static uint64 Frame = 0;
+		static int32 Count = 0;
+		if (Frame != GFrameCounter)
+		{
+			Frame = GFrameCounter;
+			Count = 0;
+		}
+		const int32 Budget = CVarHullRestoresPerFrame.GetValueOnGameThread();
+		if (Budget > 0 && Count >= Budget)
+		{
+			return false;
+		}
+		++Count;
+		return true;
+	}
+	// Rio 07.10 (aps.Ship.HullRestoreSpacingSeconds): when the last body build of this world ended, in real time (a hitch
+	// lets world time jump by up to 0.4 s and looping timers catch up several calls in one frame).
+	TWeakObjectPtr<const UWorld> GLastHullBuildWorld;
+	double GLastHullBuildEndSeconds = -1.0e9;
+	TAutoConsoleVariable<int32> CVarSweepPrecheckFirst(
+		TEXT("aps.Ship.SweepPrecheckFirst"), 1,
+		TEXT("Rio 06.10 (perf R2): 1 tests a swept move with the hull's bounding sphere (aps.Ship.SweepPrecheck) before the M5 ")
+		TEXT("hull sweep, so a clear path moves without walking the hull's shapes; 0 runs the M5 sweep first, as before."));
+	TAutoConsoleVariable<int32> CVarHudSubPixelRings(
+		TEXT("aps.Ship.HudSubPixelRings"), 1,
+		TEXT("Rio 06.10 (\"the planet rings jitter while the nose turns\"): 1 sizes the limb rings and the course brackets from ")
+		TEXT("unrounded projections and draws the rings around the unrounded centre without pixel snapping (cards and text stay ")
+		TEXT("on whole pixels); 0: whole-pixel rings as before (their radius flipped by ~1.15 px a frame during a turn)."));
+	/**
+	 * Rio 06.10 (offscreen q10 crash, "Assertion failed: RenderBatch.NumIndices > 0"): Slate's antialiased line builds no
+	 * geometry for a zero-length or non-finite segment, and a line element alone in its render batch then reaches the
+	 * renderer with no indices and asserts. A course target projected to NaN, or to coordinates a float cannot resolve,
+	 * made its brackets exactly that while the autopilot set the course. Such a polyline is invisible: it is not drawn.
+	 */
+	bool IsDrawableHudLine(const TArray<FVector2D>& Points)
+	{
+		bool bHasLength = false;
+		for (int32 Index = 0; Index < Points.Num(); ++Index)
+		{
+			if (!FMath::IsFinite(Points[Index].X) || !FMath::IsFinite(Points[Index].Y))
+			{
+				return false;
+			}
+			bHasLength = bHasLength || (Index > 0
+				&& (FVector2f(Points[Index]) - FVector2f(Points[Index - 1])).SizeSquared() > 1.0e-4f);
+		}
+		return bHasLength;
+	}
+	TAutoConsoleVariable<int32> CVarFlightPathMarker(
+		TEXT("aps.Ship.FlightPathMarker"), 1,
+		TEXT("Rio 06.10 (\"show where the ship really flies, whatever the camera does\"): 1 draws a small ring with a centre dot ")
+		TEXT("where the ship's velocity points (the nose at a standstill) and a faint tick at the nose when they part by more ")
+		TEXT("than 2 degrees; 0: no marker, as before."));
+	TAutoConsoleVariable<int32> CVarCameraAlignNose(
+		TEXT("aps.Ship.CameraAlignNose"), 0,
+		TEXT("Rio 06.10 (\"aiming by the screen centre points 12 degrees below the nose\"): 1 keeps the chase camera where it is, ")
+		TEXT("above and behind, but looks parallel to the ship's nose (the ship sits lower in the frame); 0: the accepted ")
+		TEXT("framing, looking 12 degrees down at the ship."));
 
 	enum ESection : int32 { Environment, Navigation, Move, Rotation, Stabilize, Camera, Hud, Count };
 	const TCHAR* const SectionNames[Count] = {TEXT("env"), TEXT("nav"), TEXT("move"), TEXT("rot"),
@@ -1207,7 +1385,15 @@ namespace APSShipPerf
 
 ASpaceship::ASpaceship()
 {
-	SpaceshipHull = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("SpaceshipHull"));
+	// Rio 07.10 (fleet on proxies without the restore freeze): the root hull can hold its physics body (aps.Ship.HullHold).
+	if constexpr (APSShipHull::bSubclass)
+	{
+		SpaceshipHull = CreateDefaultSubobject<UAPSShipHullComponent>(TEXT("SpaceshipHull"));
+	}
+	else
+	{
+		SpaceshipHull = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("SpaceshipHull"));
+	}
 	RootComponent = SpaceshipHull;
 	SpaceshipHull->SetMobility(EComponentMobility::Movable);
 	SpaceshipHull->SetEnableGravity(false);
@@ -1395,8 +1581,68 @@ void ASpaceship::BeginPlay()
 	// Parked fleet actors do not scan the universe. The possessed ship's navigation component owns that work.
 	SetActorTickEnabled(IsValid(Pilot) || bEngineRunning);
 	UpdateCameraArmTicking();
+	// Rio 06.10 (collision by motion): a ship with a detailed hull watches its own motion, also parked and without a tick
+	// (a fleet unit is moved by the fleet's orders, not by its own tick).
+	bHullGoingAway = false;
+	StartHullMotionWatch();
+	// Rio 07.10 (aps.Ship.InstancedResend): the ship's own plain instanced meshes (the ceiling fixtures of M_P2_02/03/04)
+	// get their instances re-sent whenever the hull moved at all (see ResendInstancedRiders).
+	TInlineComponentArray<UInstancedStaticMeshComponent*> Instanced(this);
+	for (UInstancedStaticMeshComponent* Mesh : Instanced)
+	{
+		if (Mesh && !Mesh->IsA<UHierarchicalInstancedStaticMeshComponent>())
+		{
+			InstancedRiders.Add({Mesh, FMatrix::Identity, false});
+		}
+	}
+	if (!InstancedRiders.IsEmpty() && !InstancedResendHandle.IsValid())
+	{
+		InstancedResendHandle = FWorldDelegates::OnWorldPreSendAllEndOfFrameUpdates.AddUObject(this, &ASpaceship::ResendInstancedRiders);
+	}
 
 	//ComputeProximity();
+}
+
+void ASpaceship::ResendInstancedRiders(UWorld* World)
+{
+	// Rio 07.10 ("ships freeze": GPUScene.cpp:367 ensure, 0.8-1.2 s the first time in the editor; fixtures left behind the
+	// hull): UE 5.4 sends an ISM's instances a new primitive transform only when it changed by more than 1e-4 since the
+	// last frame (ISMInstanceDataManager.cpp:651) while the scene proxy takes every change, so a hull that turns or creeps
+	// by tiny steps leaves its instances behind until the gap trips the ensure. Each change of the render matrix now marks
+	// all instances changed, so the end-of-frame flush sends them against this frame's transform (no render-state rebuild).
+	if (World != GetWorld() || APSShipPerf::CVarInstancedResend.GetValueOnGameThread() == 0)
+	{
+		return;
+	}
+	for (FAPSInstancedRider& Rider : InstancedRiders)
+	{
+		UInstancedStaticMeshComponent* Mesh = Rider.Mesh.Get();
+		if (!IsValid(Mesh) || !Mesh->SceneProxy || Mesh->PerInstanceSMData.IsEmpty() || Mesh->IsCollisionEnabled()
+			|| Mesh->IsNavigationRelevant())
+		{
+			Rider.bHasLast = false;
+			continue;
+		}
+		const FMatrix Now = Mesh->GetRenderMatrix();
+		if (Rider.bHasLast && !Now.Equals(Rider.Last, 0.0))
+		{
+			TArray<FMatrix, TInlineAllocator<64>> Exact;
+			TArray<FTransform, TInlineAllocator<64>> Local;
+			for (const FInstancedStaticMeshInstanceData& Instance : Mesh->PerInstanceSMData)
+			{
+				Exact.Add(Instance.Transform);
+				Local.Add(FTransform(Instance.Transform));
+			}
+			Mesh->BatchUpdateInstancesTransforms(0, TArrayView<const FTransform>(Local), false, false, false);
+			// The matrices stay bit-exact (the transform round trip could move the last bits); the flush reads them.
+			for (int32 Index = 0; Index < Exact.Num() && Index < Mesh->PerInstanceSMData.Num(); ++Index)
+			{
+				Mesh->PerInstanceSMData[Index].Transform = Exact[Index];
+			}
+		}
+		Rider.Last = Now;
+		Rider.bHasLast = true;
+	}
 }
 
 UPrimitiveComponent* ASpaceship::GetPrimaryHullComponent() const
@@ -2252,13 +2498,21 @@ void ASpaceship::RebuildSimpleHullCollision()
 		Box->SetCollisionResponseToAllChannels(ECR_Block);
 		Box->SetGenerateOverlapEvents(false);
 		Box->SetCanEverAffectNavigation(false);
+		// Rio 07.10 (aps.Ship.HullHold, review): a box never welds into the hull's body (a shape component auto-welds when its
+		// parent starts simulating): it would sit in the held body at the take-off place instead of flying with the ship.
+		Box->BodyInstance.bAutoWeld = false;
 		AddInstanceComponent(Box);
 		Box->RegisterComponent();
 		GeneratedCollisionBoxes.Add(Box);
 	}
 
 	// The imported body is never queried after the proxy hull exists.
-	MainMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	// Rio 07.10 (aps.Ship.HullHold): a held body stays in the scene (SetHullBodyHeld makes it inert); NoCollision would
+	// destroy it (the physics bit flips) and its return would build it again.
+	if (!(bBuildingFlightCollisionProxy && bHullBodyHeld))
+	{
+		MainMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	}
 	MainMesh->SetGenerateOverlapEvents(false);
 	UE_LOG(LogTemp, Verbose, TEXT("[APS.Ships] %s generated %d low-cost collision slices for %s"),
 		*GetName(), GeneratedCollisionBoxes.Num(), *GetNameSafe(MainMesh));
@@ -2733,8 +2987,39 @@ void ASpaceship::ApplyEnvironmentForces(float DeltaTime)
 	}
 }
 
+void ASpaceship::UpdateCameraNoseAlignment()
+{
+	if (!CameraComponent)
+	{
+		return;
+	}
+	// Rio 06.10 ("aiming by the screen centre points 12 degrees below the nose"): the arm stands 12 degrees above the flight
+	// axis (ConfigureCameraFromHull) and the camera looks down along it. Turned back up by the same 12 degrees on the arm's
+	// end, the camera keeps its place above and behind and looks parallel to the nose; the ship sits lower in the frame.
+	// A ground vehicle keeps its own camera.
+	const bool bAlign = APSShipPerf::CVarCameraAlignNose.GetValueOnGameThread() != 0 && !IsGroundVehicle();
+	if (bAlign == bCameraAlignNoseApplied)
+	{
+		return;
+	}
+	if (bAlign)
+	{
+		CameraAlignBaseRotation = CameraComponent->GetRelativeRotation();
+		CameraComponent->SetRelativeRotation(FRotator(12.0, 0.0, 0.0).Quaternion() * CameraAlignBaseRotation.Quaternion());
+	}
+	else
+	{
+		CameraComponent->SetRelativeRotation(CameraAlignBaseRotation);
+	}
+	bCameraAlignNoseApplied = bAlign;
+}
+
 void ASpaceship::UpdateAdaptiveFlightCamera(float DeltaTime)
 {
+	if (IsValid(Pilot))
+	{
+		UpdateCameraNoseAlignment();
+	}
 	if (!bUseAdaptiveFlightCamera || !SpringArmComponent || !IsValid(Pilot))
 	{
 		return;
@@ -2973,6 +3258,9 @@ void ASpaceship::SetFlightCollisionOptimization(bool bEnabled)
 		OriginalHullCollisionEnabled = PrimaryHull->GetCollisionEnabled();
 		OriginalHullCollisionResponses = PrimaryHull->GetCollisionResponseToChannels();
 		bOriginalHullSimulatesPhysics = PrimaryHull->IsSimulatingPhysics();
+		bOriginalHullGenerateOverlapEvents = PrimaryHull->GetGenerateOverlapEvents();
+		// Rio 07.10 (aps.Ship.HullHold): decided once per take-out; the return undoes exactly what was done.
+		bHullBodyHeld = bDetailedHullProxy && ShouldHoldHullBody(*PrimaryHull);
 		bGenerateSimpleHullCollision = true;
 		bBuildingFlightCollisionProxy = true;
 		RebuildSimpleHullCollision();
@@ -2981,7 +3269,15 @@ void ASpaceship::SetFlightCollisionOptimization(bool bEnabled)
 		ActiveClassPreset.bUsesPhysicalImpulse = false;
 		bFlightCollisionOptimizationActive = true;
 		ApplyEngineState();
-		if (bDetailedHullProxy && PrimaryHull->IsPhysicsStateCreated())
+		if (bHullBodyHeld)
+		{
+			const double HoldStart = FPlatformTime::Seconds();
+			SetHullBodyHeld(true);
+			UE_LOG(LogTemp, Log, TEXT("[APS.Ships] %s flies on %d proxy boxes; its hull's %d collision shapes stay in the scene, ")
+				TEXT("held and inert (%.2f ms)"), *GetName(), GeneratedCollisionBoxes.Num(), HullBodySetup->AggGeom.GetElementCount(),
+				(FPlatformTime::Seconds() - HoldStart) * 1000.0);
+		}
+		else if (bDetailedHullProxy && PrimaryHull->IsPhysicsStateCreated())
 		{
 			// Without collision the body stays in the scene, and so does the walk over its shapes on every move.
 			PrimaryHull->DestroyPhysicsState();
@@ -2992,7 +3288,21 @@ void ASpaceship::SetFlightCollisionOptimization(bool bEnabled)
 	else if (!bEnabled && bFlightCollisionOptimizationActive)
 	{
 		const double RestoreStart = FPlatformTime::Seconds();
-		const bool bHullBodyWasOut = !PrimaryHull->IsPhysicsStateCreated();
+		const bool bWasHeld = bHullBodyHeld;
+		const bool bHullBodyWasOut = !bWasHeld && !PrimaryHull->IsPhysicsStateCreated();
+		const bool bRestoreOnce = APSShipPerf::CVarHullRestoreOnce.GetValueOnGameThread() != 0;
+		bHullRestorePending = false;
+		bProxyBoxesPassWalkers = false;
+		HullRestSeconds = 0.0f;
+		if (bRestoreOnce && IsHullGoingAway())
+		{
+			// Rio 06.10 (aps.Ship.HullRestoreOnce): a ship being destroyed or a world being torn down gets no body back
+			// (q01-far-b: 344 ms spent rebuilding the M5's body at the very end of the run).
+			bFlightCollisionOptimizationActive = false;
+			bHullBodyHeld = false;
+			UE_LOG(LogTemp, Log, TEXT("[APS.Ships] %s is going away: its hull's body is not built again"), *GetName());
+			return;
+		}
 		for (UBoxComponent* Box : GeneratedCollisionBoxes)
 		{
 			if (IsValid(Box))
@@ -3001,23 +3311,507 @@ void ASpaceship::SetFlightCollisionOptimization(bool bEnabled)
 			}
 		}
 		GeneratedCollisionBoxes.Reset();
-		PrimaryHull->SetCollisionProfileName(OriginalHullCollisionProfile);
-		PrimaryHull->SetCollisionEnabled(OriginalHullCollisionEnabled);
-		PrimaryHull->SetCollisionResponseToChannels(OriginalHullCollisionResponses);
-		PrimaryHull->SetSimulatePhysics(false);
-		if (!PrimaryHull->IsPhysicsStateCreated())
+		UStaticMeshComponent* StaticHull = Cast<UStaticMeshComponent>(PrimaryHull);
+		if (bWasHeld)
 		{
-			PrimaryHull->RecreatePhysicsState();
+			// Rio 07.10 (aps.Ship.HullHold): the body never left the scene: one teleport and its authored filters, no build.
+			SetHullBodyHeld(false);
+		}
+		else if (bRestoreOnce && bHullBodyWasOut && StaticHull)
+		{
+			// Rio 06.10 (aps.Ship.HullRestoreOnce, the freeze when the pilot gets up): the component setters below each check
+			// the physics state, and the first one that turns collision on builds the 13.5k-shape body before the rest of its
+			// settings are in. While the body is out, the body instance takes the profile, responses and kinematic state as
+			// plain data (no shapes to filter), and the body is built once, already final. The overlap events the proxy build
+			// switched off come back as authored (aps.Ship.HullRestoreOverlaps).
+			FBodyInstance& HullBody = StaticHull->BodyInstance;
+			HullBody.SetInstanceSimulatePhysics(false);
+			if (APSShipPerf::CVarHullRestoreOverlaps.GetValueOnGameThread() != 0)
+			{
+				StaticHull->SetGenerateOverlapEvents(bOriginalHullGenerateOverlapEvents);
+			}
+			HullBody.SetCollisionProfileName(OriginalHullCollisionProfile);
+			HullBody.SetResponseToChannels(OriginalHullCollisionResponses);
+			if (HullBody.GetCollisionEnabled(false) != OriginalHullCollisionEnabled)
+			{
+				// Turning physics on here builds the body (FBodyInstance::SetCollisionEnabled), with the settings above.
+				HullBody.SetCollisionEnabled(OriginalHullCollisionEnabled, false);
+			}
+			if (!StaticHull->IsPhysicsStateCreated())
+			{
+				StaticHull->RecreatePhysicsState();
+			}
+			StaticHull->ClearSkipUpdateOverlaps();
+		}
+		else
+		{
+			PrimaryHull->SetCollisionProfileName(OriginalHullCollisionProfile);
+			PrimaryHull->SetCollisionEnabled(OriginalHullCollisionEnabled);
+			PrimaryHull->SetCollisionResponseToChannels(OriginalHullCollisionResponses);
+			PrimaryHull->SetSimulatePhysics(false);
+			if (!PrimaryHull->IsPhysicsStateCreated())
+			{
+				PrimaryHull->RecreatePhysicsState();
+			}
 		}
 		bFlightCollisionOptimizationActive = false;
 		ConfigureFromHull();
+		if (!IsValid(Pilot) && !IsPlayerControlled())
+		{
+			// Rio 07.10 (fleet audit): a restore with nobody at the helm (the motion timer) keeps the hull kinematic, as the band
+			// model's EnsureKinematicHull does every tick: SetSimulatePhysics(true) would detach the ship from its berth or
+			// target (UE 5.4 FBodyInstance::SetInstanceSimulatePhysics). The pilot getting up still has both here (UnPossessed).
+			ActiveClassPreset.bUsesPhysicalImpulse = false;
+		}
 		ApplyEngineState();
 		if (bHullBodyWasOut)
 		{
-			UE_LOG(LogTemp, Log, TEXT("[APS.Ships] %s: the hull's own collision is back (%.1f ms, body %s)"), *GetName(),
-				(FPlatformTime::Seconds() - RestoreStart) * 1000.0, PrimaryHull->IsPhysicsStateCreated() ? TEXT("in") : TEXT("OUT"));
+			// Rio 07.10 (aps.Ship.HullRestoreSpacingSeconds): a build ended now, the pilot's own included.
+			APSShipPerf::GLastHullBuildWorld = GetWorld();
+			APSShipPerf::GLastHullBuildEndSeconds = FPlatformTime::Seconds();
+		}
+		if (bHullBodyWasOut || bWasHeld)
+		{
+			UE_LOG(LogTemp, Log,
+				TEXT("[APS.Ships] %s: the hull's own collision is back (%.1f ms, body %s, %s; profile %s (authored %s), enabled %d (authored %d), responses %s, overlaps %d)"),
+				*GetName(), (FPlatformTime::Seconds() - RestoreStart) * 1000.0,
+				PrimaryHull->IsPhysicsStateCreated() ? TEXT("in") : TEXT("OUT"),
+				bWasHeld ? TEXT("held: teleport + filters") : bRestoreOnce && StaticHull ? TEXT("one build") : TEXT("setter chain"),
+				*PrimaryHull->GetCollisionProfileName().ToString(), *OriginalHullCollisionProfile.ToString(),
+				static_cast<int32>(PrimaryHull->GetCollisionEnabled()), static_cast<int32>(OriginalHullCollisionEnabled),
+				PrimaryHull->GetCollisionResponseToChannels() == OriginalHullCollisionResponses ? TEXT("as authored") : TEXT("CHANGED"),
+				PrimaryHull->GetGenerateOverlapEvents() ? 1 : 0);
 		}
 	}
+}
+
+bool ASpaceship::IsHullGoingAway() const
+{
+	const UWorld* World = GetWorld();
+	return bHullGoingAway || IsActorBeingDestroyed() || !World || World->bIsTearingDown || IsEngineExitRequested();
+}
+
+bool ASpaceship::ShouldHoldHullBody(const UPrimitiveComponent& PrimaryHull) const
+{
+	// Rio 07.10 (aps.Ship.HullHold): only the root hull mesh can stop following its moves, and only a body whose physics bit
+	// stays on (QueryAndPhysics -> PhysicsOnly) changes without a build (UE 5.4 FBodyInstance::SetCollisionEnabled); a
+	// skeletal or query-only hull, or one frozen far away (APSRealScale: actor collision off), takes the old path.
+	const int32 Mode = APSShipPerf::CVarHullHold.GetValueOnGameThread();
+	const bool bSeated = IsValid(Pilot) || IsPlayerControlled();
+	if (!(Mode > 0 && (Mode >= 2 || !bSeated) && PrimaryHull.IsA<UAPSShipHullComponent>() && GetActorEnableCollision()
+		&& PrimaryHull.IsRegistered() && PrimaryHull.IsPhysicsStateCreated()
+		&& CollisionEnabledHasPhysics(PrimaryHull.BodyInstance.GetCollisionEnabled(false)) && !IsHullGoingAway()))
+	{
+		return false;
+	}
+	// Review: a child welded into the hull's body keeps its own blocking filters there and would stay behind with the held
+	// body; such a ship takes the old path.
+	TInlineComponentArray<UPrimitiveComponent*> Primitives(this);
+	for (const UPrimitiveComponent* Primitive : Primitives)
+	{
+		if (Primitive && Primitive != &PrimaryHull && Primitive->BodyInstance.WeldParent == &PrimaryHull.BodyInstance)
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+void ASpaceship::SetHullBodyHeld(const bool bHold)
+{
+	UAPSShipHullComponent* Hull = Cast<UAPSShipHullComponent>(GetPrimaryHullComponent());
+	if (!Hull)
+	{
+		bHullBodyHeld = false;
+		return;
+	}
+	if (bHold)
+	{
+		// Stops following first, then inert in one filter pass: PhysicsOnly takes every shape out of queries, ignoring every
+		// channel takes it out of the simulation's pairs; the physics bit stays, so nothing is destroyed or built.
+		Hull->SetBodyHeld(true);
+		FBodyInstance& Body = Hull->BodyInstance;
+		Body.SetCollisionEnabled(ECollisionEnabled::PhysicsOnly, false);
+		if (!Body.SetResponseToAllChannels(ECR_Ignore))
+		{
+			Body.UpdatePhysicsFilterData();
+		}
+		bHullBodyHeld = true;
+		return;
+	}
+	// Teleported while still inert, then the same setter chain as a built body gets (profile, enabled, responses): with the
+	// physics bit unchanged each one only re-filters the shapes.
+	Hull->SetBodyHeld(false);
+	Hull->SetCollisionProfileName(OriginalHullCollisionProfile);
+	Hull->SetCollisionEnabled(OriginalHullCollisionEnabled);
+	Hull->SetCollisionResponseToChannels(OriginalHullCollisionResponses);
+	Hull->SetSimulatePhysics(false);
+	bHullBodyHeld = false;
+}
+
+bool ASpaceship::MayRestoreHullBody(const bool bPacedBuild) const
+{
+	// Rio 07.10 (fleet audit): a ship frozen far away (APSRealScale) has its actor collision off: a build there creates no
+	// body (ShouldCreatePhysicsState), the boxes would go and the ship would be left with no collision at all after the
+	// thaw. It waits; the thaw gives the actor its collision back and the next check restores.
+	if (!GetActorEnableCollision())
+	{
+		return false;
+	}
+	if (bPacedBuild && !bHullBodyHeld)
+	{
+		const float Spacing = APSShipPerf::CVarHullRestoreSpacingSeconds.GetValueOnGameThread();
+		if (Spacing > 0.0f && APSShipPerf::GLastHullBuildWorld.Get() == GetWorld()
+			&& FPlatformTime::Seconds() - APSShipPerf::GLastHullBuildEndSeconds < Spacing)
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+bool ASpaceship::HasDetailedHullProxy() const
+{
+	// The same test SetFlightCollisionOptimization makes for its detailed-hull proxy (aps.Ship.DetailedHullFlightProxy).
+	UPrimitiveComponent* PrimaryHull = GetPrimaryHullComponent();
+	const UBodySetup* HullBodySetup = PrimaryHull ? PrimaryHull->GetBodySetup() : nullptr;
+	return !bGenerateSimpleHullCollision && !bOptimizeCollisionWhilePiloted && !IsGroundVehicle() && HullBodySetup
+		&& APSShipPerf::CVarDetailedHullFlightProxy.GetValueOnGameThread() != 0
+		&& HullBodySetup->AggGeom.GetElementCount() > APSShipPerf::CVarDetailedHullShapes.GetValueOnGameThread();
+}
+
+bool ASpaceship::HasWalkShell() const
+{
+	// Rio 06.10 afternoon (aps.Ship.WalkOnShellAtSpeed): the outer shell is not the decks on every ship; a walker is only
+	// left on it when asked to.
+	if (APSShipPerf::CVarWalkOnShellAtSpeed.GetValueOnGameThread() == 0)
+	{
+		return false;
+	}
+	// Codex's walk shells (M5HullShellCollision, the cargo ship's ShellCol): a query-only trimesh that blocks pawns. Read
+	// without the actor's collision switch, so a ship frozen far away (APSRealScale) still knows it has one.
+	const UPrimitiveComponent* PrimaryHull = GetPrimaryHullComponent();
+	TInlineComponentArray<UPrimitiveComponent*> Primitives(this);
+	for (const UPrimitiveComponent* Primitive : Primitives)
+	{
+		if (IsValid(Primitive) && Primitive != PrimaryHull
+			&& (Primitive->ComponentHasTag(TEXT("APS.Ship.CollisionShell")) || Primitive->GetName().Contains(TEXT("ShellCol")))
+			&& CollisionEnabledHasQuery(Primitive->BodyInstance.GetCollisionEnabled(false))
+			&& Primitive->GetCollisionResponseToChannel(ECC_Pawn) == ECR_Block)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+bool ASpaceship::IsWalkerAboard() const
+{
+	TArray<AActor*> Riders;
+	GetAttachedActors(Riders, true, true);
+	for (const AActor* Rider : Riders)
+	{
+		// A vehicle carried in a bay is a pawn too, but nobody walks in it.
+		if (IsValid(Rider) && Rider != Pilot.Get() && Rider->IsA<APawn>() && !Rider->IsA<ASpaceship>())
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+const TCHAR* ASpaceship::GetHullMotionReason() const
+{
+	const UWorld* World = GetWorld();
+	if (!World)
+	{
+		return nullptr;
+	}
+	// The flight model moves a ship only while it ticks; a parked one keeps whatever velocity it was left with.
+	const double MaxSpeed = FMath::Max(APSShipPerf::CVarHullRestoreMaxSpeedCm.GetValueOnGameThread(), 0.0f);
+	if (IsActorTickEnabled() && KinematicVelocity.SizeSquared() > FMath::Square(MaxSpeed))
+	{
+		return TEXT("speed");
+	}
+	// Rio 06.10 (audit: an engaged autopilot on a parked ship): the autopilot moves the ship only through
+	// UAPSShipFlightModel::ApplyTranslation, which runs from Tick and returns before UpdateAutopilot unless the band model is
+	// on and the engine runs; a ship parked with its engine off and the autopilot still set is not moving.
+	if (FlightModel && FlightModel->IsAutopilotEngaged() && IsActorTickEnabled() && GetEngineRunning()
+		&& FlightModel->IsBandFlightActive())
+	{
+		return TEXT("autopilot");
+	}
+	if (World->GetTimeSeconds() - HullLastFlowSeconds < 0.5)
+	{
+		return TEXT("world flow");
+	}
+	if (UAPSWorldOriginSubsystem::IsStillObserver(this))
+	{
+		return TEXT("owed travel");
+	}
+	// A fleet unit is teleported along its order by the fleet (APSFleetCommand Fly), not by its own tick.
+	if (const FAPSFleetCommand* Fleet = APSFleetFind(World))
+	{
+		if (const FAPSFleetUnit* Unit = Fleet->FindUnit(this);
+			Unit && (Unit->Phase == APSFleet::EPhase::Departing || Unit->Phase == APSFleet::EPhase::Transit))
+		{
+			return TEXT("fleet order");
+		}
+	}
+	return nullptr;
+}
+
+bool ASpaceship::IsPlayerOnFootNear(const double ExtraCm) const
+{
+	const UWorld* World = GetWorld();
+	const APlayerController* Player = World ? World->GetFirstPlayerController() : nullptr;
+	const APawn* PlayerPawn = Player ? Player->GetPawn() : nullptr;
+	const UPrimitiveComponent* PrimaryHull = GetPrimaryHullComponent();
+	if (!PlayerPawn || PlayerPawn->IsA<ASpaceship>() || !PrimaryHull)
+	{
+		return false;
+	}
+	const double Reach = PrimaryHull->Bounds.SphereRadius + FMath::Max(ExtraCm, 0.0);
+	return FVector::DistSquared(PlayerPawn->GetActorLocation(), PrimaryHull->Bounds.Origin) <= FMath::Square(Reach);
+}
+
+void ASpaceship::SetProxyBoxesPassWalkers(const bool bPass)
+{
+	if (bProxyBoxesPassWalkers == bPass)
+	{
+		return;
+	}
+	bProxyBoxesPassWalkers = bPass;
+	for (UBoxComponent* Box : GeneratedCollisionBoxes)
+	{
+		if (!IsValid(Box))
+		{
+			continue;
+		}
+		if (bPass)
+		{
+			// The walker stands on the walk shell; its capsule, its camera arm and its foot traces pass the boxes. Ships,
+			// stations and ground still meet them (the proxy sweep reads these responses).
+			Box->SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore);
+			Box->SetCollisionResponseToChannel(ECC_Camera, ECR_Ignore);
+			Box->SetCollisionResponseToChannel(ECC_Visibility, ECR_Ignore);
+		}
+		else
+		{
+			// As RebuildSimpleHullCollision builds them.
+			Box->SetCollisionResponseToAllChannels(ECR_Block);
+		}
+	}
+}
+
+bool ASpaceship::KeepHullOutForWalker()
+{
+	// Rio 06.10 (collision by motion): the body stays out for the walker; the timer builds it once the ship has rested and
+	// the walker has stepped off. Without a walk shell to stand on the walker needs the hull's own body (as before).
+	UWorld* World = GetWorld();
+	if (!World || APSShipPerf::CVarKeepHullOutWhileMoving.GetValueOnGameThread() == 0 || !bFlightCollisionOptimizationActive
+		|| IsHullGoingAway() || !HasDetailedHullProxy() || !HasWalkShell())
+	{
+		return false;
+	}
+	bHullRestorePending = true;
+	HullRestSeconds = 0.0f;
+	HullPendingSinceSeconds = World->GetTimeSeconds();
+	SetProxyBoxesPassWalkers(true);
+	StartHullMotionWatch();
+	const TCHAR* Motion = GetHullMotionReason();
+	UE_LOG(LogTemp, Log, TEXT("[APS.Ships] %s: the pilot got up (%.1f m/s, %s): the hull stays out; the walker stands on the walk ")
+		TEXT("shell, %d proxy boxes still meet ships and ground"), *GetName(), KinematicVelocity.Size() / 100.0,
+		Motion ? Motion : TEXT("at rest"), GeneratedCollisionBoxes.Num());
+	return true;
+}
+
+void ASpaceship::StartHullMotionWatch()
+{
+	UWorld* World = GetWorld();
+	if (!World || bHullGoingAway || !HasDetailedHullProxy())
+	{
+		return;
+	}
+	FTimerManager& Timers = World->GetTimerManager();
+	if (!Timers.TimerExists(HullMotionTimer))
+	{
+		HullMotionLastCheckSeconds = World->GetTimeSeconds();
+		// Rio 07.10 (fleet audit): ships spawned or ordered together no longer check, take out and restore in one frame.
+		Timers.SetTimer(HullMotionTimer, this, &ASpaceship::UpdateHullCollisionByMotion, 0.1f, true, FMath::FRandRange(0.02f, 0.1f));
+	}
+}
+
+void ASpaceship::UpdateHullCollisionByMotion()
+{
+	UWorld* World = GetWorld();
+	if (!World || bHullGoingAway)
+	{
+		return;
+	}
+	const double Now = World->GetTimeSeconds();
+	const float Elapsed = FMath::Clamp(static_cast<float>(Now - HullMotionLastCheckSeconds), 0.0f, 1.0f);
+	HullMotionLastCheckSeconds = Now;
+	// In the seat the proxy follows the pilot (PossessedBy and UnPossessed); so it does for a ship the player flies directly
+	// (possessed without a seated pilot): the timer neither builds nor takes out anything under a player's hands.
+	if (IsValid(Pilot) || IsPlayerControlled())
+	{
+		return;
+	}
+	if (APSShipPerf::CVarKeepHullOutWhileMoving.GetValueOnGameThread() == 0)
+	{
+		if (bHullRestorePending && bFlightCollisionOptimizationActive && MayRestoreHullBody(true))
+		{
+			// Switched off live: the body comes back now, as it did when the pilot got up.
+			SetFlightCollisionOptimization(false);
+		}
+		return;
+	}
+	if (!HasDetailedHullProxy())
+	{
+		if (bHullRestorePending && bFlightCollisionOptimizationActive && MayRestoreHullBody(true))
+		{
+			// Rio 06.10 (review): the detailed-hull proxy was switched off live (aps.Ship.DetailedHullFlightProxy 0 or a
+			// higher aps.Ship.DetailedHullShapes) while the body waited out here: it comes back now, as it did when the
+			// pilot got up before 06.10, instead of staying out for good.
+			SetFlightCollisionOptimization(false);
+		}
+		return;
+	}
+	const TCHAR* Motion = GetHullMotionReason();
+	const float NearM = APSShipPerf::CVarHullRestoreNearM.GetValueOnGameThread();
+	if (!bFlightCollisionOptimizationActive)
+	{
+		UPrimitiveComponent* InSceneHull = GetPrimaryHullComponent();
+		if (InSceneHull && InSceneHull->IsRegistered() && !InSceneHull->IsPhysicsStateCreated() && GetActorEnableCollision()
+			&& InSceneHull->BodyInstance.GetCollisionEnabled(false) != ECollisionEnabled::NoCollision
+			&& IsPlayerOnFootNear(FMath::Max(NearM, 0.0f) * 100.0) && MayRestoreHullBody(true))
+		{
+			// Rio 07.10 (fleet audit, safety net): neither boxes nor its own body (a path that built nothing, as a restore
+			// during the REAL SCALE freeze did): the body is built again before the player walks onto a ship without collision.
+			const double BuildStart = FPlatformTime::Seconds();
+			InSceneHull->RecreatePhysicsState();
+			APSShipPerf::GLastHullBuildWorld = World;
+			APSShipPerf::GLastHullBuildEndSeconds = FPlatformTime::Seconds();
+			UE_LOG(LogTemp, Warning, TEXT("[APS.Ships] %s had no collision at all: its hull's body is built again (%.1f ms, body %s)"),
+				*GetName(), (FPlatformTime::Seconds() - BuildStart) * 1000.0,
+				InSceneHull->IsPhysicsStateCreated() ? TEXT("in") : TEXT("OUT"));
+			return;
+		}
+		if (!Motion)
+		{
+			return;
+		}
+		if (!InSceneHull || !InSceneHull->IsRegistered() || !InSceneHull->IsPhysicsStateCreated()
+			|| !GetActorEnableCollision())
+		{
+			// Nothing of it in the physics scene to take out (a far ship the REAL SCALE freeze unregistered).
+			return;
+		}
+		const bool bWalkShell = HasWalkShell();
+		const bool bWalker = IsWalkerAboard();
+		if (!bWalkShell && (bWalker || IsPlayerOnFootNear(0.0)))
+		{
+			// Without a walk shell a walker aboard or beside it needs the hull's own body (as before).
+			return;
+		}
+		if (!bWalkShell && APSShipPerf::CVarHullRestoreOnFootInside.GetValueOnGameThread() != 0
+			&& IsPlayerOnFootNear(FMath::Max(APSShipPerf::CVarHullTakeOutClearM.GetValueOnGameThread(), 0.0f) * 100.0))
+		{
+			// Rio 07.10 (aps.Ship.HullTakeOutClearM): the body came back because the player walked within its radius; it
+			// leaves again only once he is well clear, so walking along the radius does not swap it back and forth.
+			return;
+		}
+		// Moving with nobody in the seat (a fleet unit under orders): the ship flies on its proxy boxes, its hull's
+		// shapes leave the scene (each move and each query near it walked them all).
+		const double TakeOutStart = FPlatformTime::Seconds();
+		SetFlightCollisionOptimization(true);
+		if (!bFlightCollisionOptimizationActive)
+		{
+			return;
+		}
+		bHullRestorePending = true;
+		HullRestSeconds = 0.0f;
+		HullPendingSinceSeconds = -1.0e9;
+		SetProxyBoxesPassWalkers(bWalkShell && (bWalker || IsPlayerOnFootNear(0.0)));
+		UPrimitiveComponent* PrimaryHull = GetPrimaryHullComponent();
+		const UBodySetup* HullBodySetup = PrimaryHull ? PrimaryHull->GetBodySetup() : nullptr;
+		UE_LOG(LogTemp, Log, TEXT("[APS.Ships] %s moves without a pilot (%s): it flies on %d proxy boxes, its hull's %d shapes ")
+			TEXT("%s (%.1f ms, walker %d)"), *GetName(), Motion, GeneratedCollisionBoxes.Num(),
+			HullBodySetup ? HullBodySetup->AggGeom.GetElementCount() : 0,
+			bHullBodyHeld ? TEXT("are held in the scene, inert") : TEXT("left the scene"),
+			(FPlatformTime::Seconds() - TakeOutStart) * 1000.0, bWalker ? 1 : 0);
+		return;
+	}
+
+	// The body is out (or held) and nobody flies the ship.
+	bHullRestorePending = true;
+	const bool bWalkShell = HasWalkShell();
+	const bool bWalker = IsWalkerAboard();
+	if (bWalker && !bWalkShell)
+	{
+		if (!MayRestoreHullBody(false))
+		{
+			return;
+		}
+		// Nothing for the walker to stand on but the hull itself.
+		UE_LOG(LogTemp, Log, TEXT("[APS.Ships] %s: a walker aboard and no walk shell: the hull's body comes back"), *GetName());
+		SetFlightCollisionOptimization(false);
+		return;
+	}
+	if (!bWalkShell && APSShipPerf::CVarHullRestoreOnFootInside.GetValueOnGameThread() != 0 && IsPlayerOnFootNear(0.0))
+	{
+		// Review: a fleet coming back around the player rests together; held bodies keep to one a frame here too (the boxes
+		// carry the ship until the next 0.1 s check), builds are already spaced.
+		if (!MayRestoreHullBody(true) || (bHullBodyHeld && !APSShipPerf::TakeHullRestoreBudget()))
+		{
+			return;
+		}
+		// Rio 07.10 (aps.Ship.HullRestoreOnFootInside): the player on foot is within its radius (a fleet unit arrived on top
+		// of him, a ship drifts past): boxes wider than the hull would push him away; moving or not, the body comes back.
+		UE_LOG(LogTemp, Log, TEXT("[APS.Ships] %s: the player on foot is within its radius (%s): the hull's body comes back"),
+			*GetName(), Motion ? Motion : TEXT("at rest"));
+		SetFlightCollisionOptimization(false);
+		return;
+	}
+	// The boxes let the player's character through while it is aboard, just got up (APilotingVehicle places and attaches
+	// it in that frame) or stands anywhere within the hull's sphere: boxes that block a character standing inside them
+	// would push it out of the ship. The walk shell carries it.
+	SetProxyBoxesPassWalkers(bWalkShell && (bWalker || Now - HullPendingSinceSeconds < 2.0 || IsPlayerOnFootNear(0.0)));
+	if (Motion)
+	{
+		HullRestSeconds = 0.0f;
+		return;
+	}
+	HullRestSeconds += Elapsed;
+	if (HullRestSeconds < FMath::Max(APSShipPerf::CVarHullRestoreRestSeconds.GetValueOnGameThread(), 0.0f))
+	{
+		return;
+	}
+	if (bWalker && APSShipPerf::CVarHullRestoreWithWalker.GetValueOnGameThread() == 0)
+	{
+		// Rio's choice pending (the plan's decision 2): the build waits until the walker steps off.
+		return;
+	}
+	// Rio 07.10 (aps.Ship.HullHold): a held body comes back with one teleport, so a rested ship takes it at once (no proxy
+	// boxes stay on a parked fleet ship for the player's ship to bump into); the wait for an on-foot player is for a build.
+	if (!bHullBodyHeld && !bWalker && NearM > 0.0f && !IsPlayerOnFootNear(NearM * 100.0))
+	{
+		// Nobody walks near it: it stays on its boxes (ships and ground still meet them), no build for nothing.
+		return;
+	}
+	if (!MayRestoreHullBody(!bWalker))
+	{
+		return;
+	}
+	// Rio 07.10 (aps.Ship.HullRestoresPerFrame): a fleet back from one order rests together; one hull a frame.
+	if (!bWalker && !APSShipPerf::TakeHullRestoreBudget())
+	{
+		return;
+	}
+	UE_LOG(LogTemp, Log, TEXT("[APS.Ships] %s rested %.1f s (%s): the hull's body comes back"), *GetName(), HullRestSeconds,
+		bWalker ? TEXT("walker aboard") : bHullBodyHeld ? TEXT("held body") : NearM > 0.0f ? TEXT("walker near") : TEXT("nobody aboard"));
+	SetFlightCollisionOptimization(false);
 }
 
 FVector ASpaceship::GetControlledFlightAcceleration(const FVector& WorldInput,
@@ -3077,6 +3871,11 @@ bool ASpaceship::MoveShipKinematic(const FVector& Delta, bool bSweep, FHitResult
 		if (UAPSWorldOriginSubsystem* Origin = World ? World->GetSubsystem<UAPSWorldOriginSubsystem>() : nullptr)
 		{
 			const FVector Rest = Origin->FlowPastShip(*this, Delta, KinematicVelocity.Size());
+			if (Rest != Delta)
+			{
+				// Rio 06.10 (collision by motion): this ship carries the world's flow or owes its step; it moves.
+				HullLastFlowSeconds = World->GetTimeSeconds();
+			}
 			AddActorWorldOffset(Rest, false, nullptr, ETeleportType::None);
 			Origin->FinishFlowMove(*this);
 			return false;
@@ -3095,18 +3894,11 @@ bool ASpaceship::MoveShipKinematic(const FVector& Delta, bool bSweep, FHitResult
 		// MoveComponent sweeps only the root body; without query collision the move is a plain offset anyway.
 		bSweep = false;
 	}
-	if (bSweep && RootPrimitive)
+	// The body sweep queries every convex hull of the root separately (12-32 on generated hulls) and its
+	// cost grows with the swept length. A sphere around the body's bounding box encloses all of them, so a
+	// clear sphere path with the same channel, responses and ignore lists proves the body sweep clear too.
+	const auto SphereMayHit = [this, RootPrimitive, &Delta]()
 	{
-		if (UAPSM5HullSweepComponent* FittedSweep = FindComponentByClass<UAPSM5HullSweepComponent>())
-		{
-			if (FittedSweep->TryMoveHull(Cast<UStaticMeshComponent>(RootPrimitive), Delta, OutHit)) return OutHit.bBlockingHit;
-		}
-	}
-	if (bSweep && APSShipPerf::CVarSweepPrecheck.GetValueOnGameThread() != 0 && GetWorld())
-	{
-		// The body sweep queries every convex hull of the root separately (12-32 on generated hulls) and its
-		// cost grows with the swept length. A sphere around the body's bounding box encloses all of them, so a
-		// clear sphere path with the same channel, responses and ignore lists proves the body sweep clear too.
 		const FBox BodyBox = RootPrimitive->BodyInstance.GetBodyBounds();
 		const FVector SphereCenter = BodyBox.IsValid ? BodyBox.GetCenter() : RootPrimitive->Bounds.Origin;
 		const double SphereRadius = BodyBox.IsValid ? BodyBox.GetExtent().Size() : RootPrimitive->Bounds.BoxExtent.Size();
@@ -3117,9 +3909,29 @@ bool ASpaceship::MoveShipKinematic(const FVector& Delta, bool bSweep, FHitResult
 		{
 			Params.AddIgnoredActor(Pilot);
 		}
-		bSweep = GetWorld()->SweepTestByChannel(SphereCenter, SphereCenter + Delta, FQuat::Identity,
+		return GetWorld()->SweepTestByChannel(SphereCenter, SphereCenter + Delta, FQuat::Identity,
 			RootPrimitive->GetCollisionObjectType(), FCollisionShape::MakeSphere(SphereRadius), Params,
 			FCollisionResponseParams(RootPrimitive->GetCollisionResponseToChannels()));
+	};
+	const bool bPrecheck = bSweep && RootPrimitive && APSShipPerf::CVarSweepPrecheck.GetValueOnGameThread() != 0 && GetWorld();
+	// Rio 06.10 (perf R2, walking aboard near the ground: 112-139 ms frames): the M5 hull sweep walked the hull's 13.5k
+	// shapes on every swept move, even with nothing near. The sphere goes first now; a clear path is a plain offset, the
+	// M5 sweep runs only where the sphere may hit (aps.Ship.SweepPrecheckFirst).
+	const bool bPrecheckFirst = bPrecheck && APSShipPerf::CVarSweepPrecheckFirst.GetValueOnGameThread() != 0;
+	if (bPrecheckFirst)
+	{
+		bSweep = SphereMayHit();
+	}
+	if (bSweep && RootPrimitive)
+	{
+		if (UAPSM5HullSweepComponent* FittedSweep = FindComponentByClass<UAPSM5HullSweepComponent>())
+		{
+			if (FittedSweep->TryMoveHull(Cast<UStaticMeshComponent>(RootPrimitive), Delta, OutHit)) return OutHit.bBlockingHit;
+		}
+	}
+	if (bSweep && bPrecheck && !bPrecheckFirst)
+	{
+		bSweep = SphereMayHit();
 	}
 	AddActorWorldOffset(Delta, bSweep, &OutHit, ETeleportType::None);
 	return OutHit.bBlockingHit;
@@ -3162,39 +3974,145 @@ bool ASpaceship::MoveShipWithProxySweep(const FVector& Delta, FHitResult& OutHit
 		AddActorWorldOffset(Delta, false, nullptr, ETeleportType::None);
 		return false;
 	}
-	FHitResult Earliest;
-	bool bBlocked = false;
-	for (const UBoxComponent* Box : Boxes)
+	// Rio 07.10 (aps.Ship.ProxyUnstick): which way is up here, and whether this move climbs.
+	const bool bUnstick = APSShipPerf::CVarProxyUnstick.GetValueOnGameThread() != 0;
+	const FVector Up = -ActiveGravityDirection.GetSafeNormal();
+	const double UnstickDepthCm = FMath::Max(APSShipPerf::CVarProxyUnstickDepthCm.GetValueOnGameThread(), 1.0f);
+	// Only a planet's or a moon's pull says where "up" is for climbing out (a station's or a ship's gravity volume may
+	// point anywhere, and it holds the previous direction for a moment after a change of source).
+	const bool bPlanetUp = bUnstick && !Up.IsNearlyZero() && ActiveGravitySource && ActiveGravitySource->IsA<APlanetaryBody>();
+	bool bClimbedOut = false;
+	FHitResult ClimbedOutHit;
+	TArray<FHitResult> Hits;
+	// bSlidePass: the move was built tangent to an overlap (Slide . N == 0 up to rounding), which must not read as "into".
+	const auto SweepBoxes = [&](const FVector& Move, FHitResult& OutEarliest, const bool bSlidePass) -> bool
 	{
-		const FVector Start = Box->GetComponentLocation();
-		TArray<FHitResult> Hits;
-		World->SweepMultiByChannel(Hits, Start, Start + Delta, Box->GetComponentQuat(), Channel,
-			FCollisionShape::MakeBox(Box->GetScaledBoxExtent()), Params, Responses);
-		for (const FHitResult& Hit : Hits)
+		const bool bClimbing = bPlanetUp && FVector::DotProduct(Move.GetSafeNormal(), Up) >= 0.5;
+		const double LeaveTolerance = bSlidePass ? -1.0e-3 * Move.Size() : 0.0;
+		bool bAnyBlock = false;
+		const auto Consider = [&](const FHitResult& Hit)
 		{
-			// A contact the ship is already leaving (parked on a deck, grazing a wall) must not hold it.
-			if (!Hit.bBlockingHit || (Hit.bStartPenetrating && FVector::DotProduct(Delta, Hit.ImpactNormal) >= 0.0))
+			if (!bAnyBlock || Hit.Time < OutEarliest.Time)
 			{
-				continue;
+				OutEarliest = Hit;
+				bAnyBlock = true;
 			}
-			if (!bBlocked || Hit.Time < Earliest.Time)
+		};
+		for (const UBoxComponent* Box : Boxes)
+		{
+			const FVector Start = Box->GetComponentLocation();
+			const FCollisionShape Shape = FCollisionShape::MakeBox(Box->GetScaledBoxExtent());
+			FCollisionQueryParams BoxParams = Params;
+			for (int32 Pass = 0; Pass < 5; ++Pass)
 			{
-				Earliest = Hit;
-				bBlocked = true;
+				Hits.Reset();
+				World->SweepMultiByChannel(Hits, Start, Start + Move, Box->GetComponentQuat(), Channel, Shape, BoxParams, Responses);
+				const FHitResult* ClimbOut = nullptr;
+				const FHitResult* BoxBlock = nullptr;
+				for (const FHitResult& Hit : Hits)
+				{
+					// A contact the ship is already leaving (parked on a deck, grazing a wall) must not hold it.
+					if (!Hit.bBlockingHit || (Hit.bStartPenetrating && FVector::DotProduct(Move, Hit.ImpactNormal) >= LeaveTolerance))
+					{
+						continue;
+					}
+					// Rio 07.10 (aps.Ship.ProxyUnstick): sunk deep into the ground or a pad UNDER the ship (never a ceiling over
+					// it, never another ship or a pawn) and lifting off at 30 deg or more above the horizon: it leaves what it
+					// is inside. A box inside something sees nothing beyond it (the engine cuts that sweep to zero length and
+					// keeps one blocking hit), so the box is swept again without it: whatever is ahead (a ship, a structure
+					// over the pad) still holds it, and the ground under the pad is the next layer to leave.
+					const AActor* HitActor = Hit.GetActor();
+					if (bClimbing && Hit.bStartPenetrating && Hit.PenetrationDepth >= UnstickDepthCm && Hit.GetComponent()
+						&& !(HitActor && HitActor->IsA<APawn>()) && !Hit.ImpactPoint.Equals(Start, 1.0)
+						&& FVector::DotProduct(Hit.ImpactPoint - ProxyBounds.GetCenter(), Up) < 0.0)
+					{
+						ClimbOut = &Hit;
+						break;
+					}
+					if (!BoxBlock || Hit.Time < BoxBlock->Time)
+					{
+						BoxBlock = &Hit;
+					}
+				}
+				if (ClimbOut && Pass < 4)
+				{
+					BoxParams.AddIgnoredComponent(ClimbOut->GetComponent());
+					ClimbedOutHit = *ClimbOut;
+					bClimbedOut = true;
+					continue;
+				}
+				if (BoxBlock)
+				{
+					Consider(*BoxBlock);
+				}
+				else if (ClimbOut)
+				{
+					// More layers than that: held, as before.
+					Consider(*ClimbOut);
+				}
+				break;
+			}
+		}
+		return bAnyBlock;
+	};
+	const auto LogClimbOut = [&](const double MovedCm)
+	{
+		const double Now = FPlatformTime::Seconds();
+		if (bClimbedOut && MovedCm > 0.0 && Now - ProxyUnstickLogSeconds >= 1.0)
+		{
+			ProxyUnstickLogSeconds = Now;
+			UE_LOG(LogTemp, Log, TEXT("[APS.Ships] %s climbs out of %s.%s (%.0f cm inside it, moved %.0f cm; aps.Ship.ProxyUnstick)"),
+				*GetName(), *GetNameSafe(ClimbedOutHit.GetActor()), *GetNameSafe(ClimbedOutHit.GetComponent()),
+				ClimbedOutHit.PenetrationDepth, MovedCm);
+		}
+	};
+	FHitResult Earliest;
+	bool bBlocked = SweepBoxes(Delta, Earliest, false);
+	FVector Move = Delta;
+	const AActor* EarliestActor = bBlocked ? Earliest.GetActor() : nullptr;
+	if (bBlocked && bUnstick && Earliest.bStartPenetrating && !(EarliestActor && EarliestActor->IsA<APawn>()))
+	{
+		// Rio 07.10 (aps.Ship.ProxyUnstick): held by something it is already inside (not a ship or a pawn): slide along it (the
+		// part of the move into it removed, never deeper), once. A clear slide moves; a slide that meets something ahead stops
+		// there; a slide held by an overlap again stays put, as before.
+		const FVector Normal = Earliest.ImpactNormal.GetSafeNormal();
+		const FVector Slide = Delta - Normal * FMath::Min(FVector::DotProduct(Delta, Normal), 0.0);
+		FHitResult SlideHit;
+		if (!Normal.IsNearlyZero() && !Slide.IsNearlyZero(0.01))
+		{
+			const bool bSlideBlocked = SweepBoxes(Slide, SlideHit, true);
+			if (!bSlideBlocked || !SlideHit.bStartPenetrating)
+			{
+				// The velocity into what it is inside goes as for any contact (the caller only sees the hit it gets back).
+				KinematicVelocity -= Normal * FMath::Min(FVector::DotProduct(KinematicVelocity, Normal), 0.0);
+				Move = Slide;
+				if (bSlideBlocked)
+				{
+					Earliest = SlideHit;
+				}
+				else
+				{
+					AddActorWorldOffset(Move, false, nullptr, ETeleportType::None);
+					LogClimbOut(Move.Size());
+					OutHit = Earliest;
+					return true;
+				}
 			}
 		}
 	}
 	if (!bBlocked)
 	{
-		AddActorWorldOffset(Delta, false, nullptr, ETeleportType::None);
+		AddActorWorldOffset(Move, false, nullptr, ETeleportType::None);
+		LogClimbOut(Move.Size());
 		return false;
 	}
 	// Up to the contact with a centimetre to spare; the caller removes the velocity into the surface.
-	const double Travel = FMath::Max(Earliest.Time * Delta.Size() - 1.0, 0.0);
+	const double Travel = FMath::Max(Earliest.Time * Move.Size() - 1.0, 0.0);
 	if (Travel > 0.0)
 	{
-		AddActorWorldOffset(Delta.GetSafeNormal() * Travel, false, nullptr, ETeleportType::None);
+		AddActorWorldOffset(Move.GetSafeNormal() * Travel, false, nullptr, ETeleportType::None);
 	}
+	LogClimbOut(Travel);
 	OutHit = Earliest;
 	return true;
 }
@@ -3983,7 +4901,7 @@ bool ASpaceship::ShouldShowNavigationMarker(int32 ContactIndex) const
 }
 
 bool ASpaceship::ProjectWorldLocationToNavigationScreen(const FVector& WorldLocation,
-	FVector2D& OutScreenPosition, bool bRequireInsideViewport) const
+	FVector2D& OutScreenPosition, bool bRequireInsideViewport, bool bSnapToPixel) const
 {
 	APlayerController* PlayerController = Cast<APlayerController>(GetController());
 	if (!PlayerController || !GEngine || !GEngine->GameViewport)
@@ -4020,9 +4938,15 @@ bool ASpaceship::ProjectWorldLocationToNavigationScreen(const FVector& WorldLoca
 		return false;
 	}
 	PixelPosition -= FVector2D(Projection.ViewRect.Min);
-	OutScreenPosition = Projection.Offset
-		+ FVector2D(FMath::RoundToInt(PixelPosition.X), FMath::RoundToInt(PixelPosition.Y)) * Projection.Scale;
-	if (APSShipPerf::CVarHudProjectionCheck.GetValueOnGameThread() != 0)
+	// Rio 06.10 (ring jitter): sizes measured between two whole-pixel points flip by a pixel while the view turns; a caller
+	// that measures or draws sub-pixel (aps.Ship.HudSubPixelRings) asks for the unrounded point.
+	if (bSnapToPixel)
+	{
+		PixelPosition = FVector2D(FMath::RoundToInt(PixelPosition.X), FMath::RoundToInt(PixelPosition.Y));
+	}
+	OutScreenPosition = Projection.Offset + PixelPosition * Projection.Scale;
+	// The engine's widget projection rounds too, so the check compares snapped points only.
+	if (bSnapToPixel && APSShipPerf::CVarHudProjectionCheck.GetValueOnGameThread() != 0)
 	{
 		static double LargestDifference = 0.0;
 		static double LastReportSeconds = 0.0;
@@ -4105,18 +5029,21 @@ int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, cons
 	TArray<FNavigationOccluder, TInlineAllocator<32>> Occluders;
 	const int32 NavigationContactCount = FMath::Min(
 		ShipNavigation->GetContacts().Num(), MaximumNavigationMarkers);
-	for (int32 ContactIndex = 0; ContactIndex < NavigationContactCount; ++ContactIndex)
 	{
-		const FShipNavigationContact* Contact = ShipNavigation->GetContact(ContactIndex);
-		const APlanetaryBody* Body = Contact ? Cast<APlanetaryBody>(Contact->Actor.Get()) : nullptr;
-		if (!Body)
+		TRACE_CPUPROFILER_EVENT_SCOPE(APS_NavHud_Occluders);
+		for (int32 ContactIndex = 0; ContactIndex < NavigationContactCount; ++ContactIndex)
 		{
-			continue;
-		}
-		const double OcclusionRadius = Body->GetWorldScapeBodyRadiusCm();
-		if (OcclusionRadius > UE_DOUBLE_SMALL_NUMBER)
-		{
-			Occluders.Add({Body, GetNavigationContactWorldAnchor(ContactIndex), OcclusionRadius});
+			const FShipNavigationContact* Contact = ShipNavigation->GetContact(ContactIndex);
+			const APlanetaryBody* Body = Contact ? Cast<APlanetaryBody>(Contact->Actor.Get()) : nullptr;
+			if (!Body)
+			{
+				continue;
+			}
+			const double OcclusionRadius = Body->GetWorldScapeBodyRadiusCm();
+			if (OcclusionRadius > UE_DOUBLE_SMALL_NUMBER)
+			{
+				Occluders.Add({Body, GetNavigationContactWorldAnchor(ContactIndex), OcclusionRadius});
+			}
 		}
 	}
 
@@ -4173,7 +5100,7 @@ int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, cons
 	auto DrawScreenLine = [&](const TArray<FVector2D>& Points, const FLinearColor& Color, float Thickness,
 		int32 DrawLayer)
 	{
-		if (Points.Num() >= 2)
+		if (Points.Num() >= 2 && APSShipPerf::IsDrawableHudLine(Points))
 		{
 			FSlateDrawElement::MakeLines(OutDrawElements, DrawLayer, PaintGeometry, Points,
 				ESlateDrawEffect::None, Color, true, Thickness);
@@ -4417,6 +5344,7 @@ int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, cons
 
 	if (bNavigationGuidesVisible)
 	{
+		TRACE_CPUPROFILER_EVENT_SCOPE(APS_NavHud_Orbits);
 		TSet<const APlanetOrbit*> PaintedOrbits;
 		const int32 SelectedIndex = ShipNavigation->GetSelectedContactIndex();
 		const FShipNavigationContact* SelectedContact = ShipNavigation->GetSelectedContact();
@@ -4641,7 +5569,9 @@ int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, cons
 		{
 			return false;
 		}
-		const FGeometry& PanelGeometry = Panel->GetCachedGeometry();
+		// Rio 06.10 (audit): paint space, like AllottedGeometry: GetCachedGeometry() is the desktop-space tick geometry
+		// and shifted every panel rect by the window's position (as SWorldGenerationPanel's guides once did).
+		const FGeometry& PanelGeometry = Panel->GetPaintSpaceGeometry();
 		const FVector2f PanelPosition = PanelGeometry.GetAbsolutePosition();
 		const FVector2f PanelSize = PanelGeometry.GetAbsoluteSize();
 		const FVector2f TopLeft = AllottedGeometry.AbsoluteToLocal(PanelPosition);
@@ -4654,7 +5584,10 @@ int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, cons
 		return true;
 	};
 	FSlateRect NavigationPanelRect;
-	const bool bNavigationPanelShown = PanelRect(APSNavigationHud::GNavigationPanel, NavigationPanelRect);
+	// Rio 06.10 (audit): M collapses the NAVIGATION card's parent, not the card, whose last geometry then stays frozen;
+	// a hidden card is neither an obstacle for the cards nor pushes the altimeter down.
+	const bool bNavigationPanelShown = bNavigationPanelVisible
+		&& PanelRect(APSNavigationHud::GNavigationPanel, NavigationPanelRect);
 	FSlateRect StatusPanelRect;
 	const bool bStatusPanelShown = PanelRect(APSNavigationHud::GStatusPanel, StatusPanelRect);
 	// The altimeter stands right of centre, below the navigation panel, out of the cards' way (they keep clear of it).
@@ -4676,14 +5609,22 @@ int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, cons
 
 	if (bNavigationMarkersVisible)
 	{
+		// Rio 06.10 ("the planet rings jitter while the nose turns"): a ring's size was the distance between two whole-pixel
+		// projections, floor or ceil of the true limb by the anchor's sub-pixel phase, so during a turn it flipped by ~1.15 px
+		// and the cards (KeepOut) hopped with it. Measured unrounded it changes only with distance; the ring is drawn around
+		// its unrounded centre without pixel snapping, the cards and texts stay on whole pixels.
+		const bool bSubPixelRings = APSShipPerf::CVarHudSubPixelRings.GetValueOnGameThread() != 0;
 		TSet<int32> OccludedContacts;
-		for (int32 ContactIndex = 0; ContactIndex < NavigationContactCount; ++ContactIndex)
 		{
-			const FShipNavigationContact* Contact = ShipNavigation->GetContact(ContactIndex);
-			if (Contact && IsWorldPointOccluded(
-				GetNavigationContactWorldAnchor(ContactIndex), Contact->Actor.Get()))
+			TRACE_CPUPROFILER_EVENT_SCOPE(APS_NavHud_Occluders);
+			for (int32 ContactIndex = 0; ContactIndex < NavigationContactCount; ++ContactIndex)
 			{
-				OccludedContacts.Add(ContactIndex);
+				const FShipNavigationContact* Contact = ShipNavigation->GetContact(ContactIndex);
+				if (Contact && IsWorldPointOccluded(
+					GetNavigationContactWorldAnchor(ContactIndex), Contact->Actor.Get()))
+				{
+					OccludedContacts.Add(ContactIndex);
+				}
 			}
 		}
 		const TSharedRef<FSlateFontMeasure> FontMeasure = FSlateApplication::Get().GetRenderer()->GetFontMeasureService();
@@ -4728,11 +5669,14 @@ int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, cons
 				// Around a resolved disc (a planet or moon) the brackets hug its rim, otherwise they keep a fixed box.
 				double DiscPixels = 0.0;
 				FVector2D Rim;
+				// The disc's size from unrounded points (aps.Ship.HudSubPixelRings); the brackets stay on the snapped centre.
+				FVector2D DiscCentre = TargetScreen;
 				if (const APlanetaryBody* TargetBody = Cast<APlanetaryBody>(Target->Actor.Get()); TargetBody
+					&& (!bSubPixelRings || ProjectWorldLocationToNavigationScreen(TargetWorld, DiscCentre, false, false))
 					&& ProjectWorldLocationToNavigationScreen(TargetWorld + NavigationCameraManager->GetActorRightVector()
-						* TargetBody->GetWorldScapeBodyRadiusCm(), Rim, false))
+						* TargetBody->GetWorldScapeBodyRadiusCm(), Rim, false, !bSubPixelRings))
 				{
-					DiscPixels = FVector2D::Distance(Rim, TargetScreen);
+					DiscPixels = FVector2D::Distance(Rim, DiscCentre);
 				}
 				bTargetInView = true;
 				TargetHalf = FMath::Clamp(DiscPixels + 10.0, 16.0, 160.0);
@@ -4769,155 +5713,181 @@ int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, cons
 		// Every object's card: the navigation contacts here, the fleet's ships below; laid out together.
 		TArray<APSNavigationHud::FCard> Cards;
 		Cards.Reserve(NavigationContactCount + 12);
-		for (int32 ContactIndex = 0; ContactIndex < NavigationContactCount; ++ContactIndex)
 		{
-			const FShipNavigationContact* Contact = ShipNavigation->GetContact(ContactIndex);
-			FVector2D Anchor;
-			if (!Contact || OccludedContacts.Contains(ContactIndex) || !ShouldShowNavigationMarker(ContactIndex)
-				|| !ProjectNavigationContactToScreen(ContactIndex, Anchor))
+			TRACE_CPUPROFILER_EVENT_SCOPE(APS_NavHud_CardBuild);
+			for (int32 ContactIndex = 0; ContactIndex < NavigationContactCount; ++ContactIndex)
 			{
-				continue;
-			}
-			const AActor* ContactActor = Contact->Actor.Get();
-			APSNavigationHud::FCard& Card = Cards.AddDefaulted_GetRef();
-			Card.Kind = APSNavigationHud::ECardKind::Contact;
-			Card.ContactIndex = ContactIndex;
-			Card.Key = ContactActor;
-			Card.Anchor = Anchor;
-			Card.Distance = Contact->DistanceCentimeters;
-			Card.bSelected = ContactIndex == TargetIndex;
-			Card.Rank = ContactActor && (ContactActor->IsA<AStar>() || ContactActor->IsA<APlanet>()) ? 1
-				: ContactActor && ContactActor->IsA<AMoon>() ? 2 : 3;
-			Card.Color = GetNavigationMarkerColor(ContactIndex);
-			const FString MarkerText = GetNavigationMarkerText(ContactIndex).ToString();
-			if (!MarkerText.Split(TEXT("\n"), &Card.Title, &Card.Detail))
-			{
-				Card.Title = MarkerText;
-			}
-			// Rio 02.10 ("where did the indices of the planets and moons go"): the catalogue designation after the name,
-			// as in the generation menu.
-			Card.Designation = APSBodyDesignation::Of(ContactActor);
-			Card.ShortName = Card.Designation.IsEmpty() ? Contact->DisplayName : Card.Designation + TEXT(" ") + Contact->DisplayName;
-			// Rio 02.10: a ring on the limb of the body instead of a cross. It hugs a resolved disc and gives way once the
-			// body fills a large part of the view.
-			double LimbPixels = 0.0;
-			double RingBodyRadius = 0.0;
-			if (const APlanetaryBody* RingBody = Cast<APlanetaryBody>(ContactActor))
-			{
-				RingBodyRadius = RingBody->GetWorldScapeBodyRadiusCm();
-			}
-			else if (const AStar* RingStar = Cast<AStar>(ContactActor))
-			{
-				RingBodyRadius = RingStar->RadiusKM * 100000.0;
-			}
-			FVector2D Limb;
-			if (RingBodyRadius > 0.0 && NavigationCameraManager
-				&& ProjectWorldLocationToNavigationScreen(GetNavigationContactWorldAnchor(ContactIndex)
-					+ NavigationCameraManager->GetActorRightVector() * RingBodyRadius, Limb, false))
-			{
-				LimbPixels = FVector2D::Distance(Limb, Anchor);
-			}
-			// Room around the limb (Rio 02.10: "borders with a margin, not tight").
-			Card.RingRadius = LimbPixels < 160.0
-				? FMath::Max(Card.bSelected ? 7.5f : 6.5f, static_cast<float>(LimbPixels) * 1.15f + 7.0f) : 0.0f;
-			Card.KeepOut = Card.RingRadius > 0.0f ? Card.RingRadius : 6.0f;
-			if (Card.bSelected && bTargetInView)
-			{
-				Card.KeepOut = FMath::Max(Card.KeepOut, static_cast<float>(TargetHalf) + 3.0f);
-			}
-		}
-
-		// Rio 02.10: the ships of the civilization are tracked too, besides navigation targets: a diamond in the
-		// colour of the division and a flag in the style of the navigation flags with call sign, speed and distance.
-		if (const FAPSFleetCommand* Fleet = APSFleetFind(GetWorld()))
-		{
-			struct FUnitMarker
-			{
-				const FAPSFleetUnit* Unit;
-				double Distance;
-			};
-			TArray<FUnitMarker, TInlineAllocator<32>> UnitMarkers;
-			for (const FAPSFleetUnit& Unit : Fleet->GetUnits())
-			{
-				const ASpaceship* UnitShip = Unit.Ship.Get();
-				if (UnitShip && UnitShip != this)
+				const FShipNavigationContact* Contact = ShipNavigation->GetContact(ContactIndex);
+				FVector2D Anchor;
+				if (!Contact || OccludedContacts.Contains(ContactIndex) || !ShouldShowNavigationMarker(ContactIndex)
+					|| !ProjectNavigationContactToScreen(ContactIndex, Anchor))
 				{
-					UnitMarkers.Add({&Unit, FVector::Distance(UAPSWorldOriginSubsystem::SkyPlace(*UnitShip), GetActorLocation())});
+					continue;
+				}
+				const AActor* ContactActor = Contact->Actor.Get();
+				APSNavigationHud::FCard& Card = Cards.AddDefaulted_GetRef();
+				Card.Kind = APSNavigationHud::ECardKind::Contact;
+				Card.ContactIndex = ContactIndex;
+				Card.Key = ContactActor;
+				Card.Anchor = Anchor;
+				Card.Distance = Contact->DistanceCentimeters;
+				Card.bSelected = ContactIndex == TargetIndex;
+				Card.Rank = ContactActor && (ContactActor->IsA<AStar>() || ContactActor->IsA<APlanet>()) ? 1
+					: ContactActor && ContactActor->IsA<AMoon>() ? 2 : 3;
+				Card.Color = GetNavigationMarkerColor(ContactIndex);
+				const FString MarkerText = GetNavigationMarkerText(ContactIndex).ToString();
+				if (!MarkerText.Split(TEXT("\n"), &Card.Title, &Card.Detail))
+				{
+					Card.Title = MarkerText;
+				}
+				// Rio 02.10 ("where did the indices of the planets and moons go"): the catalogue designation after the name,
+				// as in the generation menu.
+				Card.Designation = APSBodyDesignation::Of(ContactActor);
+				Card.ShortName = Card.Designation.IsEmpty() ? Contact->DisplayName : Card.Designation + TEXT(" ") + Contact->DisplayName;
+				// Rio 02.10: a ring on the limb of the body instead of a cross. It hugs a resolved disc and gives way once the
+				// body fills a large part of the view.
+				double LimbPixels = 0.0;
+				double RingBodyRadius = 0.0;
+				if (const APlanetaryBody* RingBody = Cast<APlanetaryBody>(ContactActor))
+				{
+					RingBodyRadius = RingBody->GetWorldScapeBodyRadiusCm();
+				}
+				else if (const AStar* RingStar = Cast<AStar>(ContactActor))
+				{
+					RingBodyRadius = RingStar->RadiusKM * 100000.0;
+				}
+				const FVector AnchorWorld = GetNavigationContactWorldAnchor(ContactIndex);
+				Card.RingCenter = Anchor;
+				FVector2D ExactCenter;
+				if (bSubPixelRings && ProjectWorldLocationToNavigationScreen(AnchorWorld, ExactCenter, false, false))
+				{
+					Card.RingCenter = ExactCenter;
+				}
+				FVector2D Limb;
+				if (RingBodyRadius > 0.0 && NavigationCameraManager
+					&& ProjectWorldLocationToNavigationScreen(AnchorWorld
+						+ NavigationCameraManager->GetActorRightVector() * RingBodyRadius, Limb, false, !bSubPixelRings))
+				{
+					LimbPixels = FVector2D::Distance(Limb, Card.RingCenter);
+				}
+				// Room around the limb (Rio 02.10: "borders with a margin, not tight").
+				Card.RingRadius = LimbPixels < 160.0
+					? FMath::Max(Card.bSelected ? 7.5f : 6.5f, static_cast<float>(LimbPixels) * 1.15f + 7.0f) : 0.0f;
+				Card.KeepOut = Card.RingRadius > 0.0f ? Card.RingRadius : 6.0f;
+				if (Card.bSelected && bTargetInView)
+				{
+					Card.KeepOut = FMath::Max(Card.KeepOut, static_cast<float>(TargetHalf) + 3.0f);
 				}
 			}
-			UnitMarkers.Sort([](const FUnitMarker& A, const FUnitMarker& B) { return A.Distance < B.Distance; });
-			const auto FormatSpeed = [](const double CentimetersPerSecond)
+
+			// Rio 02.10: the ships of the civilization are tracked too, besides navigation targets: a diamond in the
+			// colour of the division and a flag in the style of the navigation flags with call sign, speed and distance.
+			if (const FAPSFleetCommand* Fleet = APSFleetFind(GetWorld()))
 			{
-				const double KmPerSecond = CentimetersPerSecond / 100000.0;
-				return KmPerSecond >= 1000.0 ? APSUINumber::Number(FMath::RoundToInt(KmPerSecond)).ToString() + TEXT(" km/s")
-					: KmPerSecond >= 1.0 ? FString::Printf(TEXT("%.1f km/s"), KmPerSecond)
-					: FString::Printf(TEXT("%.0f m/s"), CentimetersPerSecond / 100.0);
-			};
-			int32 ShownUnits = 0;
-			for (const FUnitMarker& Marker : UnitMarkers)
-			{
-				if (ShownUnits >= 12) break;
-				const ASpaceship* UnitShip = Marker.Unit->Ship.Get();
-				// Rio 06.10 (still ship): a fleet unit where the ship sees it (its world place + the sky offset while owing).
-				const FVector UnitWorld = UAPSWorldOriginSubsystem::SkyPlace(*UnitShip);
-				// Rio 04.10: ships in a star system seen from outside fold into its card with its worlds.
-				if (ShipNavigation && ShipNavigation->IsInFoldedSystem(UnitWorld)) continue;
-				FVector2D UnitScreen;
-				// On screen only: a card is never drawn for a ship beyond the edge.
-				if (IsWorldPointOccluded(UnitWorld, UnitShip)
-					|| !ProjectWorldLocationToNavigationScreen(UnitWorld, UnitScreen, true)) continue;
-				++ShownUnits;
-				APSNavigationHud::FCard& Card = Cards.AddDefaulted_GetRef();
-				Card.Kind = APSNavigationHud::ECardKind::Unit;
-				Card.Key = UnitShip;
-				Card.Anchor = UnitScreen;
-				Card.KeepOut = 5.0f;
-				Card.Distance = Marker.Distance;
-				Card.Rank = 4;
-				Card.Color = APSFleet::DivisionColour(Marker.Unit->Division);
-				Card.Title = Marker.Unit->CallSign.IsEmpty() ? UnitShip->GetName() : Marker.Unit->CallSign;
-				const double SpeedCm = Marker.Unit->Speed > 0.0 ? Marker.Unit->Speed : UnitShip->GetVelocity().Size();
-				Card.Detail = FString::Printf(TEXT("%s  /  %s"), *FormatSpeed(SpeedCm),
-					*UShipNavigationComponent::FormatDistance(Marker.Distance));
-				Card.ShortName = Card.Title;
+				struct FUnitMarker
+				{
+					const FAPSFleetUnit* Unit;
+					double Distance;
+				};
+				TArray<FUnitMarker, TInlineAllocator<32>> UnitMarkers;
+				for (const FAPSFleetUnit& Unit : Fleet->GetUnits())
+				{
+					const ASpaceship* UnitShip = Unit.Ship.Get();
+					if (UnitShip && UnitShip != this)
+					{
+						UnitMarkers.Add({&Unit, FVector::Distance(UAPSWorldOriginSubsystem::SkyPlace(*UnitShip), GetActorLocation())});
+					}
+				}
+				UnitMarkers.Sort([](const FUnitMarker& A, const FUnitMarker& B) { return A.Distance < B.Distance; });
+				const auto FormatSpeed = [](const double CentimetersPerSecond)
+				{
+					const double KmPerSecond = CentimetersPerSecond / 100000.0;
+					return KmPerSecond >= 1000.0 ? APSUINumber::Number(FMath::RoundToInt(KmPerSecond)).ToString() + TEXT(" km/s")
+						: KmPerSecond >= 1.0 ? FString::Printf(TEXT("%.1f km/s"), KmPerSecond)
+						: FString::Printf(TEXT("%.0f m/s"), CentimetersPerSecond / 100.0);
+				};
+				int32 ShownUnits = 0;
+				for (const FUnitMarker& Marker : UnitMarkers)
+				{
+					if (ShownUnits >= 12) break;
+					const ASpaceship* UnitShip = Marker.Unit->Ship.Get();
+					// Rio 06.10 (still ship): a fleet unit where the ship sees it (its world place + the sky offset while owing).
+					const FVector UnitWorld = UAPSWorldOriginSubsystem::SkyPlace(*UnitShip);
+					// Rio 04.10: ships in a star system seen from outside fold into its card with its worlds.
+					if (ShipNavigation && ShipNavigation->IsInFoldedSystem(UnitWorld)) continue;
+					FVector2D UnitScreen;
+					// On screen only: a card is never drawn for a ship beyond the edge.
+					if (IsWorldPointOccluded(UnitWorld, UnitShip)
+						|| !ProjectWorldLocationToNavigationScreen(UnitWorld, UnitScreen, true)) continue;
+					++ShownUnits;
+					APSNavigationHud::FCard& Card = Cards.AddDefaulted_GetRef();
+					Card.Kind = APSNavigationHud::ECardKind::Unit;
+					Card.Key = UnitShip;
+					Card.Anchor = UnitScreen;
+					Card.KeepOut = 5.0f;
+					Card.Distance = Marker.Distance;
+					Card.Rank = 4;
+					Card.Color = APSFleet::DivisionColour(Marker.Unit->Division);
+					Card.Title = Marker.Unit->CallSign.IsEmpty() ? UnitShip->GetName() : Marker.Unit->CallSign;
+					const double SpeedCm = Marker.Unit->Speed > 0.0 ? Marker.Unit->Speed : UnitShip->GetVelocity().Size();
+					Card.Detail = FString::Printf(TEXT("%s  /  %s"), *FormatSpeed(SpeedCm),
+						*UShipNavigationComponent::FormatDistance(Marker.Distance));
+					Card.ShortName = Card.Title;
+				}
 			}
 		}
 
-		APSNavigationHud::LayOutCards(Cards, Obstacles, HudSize, *FontMeasure);
+		{
+			TRACE_CPUPROFILER_EVENT_SCOPE(APS_NavHud_Layout);
+			APSNavigationHud::LayOutCards(Cards, Obstacles, HudSize, *FontMeasure);
+		}
 		APSNavigationHud::FLayoutFrame& LayoutFrame = APSNavigationHud::GLayoutFrame;
 		LayoutFrame.Ship = this;
 		LayoutFrame.Frame = GFrameCounter;
 		LayoutFrame.Layouts.Reset();
 		const FSlateBrush* CardBrush = FCoreStyle::Get().GetBrush("WhiteBrush");
 		const float ContactLine = static_cast<float>(FontMeasure->GetMaxCharacterHeight(APSNavigationHud::MarkerFont()));
-		// Every object keeps its mark (limb ring or diamond), also when its card is shared or there was no room for one.
-		for (const APSNavigationHud::FCard& Card : Cards)
 		{
-			if (Card.Kind == APSNavigationHud::ECardKind::Unit)
+			TRACE_CPUPROFILER_EVENT_SCOPE(APS_NavHud_Rings);
+			// Every object keeps its mark (limb ring or diamond), also when its card is shared or there was no room for one.
+			for (const APSNavigationHud::FCard& Card : Cards)
 			{
-				constexpr float Diamond = 5.0f;
-				const FVector2D& Mark = Card.Anchor;
-				DrawScreenLine({Mark + FVector2D(0.0f, -Diamond), Mark + FVector2D(Diamond, 0.0f),
-					Mark + FVector2D(0.0f, Diamond), Mark + FVector2D(-Diamond, 0.0f),
-					Mark + FVector2D(0.0f, -Diamond)}, Card.Color, 1.3f, LayerId + 6);
-			}
-			else if (Card.RingRadius > 0.0f)
-			{
-				TArray<FVector2D> Ring;
-				const int32 Segments = FMath::Clamp(FMath::CeilToInt(Card.RingRadius * 0.9f), 18, 72);
-				Ring.Reserve(Segments + 1);
-				for (int32 Point = 0; Point <= Segments; ++Point)
+				if (Card.Kind == APSNavigationHud::ECardKind::Unit)
 				{
-					const float Angle = UE_TWO_PI * static_cast<float>(Point) / Segments;
-					Ring.Add(Card.Anchor + FVector2D(FMath::Cos(Angle), FMath::Sin(Angle)) * Card.RingRadius);
+					constexpr float Diamond = 5.0f;
+					const FVector2D& Mark = Card.Anchor;
+					DrawScreenLine({Mark + FVector2D(0.0f, -Diamond), Mark + FVector2D(Diamond, 0.0f),
+						Mark + FVector2D(0.0f, Diamond), Mark + FVector2D(-Diamond, 0.0f),
+						Mark + FVector2D(0.0f, -Diamond)}, Card.Color, 1.3f, LayerId + 6);
 				}
-				DrawScreenLine(Ring, Card.Color, Card.bSelected ? 1.6f : 1.1f, LayerId + 6);
-			}
-			if (Card.bPlaced && Card.Kind == APSNavigationHud::ECardKind::Contact)
-			{
-				LayoutFrame.Layouts.Add(Card.ContactIndex, TPair<FVector2D, FVector2D>(Card.Anchor, Card.Position));
+				else if (Card.RingRadius > 0.0f)
+				{
+					TArray<FVector2D> Ring;
+					const int32 Segments = FMath::Clamp(FMath::CeilToInt(Card.RingRadius * 0.9f), 18, 72);
+					Ring.Reserve(Segments + 1);
+					for (int32 Point = 0; Point <= Segments; ++Point)
+					{
+						const float Angle = UE_TWO_PI * static_cast<float>(Point) / Segments;
+						Ring.Add(Card.RingCenter + FVector2D(FMath::Cos(Angle), FMath::Sin(Angle)) * Card.RingRadius);
+					}
+					if (bSubPixelRings && APSShipPerf::IsDrawableHudLine(Ring))
+					{
+						// Unsnapped: Slate would round every vertex of a sub-pixel ring on its own and bend it frame to frame.
+						FSlateDrawElement::MakeLines(OutDrawElements, LayerId + 6, PaintGeometry, Ring,
+							ESlateDrawEffect::NoPixelSnapping, Card.Color, true, Card.bSelected ? 1.6f : 1.1f);
+					}
+					else
+					{
+						DrawScreenLine(Ring, Card.Color, Card.bSelected ? 1.6f : 1.1f, LayerId + 6);
+					}
+				}
+				if (Card.bPlaced && Card.Kind == APSNavigationHud::ECardKind::Contact)
+				{
+					LayoutFrame.Layouts.Add(Card.ContactIndex, TPair<FVector2D, FVector2D>(Card.Anchor, Card.Position));
+				}
 			}
 		}
+		TRACE_CPUPROFILER_EVENT_SCOPE(APS_NavHud_CardDraw);
 		for (const APSNavigationHud::FCard& Card : Cards)
 		{
 			if (!Card.bPlaced)
@@ -5201,6 +6171,61 @@ int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, cons
 		DrawScreenLine({FVector2D(TrackX - 6.0f, PointerY), FVector2D(TrackX + 6.0f, PointerY)}, Tint(Bright, 1.0f), 2.0f,
 			LayerId + 6);
 	}
+
+	// Rio 06.10 (flight path marker, aps.Ship.FlightPathMarker: "show where the ship really flies, whatever the camera
+	// does"): a small ring with a centre dot where the velocity points, the nose at a standstill. It is a direction, so it is
+	// projected from the camera a long way out: no parallax, the same at a walking pace and at light speed. When the nose
+	// and the velocity part by more than 2 degrees, a faint tick marks the nose. Off screen (the mouse-look camera turned
+	// away, flying backwards) it is simply not drawn; nothing else of the HUD changes.
+	if (APSShipPerf::CVarFlightPathMarker.GetValueOnGameThread() != 0 && NavigationCameraManager
+		&& (bNavigationMarkersVisible || bNavigationGuidesVisible))
+	{
+		const FVector PathVelocity = SpaceshipHull && SpaceshipHull->IsSimulatingPhysics()
+			? SpaceshipHull->GetPhysicsLinearVelocity() : KinematicVelocity;
+		const FVector Nose = GetShipForwardVector();
+		const bool bUnderWay = PathVelocity.SizeSquared() > FMath::Square(100.0);
+		const FVector PathDirection = bUnderWay ? PathVelocity.GetSafeNormal() : Nose;
+		constexpr double MarkerReachCm = 1.0e7;
+		const FLinearColor Quiet = APSUITheme::Palette().TextSoft;
+		// Sub-pixel and unsnapped like the limb rings: the marker glides with the view instead of stepping by pixels.
+		const auto DrawMarkerLines = [&](const TArray<FVector2D>& Points, const float Opacity, const float Thickness)
+		{
+			if (!APSShipPerf::IsDrawableHudLine(Points))
+			{
+				return;
+			}
+			FSlateDrawElement::MakeLines(OutDrawElements, LayerId + 6, PaintGeometry, Points, ESlateDrawEffect::NoPixelSnapping,
+				FLinearColor(Quiet.R, Quiet.G, Quiet.B, Quiet.A * Opacity), true, Thickness);
+		};
+		FVector2D PathScreen;
+		if (FVector::DotProduct(PathDirection, NavigationCameraForward) > 0.0
+			&& ProjectWorldLocationToNavigationScreen(NavigationCameraLocation + PathDirection * MarkerReachCm, PathScreen,
+				true, false))
+		{
+			constexpr int32 MarkerSegments = 24;
+			constexpr double MarkerRadius = 7.0;
+			TArray<FVector2D> Circle;
+			Circle.Reserve(MarkerSegments + 1);
+			for (int32 Point = 0; Point <= MarkerSegments; ++Point)
+			{
+				const double Angle = UE_DOUBLE_TWO_PI * static_cast<double>(Point) / MarkerSegments;
+				Circle.Add(PathScreen + FVector2D(FMath::Cos(Angle), FMath::Sin(Angle)) * MarkerRadius);
+			}
+			DrawMarkerLines(Circle, 0.8f, 1.2f);
+			// The centre dot: a short stroke as thick as it is long.
+			DrawMarkerLines({PathScreen - FVector2D(0.9, 0.0), PathScreen + FVector2D(0.9, 0.0)}, 0.9f, 1.8f);
+		}
+		const double NosePartsDegrees = bUnderWay
+			? FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(FVector::DotProduct(PathDirection, Nose), -1.0, 1.0))) : 0.0;
+		FVector2D NoseScreen;
+		if (NosePartsDegrees > 2.0 && FVector::DotProduct(Nose, NavigationCameraForward) > 0.0
+			&& ProjectWorldLocationToNavigationScreen(NavigationCameraLocation + Nose * MarkerReachCm, NoseScreen, true, false))
+		{
+			// Two short level dashes either side of the nose point.
+			DrawMarkerLines({NoseScreen - FVector2D(9.0, 0.0), NoseScreen - FVector2D(4.0, 0.0)}, 0.45f, 1.0f);
+			DrawMarkerLines({NoseScreen + FVector2D(4.0, 0.0), NoseScreen + FVector2D(9.0, 0.0)}, 0.45f, 1.0f);
+		}
+	}
 	return LayerId + 7;
 }
 
@@ -5235,6 +6260,15 @@ FLinearColor ASpaceship::GetNavigationMarkerColor(int32 ContactIndex) const
 	case EShipNavigationContactType::Infrastructure: return FLinearColor(1.0f, 0.82f, 0.3f, 0.95f);
 	default: return FLinearColor(0.72f, 0.82f, 0.9f, 0.9f);
 	}
+}
+
+// Rio 06.10 (audit: the ship HUD drew over the colony terminal opened from the seat).
+namespace APSShipHudLocal
+{
+	TAutoConsoleVariable<int32> CVarShipHudHideUnderTerminal(
+		TEXT("aps.UI.ShipHudHideUnderTerminal"), 1,
+		TEXT("1: the ship HUD collapses while the colony terminal (Tab/K) is open, as the walker HUD and the TASKS card do. ")
+		TEXT("0: previous behaviour (only the F10 map hides it)."));
 }
 
 void ASpaceship::CreateShipHud()
@@ -5276,7 +6310,22 @@ void ASpaceship::CreateShipHud()
 	{
 		const AGravityPlayerController* Controller = WeakThis.IsValid()
 			? Cast<AGravityPlayerController>(WeakThis->GetController()) : nullptr;
-		return Controller && Controller->IsStrategicMapOpen() ? EVisibility::Collapsed : EVisibility::SelfHitTestInvisible;
+		if (Controller && Controller->IsStrategicMapOpen())
+		{
+			return EVisibility::Collapsed;
+		}
+		// Rio 06.10 (audit, aps.UI.ShipHudHideUnderTerminal): the colony terminal covers the view as the map does.
+		if (APSShipHudLocal::CVarShipHudHideUnderTerminal.GetValueOnGameThread() != 0 && WeakThis.IsValid())
+		{
+			const UWorld* HudWorld = WeakThis->GetWorld();
+			const UAPSColonyTerminalSubsystem* Terminal = HudWorld
+				? HudWorld->GetSubsystem<UAPSColonyTerminalSubsystem>() : nullptr;
+			if (Terminal && Terminal->IsTerminalOpen())
+			{
+				return EVisibility::Collapsed;
+			}
+		}
+		return EVisibility::SelfHitTestInvisible;
 	}));
 	ShipHudWidget = RootOverlay;
 	GEngine->GameViewport->AddViewportWidgetContent(ShipHudWidget.ToSharedRef(), 60);
@@ -5350,7 +6399,18 @@ void ASpaceship::PossessedBy(AController* NewController)
 	ConfigurePilotFillLight();
 	UpdateFlightEnvironment(0.0f, true);
 	UpdatePilotFillLightVisibility();
+	// Rio 06.10 (collision by motion): a hull kept out for a walker is already on its proxy, which the call below leaves as
+	// it is; its boxes block everything again for the flight and nothing waits for a rest any more.
+	if (bHullRestorePending || bProxyBoxesPassWalkers)
+	{
+		SetProxyBoxesPassWalkers(false);
+		bHullRestorePending = false;
+		HullRestSeconds = 0.0f;
+		UE_LOG(LogTemp, Log, TEXT("[APS.Ships] %s is piloted again: its hull stayed out, the proxy boxes block all again"),
+			*GetName());
+	}
 	SetFlightCollisionOptimization(true);
+	StartHullMotionWatch();
 	SetActorTickEnabled(true);
 	CreateShipHud();
 	UpdateCameraArmTicking();
@@ -5387,8 +6447,14 @@ void ASpaceship::UnPossessed()
 	PreviousCameraLogSpeed = -1.0;
 	RefreshShipGravityZone();
 	// The flight proxy boxes fill the hull; a pilot leaving a running ship would stand among them (and walk aboard
-	// against them), so the hull's own collision comes back whenever the pilot leaves.
-	SetFlightCollisionOptimization(false);
+	// against them), so the hull's own collision comes back whenever the pilot leaves. Rio 06.10 (collision by motion,
+	// aps.Ship.KeepHullOutWhileMoving): a detailed hull with a walk shell keeps its body out instead and the boxes let the
+	// walker through; the body comes back once the ship has rested and the walker has stepped off (no 300-470 ms build
+	// while getting up at speed).
+	if (!KeepHullOutForWalker())
+	{
+		SetFlightCollisionOptimization(false);
+	}
 	bIsAccelerating = false;
 	bIsDecelerating = false;
 	ForwardInput = SideInput = VerticalInput = 0.0f;
@@ -5403,6 +6469,18 @@ void ASpaceship::UnPossessed()
 void ASpaceship::EndPlay(const EEndPlayReason::Type EndPlayReason)
 {
 	RemoveShipHud();
+	// Rio 06.10 (aps.Ship.HullRestoreOnce): the ship is going away; an UnPossessed from here on builds no body.
+	bHullGoingAway = true;
+	if (const UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(HullMotionTimer);
+	}
+	if (InstancedResendHandle.IsValid())
+	{
+		FWorldDelegates::OnWorldPreSendAllEndOfFrameUpdates.Remove(InstancedResendHandle);
+		InstancedResendHandle.Reset();
+	}
+	InstancedRiders.Reset();
 	Super::EndPlay(EndPlayReason);
 }
 

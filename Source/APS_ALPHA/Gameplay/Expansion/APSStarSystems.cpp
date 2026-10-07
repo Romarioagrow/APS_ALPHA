@@ -13,6 +13,7 @@
 #include "APS_ALPHA/Core/Structs/StarGenerationModel.h"
 #include "APS_ALPHA/Core/Structs/StarSystemGenerationModel.h"
 #include "APS_ALPHA/Core/World/APSWorldOriginSubsystem.h"
+#include "APS_ALPHA/Core/World/APSWorldShiftEvents.h"
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationJournalSubsystem.h"
 #include "APS_ALPHA/Generation/APSBodyNames.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
@@ -25,6 +26,7 @@
 #include "GameFramework/PlayerController.h"
 #include "HAL/IConsoleManager.h"
 #include "HAL/PlatformTime.h"
+#include "UObject/Package.h"
 
 #define LOCTEXT_NAMESPACE "APSStarSystems"
 
@@ -56,6 +58,59 @@ namespace APSStarSystemsLocal
 	TAutoConsoleVariable<float> CVarGalaxyAddBudgetMs(TEXT("aps.Stars.GalaxyAddBudgetMs"), 1.0f,
 		TEXT("aps.Stars.GalaxyAddsPerFrame: after a frame's first galaxy registration, more only while that frame has spent ")
 		TEXT("less than this on them, ms (0: the count alone)."));
+
+	TAutoConsoleVariable<int32> CVarRegisterInSkyFrame(TEXT("aps.Stars.RegisterInSkyFrame"), 1,
+		TEXT("Rio 06.10 (star approach: one star, one place): 1 registers a galaxy star in the sky frame, its offset from the ")
+		TEXT("home being the generator-relative catalogue place, so the system, its anchor (the HUD course marker), the autopilot ")
+		TEXT("target and the materialized star stand exactly where its point is drawn, whichever owed step the sky has taken. ")
+		TEXT("0: from the place projected in the fleet tick, as before (one owed step, 0.03-1 ly at drive speed, off it)."));
+	TAutoConsoleVariable<int32> CVarAnchorsFollowSky(TEXT("aps.Stars.AnchorsFollowSky"), 1,
+		TEXT("Rio 06.10 (star approach: one place every frame): 1 moves the systems' places and anchors (the HUD course marker, ")
+		TEXT("the cards, the autopilot target) in the same call that changes the sky offset, and after every world shift. ")
+		TEXT("0: only in the fleet tick, as before."));
+	constexpr double LightYearCm = 9.4607304725808e17;
+	/** Rio 06.10 (star approach): a registration from the fleet tick's neighbour update (its scan, a load's restore). */
+	bool GRegisterFromScan = false;
+	/** Rio 06.10 (star approach): per registry, the largest sky lag a galaxy registration met since the last line, cm. */
+	TMap<const FAPSStarSystems*, double> GSkyLagMaxCm;
+
+	/**
+	 * Rio 06.10 (star approach): the sky the indexed galaxy is drawn in is the gameplay generator's tree, which the stellar
+	 * view puts at the home's world place + the sky offset (UpdateGameplayStellarView). The fleet tick runs before that move,
+	 * so after an owed step the catalogue stands one step off its sky place for the rest of the tick. Returns that generator
+	 * (the catalogue's) and OutLag, its sky place less where it stands now; null, with the reason, where the stellar view
+	 * does not keep it there (a legacy dataset, a galaxy drawn under another root, a home attached to the generator).
+	 */
+	const AActor* SkyRootOf(const UWorld* World, const AGalaxy* Galaxy, const AAstroGenerator* Generator, FVector& OutLag,
+		const TCHAR*& OutWhyNot)
+	{
+		OutLag = FVector::ZeroVector;
+		OutWhyNot = nullptr;
+		if (!World || !Galaxy || !IsValid(Galaxy->StarMeshInstances) || !IsValid(Generator))
+		{
+			OutWhyNot = TEXT("no galaxy or generator");
+			return nullptr;
+		}
+		const FAPSCanonicalStellarProjectionDescriptor& Descriptor = Generator->GetCanonicalStellarProjectionDescriptor();
+		const AActor* HomeActor = Generator->GetPreviewHomeSystem();
+		if (!Descriptor.bFinalized || !Descriptor.bConsumedFinalizedDataset || !Descriptor.Galaxy.bEnabled || !IsValid(HomeActor))
+		{
+			OutWhyNot = TEXT("not a consumed gameplay dataset");
+			return nullptr;
+		}
+		if (HomeActor->IsAttachedTo(Generator))
+		{
+			OutWhyNot = TEXT("the home system is attached to the generator");
+			return nullptr;
+		}
+		if (Galaxy->StarMeshInstances->GetAttachmentRootActor() != Generator)
+		{
+			OutWhyNot = TEXT("the galaxy is drawn under another root than the catalogue's generator");
+			return nullptr;
+		}
+		OutLag = HomeActor->GetActorLocation() + UAPSWorldOriginSubsystem::SkyOffsetOf(World) - Generator->GetActorLocation();
+		return Generator;
+	}
 
 	FString Digits(const FGuid& Id)
 	{
@@ -292,6 +347,7 @@ FAPSStarSystems::FAPSStarSystems(UWorld* InWorld)
 
 FAPSStarSystems::~FAPSStarSystems()
 {
+	APSStarSystemsLocal::GSkyLagMaxCm.Remove(this);
 	for (const TPair<FGuid, TWeakObjectPtr<AActor>>& Pair : Anchors)
 	{
 		if (AActor* Anchor = Pair.Value.Get()) Anchor->Destroy();
@@ -300,6 +356,51 @@ FAPSStarSystems::~FAPSStarSystems()
 
 void FAPSStarSystems::Tick(const float DeltaSeconds)
 {
+	// Rio 06.10 (star approach: one place every frame; aps.Stars.AnchorsFollowSky): the systems' places and anchors (the HUD
+	// course marker, the cards, the autopilot target) follow the sky in the same call that moves it, and every world shift
+	// (an origin rebase leaves the sky offset as it is), not one fleet tick later: no drawn frame shows them an owed step or
+	// a debt away from the catalogue, the settles after the world tick included. Bound once for every world: the registry
+	// is looked up each time, so a world's end leaves nothing dangling.
+	static bool bFollowSkyBound = false;
+	if (!bFollowSkyBound)
+	{
+		bFollowSkyBound = true;
+		UAPSWorldOriginSubsystem::OnSkyOffsetChanged().AddLambda([](UWorld* SkyWorld, const FVector&)
+		{
+			if (APSStarSystemsLocal::CVarAnchorsFollowSky.GetValueOnGameThread() == 0)
+			{
+				return;
+			}
+			if (FAPSStarSystems* Registry = APSStarSystemsFind(SkyWorld))
+			{
+				Registry->FollowHome();
+			}
+		});
+		APSWorldShiftEvents::BindPostShift(GetTransientPackage(), [](UWorld* ShiftedWorld)
+		{
+			FAPSStarSystems* Registry = APSStarSystemsLocal::CVarAnchorsFollowSky.GetValueOnGameThread() != 0
+				? APSStarSystemsFind(ShiftedWorld) : nullptr;
+			// Without its home (not read yet, a regeneration, a world's end) FollowHome keeps the old HomeLocation: the
+			// anchors stay where the shift put them, as before, not sent back a shift away to stale places.
+			if (!Registry || !Registry->Home.IsValid())
+			{
+				return;
+			}
+			Registry->FollowHome();
+			// FollowHome's 1 cm early-out compares with the cached HomeLocation, which a shift does not move: an anchor the
+			// shift carried while the home's sky place stayed within a centimetre (a pay with almost no rest) goes back here.
+			for (const TPair<FGuid, TWeakObjectPtr<AActor>>& Pair : Registry->Anchors)
+			{
+				const int32 Index = Registry->IndexOf(Pair.Key);
+				AActor* Anchor = Pair.Value.Get();
+				if (Anchor && Registry->Systems.IsValidIndex(Index)
+					&& !Anchor->GetActorLocation().Equals(Registry->LocationOf(Index), 1.0))
+				{
+					Anchor->SetActorLocation(Registry->LocationOf(Index));
+				}
+			}
+		});
+	}
 	if (Systems.IsEmpty())
 	{
 		CatalogueRetry -= DeltaSeconds;
@@ -717,6 +818,40 @@ int32 FAPSStarSystems::RegisterGalaxyStar(const int64 CatalogIndex)
 	{
 		return INDEX_NONE;
 	}
+	// Rio 06.10 (star approach: "the point vanishes, reappears elsewhere, goes down"; one star, one place): the fleet tick
+	// registers before the stellar view moves the sky to this frame's owed step, so the catalogue projected above may stand
+	// one step (0.03-1 ly at drive speed) off its sky place while HomeLocation is already there (FollowHome). Registered in
+	// the sky frame, the stored offset is the generator-relative catalogue vector, the same whichever step the sky has taken:
+	// LocationOf is the drawn catalogue place in every frame, and so are its anchor (the HUD course marker), the autopilot's
+	// target, the materializer's gate and its spawn. Distances to the drawn stars (the room) stay in the catalogue's own
+	// frame (Projected), those to the registry's systems in the registry's (Location). aps.Stars.RegisterInSkyFrame 0: the
+	// projected place, as before.
+	const FVector Projected = Location;
+	FVector SkyVector = FVector::ZeroVector;
+	FVector SkyLag = FVector::ZeroVector;
+	const TCHAR* WhyNotSky = nullptr;
+	const AActor* SkyRoot = APSStarSystemsLocal::SkyRootOf(LiveWorld, Galaxy, CatalogueGenerator.Get(), SkyLag, WhyNotSky);
+	const bool bSkyFrame = SkyRoot && APSStarSystemsLocal::CVarRegisterInSkyFrame.GetValueOnGameThread() != 0;
+	if (bSkyFrame)
+	{
+		SkyVector = Projected - SkyRoot->GetActorLocation();
+		Location = HomeLocation + SkyVector;
+	}
+	{
+		// Which frame the registrations use, once per world and again when it changes (the harness reads it).
+		static TWeakObjectPtr<const UWorld> LoggedWorld;
+		static int32 LoggedMode = INDEX_NONE;
+		const int32 Mode = !SkyRoot ? 0 : bSkyFrame ? 2 : 1;
+		if (LoggedWorld.Get() != LiveWorld || LoggedMode != Mode)
+		{
+			LoggedWorld = LiveWorld;
+			LoggedMode = Mode;
+			const FString How = Mode == 2 ? FString::Printf(TEXT("in the sky frame of %s"), *SkyRoot->GetName())
+				: Mode == 1 ? FString(TEXT("at the projected catalogue place (aps.Stars.RegisterInSkyFrame 0)"))
+				: FString::Printf(TEXT("at the projected catalogue place (%s)"), WhyNotSky ? WhyNotSky : TEXT("?"));
+			UE_LOG(LogTemp, Log, TEXT("[APS.Stars] galaxy systems register %s"), *How);
+		}
+	}
 	// The home system's sphere hides its stars (the sky does too), and a star in a cluster system's room is that system's.
 	if (Systems.IsValidIndex(HomeIndex)
 		&& FVector::DistSquared(Location, LocationOf(HomeIndex)) < FMath::Square(Systems[HomeIndex].RoomCm * 1.1))
@@ -739,14 +874,14 @@ int32 FAPSStarSystems::RegisterGalaxyStar(const int64 CatalogIndex)
 	const double NearStart = FPlatformTime::Seconds();
 	{
 		TRACE_CPUPROFILER_EVENT_SCOPE(APS_Stars_RegisterGalaxyStar_Near);
-		APSGalaxyGpuStars::FindNearStars(LiveWorld, Location, 3, 1.0e30, Near);
+		APSGalaxyGpuStars::FindNearStars(LiveWorld, Projected, 3, 1.0e30, Near);
 	}
 	LastRegisterNearSeconds = FPlatformTime::Seconds() - NearStart;
 	for (const APSGalaxyGpuStars::FNearStar& Star : Near)
 	{
 		if (Star.CatalogIndex != CatalogIndex)
 		{
-			NearestSquared = FMath::Min(NearestSquared, FVector::DistSquared(Star.WorldLocation, Location));
+			NearestSquared = FMath::Min(NearestSquared, FVector::DistSquared(Star.WorldLocation, Projected));
 		}
 	}
 	// The cluster's nearest, from the grid in rings (a dense cluster holds tens of thousands of systems): a ring of cells
@@ -802,10 +937,27 @@ int32 FAPSStarSystems::RegisterGalaxyStar(const int64 CatalogIndex)
 	Info.Colour = UStarGenerator::GetStarColor(Record.SpectralClass, Record.SpectralSubclass);
 	Info.StarRadiusCm = APSCanonicalStellarProjection::GetCanonicalStellarRadiusSolar(Record.SpectralClass)
 		* FMath::Max(static_cast<double>(Record.RadiusScale), 0.0) * APSCanonicalStellarProjection::SolarRadiusCm;
-	FromHome.Add(Location - HomeLocation);
+	// Rio 06.10 (star approach): in the sky frame the stored offset is the generator-relative catalogue vector itself.
+	FromHome.Add(bSkyFrame ? SkyVector : Location - HomeLocation);
 	IndexById.Add(Info.Id, Index);
 	IndexByGalaxy.Add(CatalogIndex, Index);
 	GalaxySystems.Add(Index);
+	if (SkyRoot)
+	{
+		// The sky's lag behind its sky place at this registration: one owed step while the stellar view alone moves the sky,
+		// 0 once the sky moves in the same call as its offset (aps.Origin.SkyMovesCatalogue). The skew the old path stores.
+		double& LagMax = APSStarSystemsLocal::GSkyLagMaxCm.FindOrAdd(this);
+		LagMax = FMath::Max(LagMax, SkyLag.Size());
+		if (SkyLag.SizeSquared() > FMath::Square(1.0e9))
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[APS.Stars] registering %s (%s, owed %.4f ly, catalogue %lld): the sky catalogue stood %.4g AU (%.1f star radii) off its sky place (%s)"),
+				*Info.Name, APSStarSystemsLocal::GRegisterFromScan ? TEXT("scan") : TEXT("direct"),
+				UAPSWorldOriginSubsystem::SkyOffsetOf(LiveWorld).Size() / APSStarSystemsLocal::LightYearCm, CatalogIndex,
+				SkyLag.Size() / APSStars::AstronomicalUnitCm, Info.StarRadiusCm > 0.0 ? SkyLag.Size() / Info.StarRadiusCm : 0.0,
+				bSkyFrame ? TEXT("registered in the sky frame") : TEXT("registered with that skew: aps.Stars.RegisterInSkyFrame 0"));
+		}
+	}
 	return Index;
 }
 
@@ -813,6 +965,8 @@ int32 FAPSStarSystems::RegisterGalaxyStarTimed(const int64 CatalogIndex)
 {
 	const int32 Before = Systems.Num();
 	const double Start = FPlatformTime::Seconds();
+	// Rio 06.10 (star approach): the sky-lag warning says the fleet tick's neighbour update registered it.
+	TGuardValue<bool> FromScan(APSStarSystemsLocal::GRegisterFromScan, true);
 	const int32 Index = RegisterGalaxyStar(CatalogIndex);
 	const double Spent = FPlatformTime::Seconds() - Start;
 	++GalaxyTriesLogged;
@@ -924,10 +1078,10 @@ void FAPSStarSystems::UpdateGalaxyNeighbours(const float DeltaSeconds)
 			GalaxyLogSeconds = Now + 5.0;
 			// Rio 05.10 night: what the registrations since the last line cost, the slowest one's parts and the worst frame.
 			UE_LOG(LogTemp, Log,
-				TEXT("[APS.Stars] galaxy systems: %d registered (+%d since the last line, %d tried in %.1f ms, slowest %.2f ms: near-star query %.2f, cluster grid %.2f; worst frame %.2f ms; %d queued; %d saved states restored, %d waiting)"),
+				TEXT("[APS.Stars] galaxy systems: %d registered (+%d since the last line, %d tried in %.1f ms, slowest %.2f ms: near-star query %.2f, cluster grid %.2f; worst frame %.2f ms; %d queued; %d saved states restored, %d waiting; sky lag max %.0f km)"),
 				GalaxySystems.Num(), GalaxyAddsLogged, GalaxyTriesLogged, GalaxyAddSeconds * 1000.0, GalaxyAddWorstSeconds * 1000.0,
 				GalaxyAddWorstNearSeconds * 1000.0, GalaxyAddWorstRingSeconds * 1000.0, GalaxyAddWorstFrameSeconds * 1000.0,
-				PendingGalaxyStars.Num(), Restored, HeldGalaxyStates.Num());
+				PendingGalaxyStars.Num(), Restored, HeldGalaxyStates.Num(), APSStarSystemsLocal::GSkyLagMaxCm.FindRef(this) / 100000.0);
 			GalaxyTriesLogged = 0;
 			GalaxyAddsLogged = 0;
 			GalaxyAddSeconds = 0.0;
@@ -935,6 +1089,7 @@ void FAPSStarSystems::UpdateGalaxyNeighbours(const float DeltaSeconds)
 			GalaxyAddWorstNearSeconds = 0.0;
 			GalaxyAddWorstRingSeconds = 0.0;
 			GalaxyAddWorstFrameSeconds = 0.0;
+			APSStarSystemsLocal::GSkyLagMaxCm.Remove(this);
 		}
 	}
 }

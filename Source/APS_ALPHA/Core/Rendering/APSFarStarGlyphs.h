@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 
 class AActor;
+class AStar;
 class UWorld;
 
 /**
@@ -17,6 +18,14 @@ namespace APSFarStarGlyphs
 {
 	/** Each frame from the gameplay stellar view, with the generator's attached actors (its galaxy and cluster). */
 	void Update(UWorld* World, const TArray<AActor*>& Attached, const FVector& Camera, double PixelTangent, bool bDaylightHidden);
+	/**
+	 * Rio 06.10 (aps.Stars.SystemGlare): set by the stellar view each frame before Update. A listed star's glyph draws at
+	 * DayVisibility x its value, any other at DayVisibility x Others (values already carry the day blend), through the glyph's
+	 * own material (GameplayPointVisibility, one value with its crossfade share). bEnabled false: the shared catalogue
+	 * material, exactly as before (unless aps.Stars.FarGlyphLinearFade fades it through its own).
+	 */
+	void SetSystemGlare(const UWorld* World, bool bEnabled, float DayVisibility, float Others,
+		TConstArrayView<TPair<const AStar*, float>> OwnValues);
 	/** Removes a world's glyphs (the stellar view resets). */
 	void Reset(const UWorld* World);
 }

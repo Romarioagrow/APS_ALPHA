@@ -14,6 +14,7 @@
 #include "Engine/GameInstance.h"
 #include "EngineUtils.h"
 #include "GameFramework/PlayerController.h"
+#include "HAL/IConsoleManager.h"
 #include "HAL/PlatformTime.h"
 #include "Serialization/MemoryReader.h"
 #include "Serialization/MemoryWriter.h"
@@ -27,6 +28,46 @@ namespace APSCivilizationSavePrivate
 	 * structures and slipways. 5: the expansion (star systems, infrastructure and stocks, missions, builders' types).
 	 */
 	constexpr int32 Version = 5;
+
+	/** Rio 06.10 (audit: saves). A seated quit loaded as a character in space with no ship: the lifecycle autosave runs
+	 * after UnPossess, so the piloted ship's key was always empty, and a seated pilot was taken back to the ship's berth. */
+	TAutoConsoleVariable<int32> CVarRestorePilotedShip(
+		TEXT("aps.Save.RestorePilotedShip"), 1,
+		TEXT("1: a ship piloted at save time comes back with its pilot: the key of the ship last piloted is saved even ")
+		TEXT("after UnPossess (the lifecycle autosave), and on load a ship more than 50 m from the saved pilot is moved so ")
+		TEXT("its seat is where the pilot was saved. 0: as before (the key only while possessed, the pilot taken to the ship)."));
+
+	/** Beyond this the ship stands somewhere else than where the pilot was saved (it was at its berth at load). */
+	constexpr double SavedSeatMoveThresholdCm = 5000.0;
+
+	/**
+	 * The pilot was just snapped to the seat (PawnAfter, the seat's world transform) from where it was saved (PawnBefore).
+	 * UE composes left to right (A * B applies A, then B): the seat's world transform is SeatInShip * Ship, so the rigid
+	 * world move Move = PawnAfter^-1 * PawnBefore takes the seat onto PawnBefore (PawnAfter * Move == PawnBefore), and the
+	 * ship takes the same move: Ship * Move. Move has unit scale, so the product is exact even for a scaled ship.
+	 */
+	void PlaceVehicleAtSavedSeat(APilotingVehicle& Vehicle, FTransform PawnBefore, FTransform PawnAfter)
+	{
+		PawnBefore.SetScale3D(FVector::OneVector);
+		PawnAfter.SetScale3D(FVector::OneVector);
+		if (FVector::Dist(PawnBefore.GetLocation(), PawnAfter.GetLocation()) <= SavedSeatMoveThresholdCm)
+		{
+			return;
+		}
+		const FTransform Stood = Vehicle.GetActorTransform();
+		const FTransform Move = PawnAfter.Inverse() * PawnBefore;
+		const FTransform Target = Stood * Move;
+		// Boarding already detached it (APilotingVehicle::BeginVehicleControl); a berth must not carry it back.
+		if (Vehicle.GetAttachParentActor())
+		{
+			Vehicle.DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+		}
+		static const FName SurfaceParkedTag(TEXT("APS.Civilization.SurfaceParked"));
+		Vehicle.Tags.Remove(SurfaceParkedTag);
+		Vehicle.SetActorTransform(Target, false, nullptr, ETeleportType::TeleportPhysics);
+		UE_LOG(LogTemp, Log, TEXT("[APS.Save] %s placed at the saved seat (%.1f km from where it stood)"),
+			*Vehicle.GetName(), FVector::Dist(Stood.GetLocation(), Target.GetLocation()) / 100000.0);
+	}
 
 	UAPSQuestSubsystem* QuestOf(const UWorld* World)
 	{
@@ -131,12 +172,22 @@ namespace APSCivilizationSavePrivate
 			}
 			for (TActorIterator<APilotingVehicle> It(World); It; ++It)
 			{
-				if (IsValid(*It) && !It->HasPilot() && FAPSFleetCommand::KeyOf(*It) == Pending.VehicleKey
-					&& It->RequestVehicleControl(Pawn))
+				if (!IsValid(*It) || It->HasPilot() || FAPSFleetCommand::KeyOf(*It) != Pending.VehicleKey)
 				{
-					UE_LOG(LogTemp, Log, TEXT("[APS.Save] the pilot sits in %s again"), *It->GetName());
-					return true;
+					continue;
 				}
+				// Rio 06.10 (audit: saves, aps.Save.RestorePilotedShip): where the pilot was saved, before the seat snaps it.
+				const FTransform PawnBefore = Pawn->GetActorTransform();
+				if (!It->RequestVehicleControl(Pawn))
+				{
+					continue;
+				}
+				UE_LOG(LogTemp, Log, TEXT("[APS.Save] the pilot sits in %s again"), *It->GetName());
+				if (CVarRestorePilotedShip.GetValueOnGameThread() != 0)
+				{
+					PlaceVehicleAtSavedSeat(**It, PawnBefore, Pawn->GetActorTransform());
+				}
+				return true;
 			}
 			return false;
 		});
@@ -149,7 +200,12 @@ namespace APSCivilizationSavePrivate
 	}
 }
 
-void APSCivilizationSave::Capture(UWorld* World, TArray<uint8>& OutBytes)
+bool APSCivilizationSave::RestorePilotedShipEnabled()
+{
+	return APSCivilizationSavePrivate::CVarRestorePilotedShip.GetValueOnGameThread() != 0;
+}
+
+void APSCivilizationSave::Capture(UWorld* World, TArray<uint8>& OutBytes, const FString& FallbackPilotedVehicleKey)
 {
 	using namespace APSCivilizationSavePrivate;
 	OutBytes.Reset();
@@ -219,6 +275,12 @@ void APSCivilizationSave::Capture(UWorld* World, TArray<uint8>& OutBytes)
 		{
 			PilotedVehicleKey = FAPSFleetCommand::KeyOf(Vehicle);
 		}
+	}
+	// Rio 06.10 (audit: saves, aps.Save.RestorePilotedShip): after UnPossess (the lifecycle autosave) the controller's
+	// cached key says which ship the pilot sat in.
+	if (PilotedVehicleKey.IsEmpty() && !FallbackPilotedVehicleKey.IsEmpty() && RestorePilotedShipEnabled())
+	{
+		PilotedVehicleKey = FallbackPilotedVehicleKey;
 	}
 	Ar << PilotedVehicleKey;
 

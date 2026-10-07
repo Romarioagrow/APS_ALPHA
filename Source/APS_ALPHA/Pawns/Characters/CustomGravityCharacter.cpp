@@ -32,6 +32,72 @@
 #include "Widgets/Text/STextBlock.h"
 #include "UObject/ConstructorHelpers.h"
 #include "UObject/UnrealType.h"
+#include "HAL/IConsoleManager.h"
+#include "UObject/ObjectKey.h"
+
+namespace APSCharacterQueryThrottle
+{
+	// Rio 06.10 (night perf R7, "walking aboard costs frames"): two of the walker's scene queries do not need every
+	// frame. The take-control trace behind the F prompt runs at a fixed rate (the key press itself always traces fresh),
+	// and a deck found under an airborne walker is trusted for a moment instead of sweeping 1 km down again each frame.
+	// Both CVars at 0 restore the per-frame queries of 61532ed6.
+	TAutoConsoleVariable<float> CVarInteractionTraceHz(
+		TEXT("aps.Character.InteractionTraceHz"), 10.0f,
+		TEXT("Rate of the walker's take-control trace (the F prompt), per second of real time: the prompt is never older ")
+		TEXT("than 1/rate. Pressing F always traces fresh. <= 0: every frame (before 06.10)."),
+		ECVF_Default);
+	TAutoConsoleVariable<float> CVarSurfaceSupportCacheS(
+		TEXT("aps.Character.SurfaceSupportCacheS"), 0.1f,
+		TEXT("Seconds a deck or station floor found under an airborne walker is trusted before the support sweep runs again. ")
+		TEXT("Only a found floor is reused: a miss, zero-G, another gravity source, a turn of the down in the source's frame ")
+		TEXT("or a 5 m teleport of the walker sweep fresh. Keep it below the 0.2 s support-loss grace. <= 0: every frame (before 06.10)."),
+		ECVF_Default);
+
+	// The character header is a shared zone (06.10 night: one writer per file), so the throttle's timestamps live here,
+	// one entry per character, dropped on EndPlay, UnPossessed and a vehicle exit. Move them into the class when the
+	// header is next opened.
+	struct FQueryTimes
+	{
+		double InteractionTraceRealSeconds = -1.0;
+		double SupportFoundSeconds = -1.0;
+		TWeakObjectPtr<const AActor> SupportSource;
+		FVector SupportLocalStart = FVector::ZeroVector;
+		FVector SupportLocalDirection = FVector::ZeroVector;
+	};
+	TMap<FObjectKey, FQueryTimes> QueryTimes;
+
+	void Forget(const ACustomGravityCharacter& Character)
+	{
+		QueryTimes.Remove(FObjectKey(&Character));
+	}
+
+	void NoteInteractionTrace(const ACustomGravityCharacter& Character)
+	{
+		if (const UWorld* World = Character.GetWorld())
+		{
+			QueryTimes.FindOrAdd(FObjectKey(&Character)).InteractionTraceRealSeconds = World->GetRealTimeSeconds();
+		}
+	}
+
+	// True when the prompt's trace is due this frame: throttle off, no trace yet, or the last one is 1/rate old.
+	bool IsInteractionTraceDue(const ACustomGravityCharacter& Character)
+	{
+		const float Hz = CVarInteractionTraceHz.GetValueOnGameThread();
+		const UWorld* World = Character.GetWorld();
+		if (Hz <= 0.0f || !World)
+		{
+			return true;
+		}
+		const FQueryTimes* Times = QueryTimes.Find(FObjectKey(&Character));
+		const double Age = Times ? World->GetRealTimeSeconds() - Times->InteractionTraceRealSeconds : -1.0;
+		if (Times && Times->InteractionTraceRealSeconds >= 0.0 && Age >= 0.0 && Age < 1.0 / Hz)
+		{
+			return false;
+		}
+		NoteInteractionTrace(Character);
+		return true;
+	}
+}
 
 ACustomGravityCharacter::ACustomGravityCharacter()
 {
@@ -227,7 +293,21 @@ void ACustomGravityCharacter::Tick(float DeltaTime)
 	UpdateGravityAnimationParameters();
 	UpdateBuildCamera(DeltaTime);
 	AlignCameraToGravity(DeltaTime);
-	UpdateInteractionCandidate();
+	// Rio 06.10 (night perf R7): the prompt's trace runs at aps.Character.InteractionTraceHz, not every frame. It still
+	// runs aboard (a rover in the cargo bay is found by it, not by the ship fallback). Between traces only the cheap
+	// check runs, so a craft someone else took or that is gone drops its prompt in the same frame as before.
+	if (APSCharacterQueryThrottle::IsInteractionTraceDue(*this))
+	{
+		UpdateInteractionCandidate();
+	}
+	else if (AActor* Cached = CurrentInteractableActor.Get())
+	{
+		IVehicleControlling* CachedVehicle = Cast<IVehicleControlling>(Cached);
+		if (!CachedVehicle || !CachedVehicle->CanRequestVehicleControl(this))
+		{
+			CurrentInteractableActor = nullptr;
+		}
+	}
 	if (!InteractionPromptWidget.IsValid())
 	{
 		CreateInteractionPrompt();
@@ -246,6 +326,8 @@ void ACustomGravityCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	}
 	RemoveInteractionPrompt();
 	RemoveTraversalHud();
+	// Rio 06.10 (night perf R7): the query throttle's per-character timestamps go with the character.
+	APSCharacterQueryThrottle::Forget(*this);
 	Super::EndPlay(EndPlayReason);
 }
 
@@ -518,6 +600,13 @@ void ACustomGravityCharacter::UpdateBoostJump(float DeltaTime)
 
 void ACustomGravityCharacter::TryInteract()
 {
+	// Rio 06.10 (night perf R7): with the prompt's trace throttled, the key press traces fresh, so F acts on the current
+	// aim as it did with the per-frame trace (and the prompt shows the same craft from this frame on).
+	if (APSCharacterQueryThrottle::CVarInteractionTraceHz.GetValueOnGameThread() > 0.0f)
+	{
+		UpdateInteractionCandidate();
+		APSCharacterQueryThrottle::NoteInteractionTrace(*this);
+	}
 	AActor* Candidate = CurrentInteractableActor.Get();
 	if (!Candidate)
 	{
@@ -595,6 +684,14 @@ void ACustomGravityCharacter::UpdateInteractionCandidate()
 	else
 	{
 		Candidate = nullptr;
+	}
+	// Rio 06.10 (night perf R7): one line per change of the prompt's craft, so offscreen runs show the F prompt still
+	// appears (aboard, or at a rover) with the trace throttled.
+	if (Candidate != CurrentInteractableActor.Get() && IsLocallyControlled())
+	{
+		UE_LOG(LogTemp, Log, TEXT("[APS.Interact] prompt %s -> %s (traceHz=%.1f)"),
+			*GetNameSafe(CurrentInteractableActor.Get()), *GetNameSafe(Candidate),
+			APSCharacterQueryThrottle::CVarInteractionTraceHz.GetValueOnGameThread());
 	}
 	CurrentInteractableActor = Candidate;
 }
@@ -1015,6 +1112,29 @@ bool ACustomGravityCharacter::HasSurfaceGravitySupport(const FVector& GravityDir
 	const float ProbeRadius = FMath::Min(SurfaceGravityProbeRadius, CapsuleRadius * 0.8f);
 
 	const FVector Start = GetActorLocation();
+
+	// Rio 06.10 (night perf R7): an airborne walker aboard (a jump, the fall after getting up) swept 1 km down every
+	// frame. A floor found under it is trusted for aps.Character.SurfaceSupportCacheS (0.1 s, below the 0.2 s loss
+	// grace), measured in the gravity source's own frame so a moving or turning ship keeps it. Only a found floor is
+	// reused: a miss sweeps again next frame (a gap crossed in a jump resets the grace as before), zero-G sweeps every
+	// frame (gravity comes back at once), and another source, a turn of the down or a 5 m teleport of the walker sweep
+	// fresh. At worst a walker stepping off a deck into space turns zero-G 0.1 s later.
+	const float SupportCacheSeconds = APSCharacterQueryThrottle::CVarSurfaceSupportCacheS.GetValueOnGameThread();
+	APSCharacterQueryThrottle::FQueryTimes* SupportTimes = SupportCacheSeconds > 0.0f
+		? &APSCharacterQueryThrottle::QueryTimes.FindOrAdd(FObjectKey(this)) : nullptr;
+	const FTransform SourceTransform = GravityTarget->GetActorTransform();
+	const FVector LocalStart = SourceTransform.InverseTransformPositionNoScale(Start);
+	const FVector LocalDirection = SourceTransform.InverseTransformVectorNoScale(GravityDirection.GetSafeNormal());
+	const double Now = GetWorld()->GetTimeSeconds();
+	if (SupportTimes && !bIsZeroG && SupportTimes->SupportFoundSeconds >= 0.0
+		&& Now - SupportTimes->SupportFoundSeconds >= 0.0 && Now - SupportTimes->SupportFoundSeconds < SupportCacheSeconds
+		&& SupportTimes->SupportSource.Get() == GravityTarget
+		&& FVector::DistSquared(LocalStart, SupportTimes->SupportLocalStart) < FMath::Square(500.0)
+		&& FVector::DotProduct(LocalDirection, SupportTimes->SupportLocalDirection) > 0.996)
+	{
+		return true;
+	}
+
 	const FVector End = Start + GravityDirection.GetSafeNormal() *
 		(CapsuleHalfHeight + SurfaceGravityAcquisitionDistance);
 	FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(APSSurfaceGravityProbe), false, this);
@@ -1024,19 +1144,18 @@ bool ACustomGravityCharacter::HasSurfaceGravitySupport(const FVector& GravityDir
 	const bool bHit = GetWorld()->SweepSingleByChannel(
 		Hit, Start, End, FQuat::Identity, ECC_Visibility,
 		FCollisionShape::MakeSphere(ProbeRadius), QueryParams);
-	if (!bHit)
-	{
-		return false;
-	}
 
 	const FVector GravityUp = -GravityDirection.GetSafeNormal();
 	const float WalkableFloorZ = Movement ? Movement->GetWalkableFloorZ() : 0.7f;
-	if (FVector::DotProduct(Hit.ImpactNormal.GetSafeNormal(), GravityUp) < WalkableFloorZ)
+	const bool bSupported = bHit && FVector::DotProduct(Hit.ImpactNormal.GetSafeNormal(), GravityUp) >= WalkableFloorZ;
+	if (SupportTimes)
 	{
-		return false;
+		SupportTimes->SupportFoundSeconds = bSupported ? Now : -1.0;
+		SupportTimes->SupportSource = GravityTarget;
+		SupportTimes->SupportLocalStart = LocalStart;
+		SupportTimes->SupportLocalDirection = LocalDirection;
 	}
-
-	return true;
+	return bSupported;
 }
 
 void ACustomGravityCharacter::UpdateCameraReferenceFrame()
@@ -1653,6 +1772,8 @@ void ACustomGravityCharacter::LeaveShip()
 
 void ACustomGravityCharacter::SettleAfterVehicleExit(const FVector& Facing, AActor* LeftVehicle)
 {
+	// Rio 06.10 (night perf R7): the walker stands up somewhere new: its first support sweep and prompt trace run fresh.
+	APSCharacterQueryThrottle::Forget(*this);
 	// F3 (Rio, 02.10: "disembarking on a planet ignores its gravity"): a zero-G toggled with G before boarding must
 	// not outlive the flight. The place of exit decides (A3); in empty space that is zero-G anyway.
 	if (bManualZeroGOverride)
@@ -2048,5 +2169,7 @@ void ACustomGravityCharacter::UnPossessed()
 	{
 		ExitBuildMode(true);
 	}
+	// Rio 06.10 (night perf R7): whoever possesses the character next starts with a fresh prompt trace.
+	APSCharacterQueryThrottle::Forget(*this);
 	Super::UnPossessed();
 }

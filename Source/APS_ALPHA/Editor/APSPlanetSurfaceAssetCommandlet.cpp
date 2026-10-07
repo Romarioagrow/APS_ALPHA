@@ -2369,6 +2369,10 @@ namespace APSPlanetSurfaceAssets
 
 }
 
+#endif // WITH_EDITOR
+
+// Rio 06.10 (packaged build): constructor and Main exist in every target so the UHT class links;
+// the generator itself stays editor-only.
 UAPSPlanetSurfaceAssetCommandlet::UAPSPlanetSurfaceAssetCommandlet()
 {
 	// Material authoring needs all editor exports. Server-only filtering strips
@@ -2382,6 +2386,7 @@ UAPSPlanetSurfaceAssetCommandlet::UAPSPlanetSurfaceAssetCommandlet()
 
 int32 UAPSPlanetSurfaceAssetCommandlet::Main(const FString& Params)
 {
+#if WITH_EDITOR
 	using namespace APSPlanetSurfaceAssets;
 	if (FParse::Param(*Params, TEXT("OnlyContinuousWarpColdAudit")))
 	{
@@ -2792,6 +2797,8 @@ int32 UAPSPlanetSurfaceAssetCommandlet::Main(const FString& Params)
 	UE_LOG(LogTemp, Display, TEXT("[APS.PlanetSurfaceAssets] Updated project-owned terrain, physical water, opaque ammonia and preview masters; 9 terrain instances, 3 gameplay liquid wrappers, 3 hierarchy liquid instances and catalog under %s"),
 		*RootPath);
 	return 0;
-}
-
+#else
+	// Game targets carry no asset authoring; nothing to do.
+	return 0;
 #endif
+}

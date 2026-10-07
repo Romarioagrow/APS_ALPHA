@@ -4,7 +4,9 @@
 #include "APSInfrastructureCatalog.h"
 
 class AActor;
+class APlanetaryBody;
 class FAPSMegastructureYard;
+class FAPSStarSystems;
 class UWorld;
 
 /** A structure the civilization raised from the infrastructure catalogue. */
@@ -21,6 +23,19 @@ struct APS_ALPHA_API FAPSBuiltStructure
 	double BuiltSeconds{0.0};
 	/** Raised by hand in build mode: stands where it was put (never settled again), also after a load. */
 	bool bPlaced{false};
+	/**
+	 * Rio 06.10 (audit: structures in galaxy-reach systems were dropped for good on load): restored from a save while its
+	 * site (a star system registered a moment later, a materialized body) was not standing yet. The record is kept and
+	 * written to the next save; Actor stays null until the site appears and the visual is raised (aps.Save.HoldUnresolvedStructures).
+	 * Rio 07.10: also set when its world went with a released star system (aps.Stars.HoldReleasedStructures).
+	 */
+	bool bAwaitingSite{false};
+	/**
+	 * Rio 07.10 (a held record was raised by the first body of its name, a home world's included): the star system whose
+	 * world it stands on, set when that system was released; such a record is raised only on that system's own bodies.
+	 * Runtime only, never saved (a load holds it by its body's name, as before).
+	 */
+	FGuid HostSystemId;
 };
 
 /** A small object placed by hand in build mode (Gameplay/Construction), kept here so the save holds it. */
@@ -39,6 +54,13 @@ struct APS_ALPHA_API FAPSPlacedProp
 	TWeakObjectPtr<AActor> Actor;
 	/** Restored from a save and not yet checked against the terrain near the pilot. */
 	bool bPendingSettle{false};
+	/**
+	 * Rio 07.10 (placed props on the worlds of other star systems were gone with the system, and a load never brought back
+	 * one whose world was not standing): its world is not standing; raised there when it stands
+	 * (aps.Stars.HoldReleasedStructures). HostSystemId as for FAPSBuiltStructure; both runtime only, never saved.
+	 */
+	bool bAwaitingSite{false};
+	FGuid HostSystemId;
 };
 
 struct APS_ALPHA_API FAPSInfrastructureSaveData
@@ -116,6 +138,18 @@ public:
 	/** The star system a site stands for (a system anchor or a star), or false for a planet or moon. */
 	static bool SiteSystem(const UWorld* World, const AActor* Site, FGuid& OutSystemId);
 
+	/**
+	 * Rio 07.10 ("buildings on planets of other star systems disappear when that system goes away"): aps.Stars.
+	 * HoldReleasedStructures, read by the fleet too. 0: every path below returns at once and nothing is held.
+	 */
+	static bool HoldsReleased();
+	/**
+	 * The materializer releases a foreign star system (FAPSSystemMaterializer::Finish, before its actors go): every
+	 * structure and placed prop standing on these bodies becomes a held record of that system (still saved, still
+	 * producing, not counted at its place), raised again on the same body when the system stands.
+	 */
+	void HoldOnRelease(const TArray<APlanetaryBody*>& Bodies, const FGuid& HostSystemId);
+
 	const TArray<FAPSBuiltStructure>& GetStructures() const { return Structures; }
 	/** Structures standing at a place (a body or a star system anchor). */
 	void GetAt(const AActor* Site, TArray<const FAPSBuiltStructure*>& OutStructures) const;
@@ -129,7 +163,10 @@ public:
 	 * station, shipyard or headquarters of the fleet's (the home complex counts).
 	 */
 	bool HasStationAt(const AActor* Site) const;
-	/** Structures of a type in the star system of a place (a planet or moon belongs to the home system). */
+	/**
+	 * Structures of a type in the star system of a place (a planet or moon belongs to the home system). Rio 07.10: at a
+	 * foreign system's star or anchor also those on that system's own worlds, standing or held (aps.Stars.ForeignStarSites).
+	 */
 	int32 CountInSystem(const AActor* Site, FName Type) const;
 	/** Hubs: the extra berths their place gives an orbital station type there (0 for every other type). */
 	int32 BerthsAt(const AActor* Site, const APSInfrastructure::FType& Type) const;
@@ -158,12 +195,27 @@ public:
 private:
 	void RecountRates();
 	void ApplyPendingRestore();
+	/**
+	 * The actor a saved structure stands at: for a star system the home star (the home system) or the system's anchor, for
+	 * a planet or moon the body whose fleet key is SiteKey (BodiesByKey, when given, instead of a walk over the bodies).
+	 */
+	AActor* ResolveSite(UWorld* LiveWorld, FAPSStarSystems* Stars, const FGuid& SystemId, const FString& SiteKey,
+		const TMap<FString, AActor*>* BodiesByKey = nullptr) const;
+	/**
+	 * Rio 06.10: the structures held at load (bAwaitingSite) whose site now stands are raised (twice a second). Rio 07.10:
+	 * also the structures and props held when their system was released, on that system's own bodies once it stands
+	 * again (a few a time), and the props a load could not place.
+	 */
+	void RaiseHeldStructures();
 	FString SiteKeyOf(const AActor* Site, FGuid& OutSystemId) const;
 	AActor* SpawnVisual(const APSInfrastructure::FType& Type, AActor* Site, const FTransform& Transform,
 		const FString& ActorName, const FText& Name);
 	/** Ground settlements and surface structures stand at sea level until the pilot is near; then on the ground. */
 	void SettleSurfaceActors();
-	/** Props from a save: spawned again on their bodies; those whose body is not found stay as records for the next save. */
+	/**
+	 * Props from a save: spawned again on their bodies; those whose body is not found stay as records for the next save
+	 * (Rio 07.10: and with aps.Stars.HoldReleasedStructures are raised once a body of that name stands).
+	 */
 	void RestorePlacedProps(const TArray<FAPSInfrastructureSaveData::FProp>& Saved);
 	/**
 	 * Props restored on the ground settle on the terrain once the pilot has stood near them for a moment (its collision

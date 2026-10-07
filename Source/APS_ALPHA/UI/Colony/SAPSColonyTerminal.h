@@ -42,6 +42,9 @@ public:
 	virtual ~SAPSColonyTerminal() override;
 	virtual bool SupportsKeyboardFocus() const override { return true; }
 	virtual FReply OnKeyDown(const FGeometry& Geometry, const FKeyEvent& Event) override;
+	/** Rio 06.10 (audit: a focused child took Tab/K/F10): with aps.UI.TerminalButtonsNoFocus the terminal's hot keys are
+	 * taken before any child sees them; Esc stays in OnKeyDown. */
+	virtual FReply OnPreviewKeyDown(const FGeometry& Geometry, const FKeyEvent& Event) override;
 	virtual void Tick(const FGeometry& AllottedGeometry, double InCurrentTime, float InDeltaTime) override;
 	/** 0 overview, 1 map, 2 infrastructure, 3 fleet orders, 4 divisions, 5 journal, 6 shipyard, 7 system scheme, 8 pilot,
 	 * 9 surface map, 10 star map (test captures, K). Stars, map, scheme and surface are the modes of one MAP tab (Rio, 02.10). */
@@ -70,6 +73,9 @@ private:
 	FReply SelectTab(ETab Tab);
 	FReply Close();
 	FReply OpenMap();
+	/** Tab closes, K opens fleet command (and closes it from there), F10 opens the map; unset for any other key. Shared by
+	 * OnKeyDown and OnPreviewKeyDown, so both act the same. */
+	TOptional<FReply> HandleTerminalHotKey(const FKey& Key);
 	TSharedRef<SWidget> BuildOverview();
 	TSharedRef<SWidget> BuildColony();
 	TSharedRef<SWidget> BuildConstruction();

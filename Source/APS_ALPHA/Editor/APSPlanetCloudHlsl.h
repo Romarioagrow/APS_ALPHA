@@ -341,4 +341,56 @@ return float4((Sum/max(CloudAlpha,.0001))*AirTransmission+AirRadiance,Alpha);
 // These shared pieces are also used by the isolated multilayer candidate.
 // Concatenation preserves the previous single-layer shader byte-for-byte.
 inline FString Code() { return FString(FieldCode())+RayCode()+SingleLayerCode(); }
+// Rio 06.10 (clouds vanish at an altitude): V27 keeps ONE interval per ray. A ray
+// that dips under the deck base and misses the datum sphere crosses the deck twice.
+// Below the base V27 kept the far crossing, at/above it only the near one, so the
+// horizon band switched off in one frame at camera radius Radius+Bottom. V33
+// marches both crossings with the same 16-32 sample budget and skips the clear gap
+// between them. Built from exact splices of the V27 source: Code() above stays
+// byte-identical (V27 remains rebuildable) and a changed anchor fails closed.
+inline FString SingleLayerTwoCrossingCode()
+{
+    FString Shader(SingleLayerCode());
+    const auto ReplaceOne=[&Shader](const TCHAR* Before,const TCHAR* After)
+    { return Shader.ReplaceInline(Before,After,ESearchCase::CaseSensitive)==1; };
+    // Gap = clear air between the two crossings, kept in REAL ray distance.
+    if(!ReplaceOne(TEXT("float Start=max(0,OuterHit.x), End=OuterHit.y;"),
+        TEXT("float Start=max(0,OuterHit.x), End=OuterHit.y, GapAt=1.e30, Gap=0.;"))) return FString();
+    if(!ReplaceOne(TEXT("else if(InnerHit.x>Start) End=min(End,InnerHit.x);"),TEXT(R"HLSL(else if(InnerHit.y>Start)
+{
+    // Rio 06.10 (clouds vanish at an altitude): a dipping ray that misses the
+    // datum re-enters the deck at InnerHit.y. Keep both crossings in one march.
+    // At/above the base InnerHit.x>=0 exactly; with length(O)==Inner in float it
+    // rounds to 0 or -ulp. Near clamps that, so the result equals the below-base
+    // interval there instead of one sparse march through the clear gap.
+    float Near=max(InnerHit.x,Start);
+    float2 Dip=F.sphere(O,D,Radius);
+    if(Dip.x>0.||InnerHit.y>=End) End=min(End,Near);
+    else { GapAt=Near; Gap=InnerHit.y-Near; }
+})HLSL"))) return FString();
+    // SceneRay and Ground clamps above compare REAL distances; only then collapse.
+    if(!ReplaceOne(TEXT("if(End<=Start) return Debug>1.5 ? float4(1,1,0,.5) : float4(0,0,0,0);"),TEXT(R"HLSL(// Scene/ground before the far crossing re-enters: only the near crossing remains.
+if(End<GapAt+Gap) { End=min(End,GapAt); Gap=0.; GapAt=1.e30; }
+if(End<=Start) return Debug>1.5 ? float4(1,1,0,.5) : float4(0,0,0,0);)HLSL"))) return FString();
+    if(!ReplaceOne(TEXT("return float4(saturate((End-Start)/max(Thickness,.001)).xxx,1);"),
+        TEXT("return float4(saturate((End-Start-Gap)/max(Thickness,.001)).xxx,1);"))) return FString();
+    // Same 16-32 budget over the cloud length only, never over the clear gap.
+    if(!ReplaceOne(TEXT("int Samples=(int)clamp(ceil((End-Start)/max(Thickness,.001)*16.),16.,32.);"),TEXT(R"HLSL(float RayLength=End-Start-Gap;
+int Samples=(int)clamp(ceil(RayLength/max(Thickness,.001)*16.),16.,32.);)HLSL"))) return FString();
+    if(!ReplaceOne(TEXT("float RayLength=End-Start, DistributionScale=max(Thickness*.5,.05);"),
+        TEXT("float DistributionScale=max(Thickness*.5,.05);"))) return FString();
+    // NextStart/Step live in the collapsed march coordinate [Start, End-Gap].
+    if(!ReplaceOne(TEXT("float Step=max(0.,min(NextStep,End-NextStart));"),
+        TEXT("float Step=max(0.,min(NextStep,End-Gap-NextStart));"))) return FString();
+    // Back to REAL distance before P, Footprint, light taps and CloudDistance use it.
+    if(!ReplaceOne(TEXT("float SampleDistance=NextStart+SamplePhase*Step;"),TEXT(R"HLSL(float SampleDistance=NextStart+SamplePhase*Step;
+    SampleDistance+=SampleDistance>GapAt?Gap:0.;)HLSL"))) return FString();
+    return Shader;
+}
+// Empty when an anchor changed; the builder then refuses to create the asset.
+inline FString TwoCrossingCode()
+{
+    const FString Layer=SingleLayerTwoCrossingCode();
+    return Layer.IsEmpty()?FString():FString(FieldCode())+RayCode()+Layer;
+}
 }

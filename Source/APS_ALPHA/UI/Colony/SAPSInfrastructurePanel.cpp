@@ -15,11 +15,13 @@
 #include "APS_ALPHA/Gameplay/Fleet/APSFleetCommand.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
 #include "APS_ALPHA/UI/Style/APSUINumber.h"
+#include "APS_ALPHA/UI/Style/APSSlateLineGuard.h"
 #include "Brushes/SlateRoundedBoxBrush.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "Fonts/FontMeasure.h"
 #include "Framework/Application/SlateApplication.h"
+#include "HAL/IConsoleManager.h"
 #include "Rendering/DrawElements.h"
 #include "Rendering/SlateRenderer.h"
 #include "Styling/AppStyle.h"
@@ -47,6 +49,17 @@ namespace APSInfrastructurePanelPrivate
 	constexpr uint8 ShapeFleetHeadquarters = 12;
 	constexpr uint8 ShapeSettlement = 13;
 	constexpr uint8 ShapeFleetOutpost = 14;
+
+	/**
+	 * Rio 06.10 (audit: a clicked terminal button kept keyboard focus): aps.UI.TerminalButtonsNoFocus is registered with the
+	 * terminal buttons elsewhere and looked up by name here; when it is not found or 0 the buttons stay focusable (the
+	 * previous path). Looked up on every call (only when the panel is built): a cached pointer would outlive a re-registration.
+	 */
+	bool InfrastructureButtonsNoFocus()
+	{
+		const IConsoleVariable* Variable = IConsoleManager::Get().FindConsoleVariable(TEXT("aps.UI.TerminalButtonsNoFocus"));
+		return Variable && Variable->GetInt() != 0;
+	}
 
 	/** Objects not painted keep this position and cannot be picked. */
 	const FVector2D Unpainted(-1.0e9, -1.0e9);
@@ -142,8 +155,11 @@ namespace APSInfrastructurePanelPrivate
 		{
 			Converted.Add(FVector2f(Point));
 		}
-		FSlateDrawElement::MakeLines(Out, Layer, Geometry.ToPaintGeometry(), MoveTemp(Converted), ESlateDrawEffect::None, Colour,
-			true, Thickness);
+		if (APSSlateLineGuard::IsDrawable(Converted))
+		{
+			FSlateDrawElement::MakeLines(Out, Layer, Geometry.ToPaintGeometry(), MoveTemp(Converted), ESlateDrawEffect::None, Colour,
+				true, Thickness);
+		}
 	}
 
 	void Circle(FSlateWindowElementList& Out, const int32 Layer, const FGeometry& Geometry, const FVector2D& Centre,
@@ -1052,7 +1068,10 @@ FReply SAPSInfrastructureMap::OnMouseButtonDown(const FGeometry& MyGeometry, con
 	bPanning = false;
 	PressPosition = MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition());
 	PressOffset = MapOffset;
-	return FReply::Handled().CaptureMouse(SharedThis(this));
+	// Rio 06.10 (review of the capture-lost fix): the second button of an overlapping press keeps the capture the map holds.
+	// Capturing again releases it first, so OnMouseCaptureLost would clear the press just made and the map would keep the
+	// capture for good (its button-up returns early without a press). The state above is set as before.
+	return HasMouseCapture() ? FReply::Handled() : FReply::Handled().CaptureMouse(SharedThis(this));
 }
 
 FReply SAPSInfrastructureMap::OnMouseButtonUp(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
@@ -1092,6 +1111,15 @@ void SAPSInfrastructureMap::OnMouseLeave(const FPointerEvent& MouseEvent)
 	SLeafWidget::OnMouseLeave(MouseEvent);
 	HoverNode = INDEX_NONE;
 	HoverIcon = INDEX_NONE;
+}
+
+void SAPSInfrastructureMap::OnMouseCaptureLost(const FCaptureLostEvent& CaptureLostEvent)
+{
+	// Rio 06.10 (audit: the button-up of a drag whose capture was lost never came, so the map kept panning with the bare
+	// cursor and the next click was taken for the drag's end).
+	bPressed = false;
+	bPanning = false;
+	SLeafWidget::OnMouseCaptureLost(CaptureLostEvent);
 }
 
 FCursorReply SAPSInfrastructureMap::OnCursorQuery(const FGeometry& MyGeometry, const FPointerEvent& CursorEvent) const
@@ -1616,6 +1644,7 @@ TSharedRef<SWidget> SAPSInfrastructurePanel::BuildCatalogue()
 			.Visibility_Lambda([this]() { return PickerType.IsNone() ? EVisibility::Collapsed : EVisibility::Visible; })
 			[
 				SNew(SButton).ButtonStyle(FAppStyle::Get(), "NoBorder").ContentPadding(0.0f)
+				.IsFocusable(!InfrastructureButtonsNoFocus())
 				.OnClicked(this, &SAPSInfrastructurePanel::ClosePicker)
 				[
 					SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(Scrim())

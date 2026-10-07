@@ -1,4 +1,5 @@
-#if WITH_DEV_AUTOMATION_TESTS
+#if WITH_DEV_AUTOMATION_TESTS && WITH_EDITOR
+// Rio 06.10 (packaged build): editor-only material/texture APIs inside; game targets skip this file, editor automation is unchanged.
 
 #include "APSFrozenDescentProbe.h"
 #include "APSContinuousWarpPixelProbe.h"

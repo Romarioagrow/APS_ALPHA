@@ -5,6 +5,7 @@
 #include "APSStarViewExtension.h"
 
 #include "Engine/World.h"
+#include "HAL/PlatformProperties.h"
 #include "Interfaces/IPluginManager.h"
 #include "Misc/CoreDelegates.h"
 #include "Misc/Paths.h"
@@ -25,20 +26,25 @@ public:
 			UE_LOG(LogAPSStarRenderer, Error, TEXT("[APS.GpuStars] plugin descriptor not found: shaders stay off"));
 			return;
 		}
-		const FString ShaderDirectory = FPaths::Combine(Plugin->GetBaseDir(), TEXT("Shaders"));
-		const FString VirtualRoot(APSStarRenderer::Private::ShaderVirtualRoot);
-		if (!FPaths::DirectoryExists(ShaderDirectory))
+		// Rio 06.10 (audit: packaged builds): a cooked runtime loads the cooked global shaders and has no .usf files, so the
+		// missing directory is not an error there and nothing is mapped (APSStarSettings.cpp, DecideShaderCompile).
+		if (!FPlatformProperties::RequiresCookedData())
 		{
-			UE_LOG(LogAPSStarRenderer, Error, TEXT("[APS.GpuStars] shader directory missing: %s"), *ShaderDirectory);
-		}
-		else if (!AllShaderSourceDirectoryMappings().Contains(VirtualRoot))
-		{
-			AddShaderSourceDirectoryMapping(VirtualRoot, ShaderDirectory);
-			APSStarRenderer::Private::SetShaderSourceDirectory(ShaderDirectory);
-		}
-		else
-		{
-			APSStarRenderer::Private::SetShaderSourceDirectory(ShaderDirectory);
+			const FString ShaderDirectory = FPaths::Combine(Plugin->GetBaseDir(), TEXT("Shaders"));
+			const FString VirtualRoot(APSStarRenderer::Private::ShaderVirtualRoot);
+			if (!FPaths::DirectoryExists(ShaderDirectory))
+			{
+				UE_LOG(LogAPSStarRenderer, Error, TEXT("[APS.GpuStars] shader directory missing: %s"), *ShaderDirectory);
+			}
+			else if (!AllShaderSourceDirectoryMappings().Contains(VirtualRoot))
+			{
+				AddShaderSourceDirectoryMapping(VirtualRoot, ShaderDirectory);
+				APSStarRenderer::Private::SetShaderSourceDirectory(ShaderDirectory);
+			}
+			else
+			{
+				APSStarRenderer::Private::SetShaderSourceDirectory(ShaderDirectory);
+			}
 		}
 
 		PostEngineInitHandle = FCoreDelegates::OnPostEngineInit.AddRaw(this, &FAPSStarRendererModule::OnPostEngineInit);

@@ -22,6 +22,8 @@
 #include "APS_ALPHA/UI/MainMenu/APSWorldBrowserMetadata.h"
 #include "Engine/GameViewportClient.h"
 #include "GameFramework/Pawn.h"
+#include "APS_ALPHA/Gameplay/Fleet/APSFleetCommand.h"
+#include "HAL/IConsoleManager.h"
 #include "InputCoreTypes.h"
 #include "Misc/App.h"
 #include "Misc/ConfigCacheIni.h"
@@ -62,6 +64,18 @@ namespace APSSaveFrame
 	}
 }
 
+namespace APSGravityControllerSaveCVars
+{
+	/** Rio 06.10 (audit: saves, the generator overlay). The saved AAstroGenerator archive was serialized over the replayed
+	 * generator; its object paths belong to the session it was saved in, so HomeSpaceship and the sub-generators came back
+	 * null, and a generator saved under another name was spawned a second time. */
+	TAutoConsoleVariable<int32> CVarSkipGeneratorOverlay(
+		TEXT("aps.Save.SkipGeneratorOverlay"), 1,
+		TEXT("1: loading never serializes the saved AAstroGenerator archive over the live, replayed generator (its object ")
+		TEXT("paths are session-specific and nulled HomeSpaceship/sub-generators); its transform is still applied. ")
+		TEXT("0: the old full overlay."));
+}
+
 void AGravityPlayerController::PlayerTick(const float DeltaTime)
 {
 	Super::PlayerTick(DeltaTime);
@@ -71,16 +85,26 @@ void AGravityPlayerController::PlayerTick(const float DeltaTime)
 void AGravityPlayerController::CapturePlayerStateForSave()
 {
 	const APawn* PlayerPawn = GetPawn();
+	const APilotingVehicle* PilotedVehicle = nullptr;
 	// Seated in a ship the player is still its pilot: the save keeps the pilot, who sits down in the ship again after
 	// loading (APSCivilizationSave). Saving the ship as the player's pawn spawned a second, empty ship on load and
 	// removed the pilot, who then could not get out (audit B2).
 	if (const APilotingVehicle* Vehicle = Cast<APilotingVehicle>(PlayerPawn); Vehicle && IsValid(Vehicle->Pilot))
 	{
+		PilotedVehicle = Vehicle;
 		PlayerPawn = Vehicle->Pilot;
 	}
 	if (!IsValid(PlayerPawn))
 	{
 		return;
+	}
+	// Rio 06.10 (audit: saves, aps.Save.RestorePilotedShip): the lifecycle autosave runs after UnPossess, when the
+	// civilization save no longer sees the ship; it gets the last piloted ship's key from here. The key is rebuilt only
+	// when the ship changes (or a destroyed one leaves a stale key), never per tick.
+	if (PilotedVehicle != CachedPilotedVehicle.Get() || (!PilotedVehicle && !CachedPilotedVehicleKey.IsEmpty()))
+	{
+		CachedPilotedVehicle = PilotedVehicle;
+		CachedPilotedVehicleKey = PilotedVehicle ? FAPSFleetCommand::KeyOf(PilotedVehicle) : FString();
 	}
 	CachedPlayerPawnClass = PlayerPawn->GetClass()->GetPathName();
 	CachedPlayerPawnTransform = PlayerPawn->GetActorTransform();
@@ -319,7 +343,10 @@ bool AGravityPlayerController::SaveWorldToSlot(const FString& SlotName,
 		}
 	}
 	// Modules, fleet, surveys, outposts and the journal: the progress the actor archive below does not hold.
-	APSCivilizationSave::Capture(World, SaveGameInstance->CivilizationState);
+	// Rio 06.10 (audit: saves, aps.Save.RestorePilotedShip): the piloted-ship cache is refreshed first (a pilot who left
+	// the seat this frame is not saved seated); the call below repeats it, with the same result.
+	CapturePlayerStateForSave();
+	APSCivilizationSave::Capture(World, SaveGameInstance->CivilizationState, CachedPilotedVehicleKey);
 
 	TArray<AActor*> AllActors;
 	UGameplayStatics::GetAllActorsOfClass(World, ABaseActor::StaticClass(), AllActors);
@@ -468,11 +495,22 @@ void AGravityPlayerController::LoadWorld()
 					{
 						continue;
 					}
+					// Rio 06.10 (audit: saves, aps.Save.SkipGeneratorOverlay): the replayed generator is the live one; its
+					// saved archive holds the old session's object paths.
+					const bool bGeneratorRecord = ActorClass->IsChildOf(AAstroGenerator::StaticClass())
+						&& APSGravityControllerSaveCVars::CVarSkipGeneratorOverlay.GetValueOnGameThread() != 0;
 					AActor* Actor = SaveData.StableEntityId.IsValid()
 						? StableIdToActorMap.FindRef(SaveData.StableEntityId) : nullptr;
 					if (!IsValid(Actor))
 					{
 						Actor = NameToActorMap.FindRef(SaveData.ActorName);
+					}
+					if (!IsValid(Actor) && bGeneratorRecord)
+					{
+						// Never a second generator next to the replayed one.
+						UE_LOG(LogTemp, Warning, TEXT("[APS.Save] No live generator for record %s; skipped"),
+							*SaveData.ActorName);
+						continue;
 					}
 					if (IsValid(Actor) && !Actor->IsA(ActorClass))
 					{
@@ -494,9 +532,12 @@ void AGravityPlayerController::LoadWorld()
 
 					if (Actor)
 					{
-						FMemoryReader MemoryReader(SaveData.ActorData, true);
-						FObjectAndNameAsStringProxyArchive Archive(MemoryReader, true);
-						Actor->Serialize(Archive);
+						if (!bGeneratorRecord)
+						{
+							FMemoryReader MemoryReader(SaveData.ActorData, true);
+							FObjectAndNameAsStringProxyArchive Archive(MemoryReader, true);
+							Actor->Serialize(Archive);
+						}
 						Actor->SetActorTransform(APSSaveFrame::ToWorld(World, SaveData.ActorTransform), false, nullptr,
 							ETeleportType::TeleportPhysics);
 

@@ -85,6 +85,18 @@ void HidePair(FAPSGameplayNativePair& Pair)
 	}
 }
 
+// Rio 06.10 (packaged build): FMaterial::IsCompilationFinished exists only WITH_EDITOR. A cooked game
+// loads its shader maps and never compiles them, so there a complete game-thread map is the answer.
+// The editor path is unchanged.
+bool APSNativeStarsCompilationFinished(const FMaterialResource* Resource)
+{
+#if WITH_EDITOR
+	return Resource && Resource->IsCompilationFinished();
+#else
+	return Resource && Resource->IsGameThreadShaderMapComplete();
+#endif
+}
+
 bool MaterialReady(UMaterialInterface* Material, UWorld* World, const TCHAR* BasePath)
 {
 	if (!World || !APSStellarMaterialContract::HasExactBase(Material, BasePath)) return false;
@@ -94,7 +106,7 @@ bool MaterialReady(UMaterialInterface* Material, UWorld* World, const TCHAR* Bas
 	{
 		return ShaderMap != nullptr;
 	}
-	return Resource && Resource->IsCompilationFinished() && Resource->IsGameThreadShaderMapComplete()
+	return Resource && APSNativeStarsCompilationFinished(Resource) && Resource->IsGameThreadShaderMapComplete()
 		&& ShaderMap && ShaderMap->GetMeshShaderMap(&FLocalVertexFactory::StaticType);
 }
 
@@ -1131,7 +1143,7 @@ void UAPSStellarVisualSubsystem::PresentGameplayNativeStars(AAstroGenerator* Gen
 			const FMaterialShaderMap* ShaderMap = Resource ? Resource->GetGameThreadShaderMap() : nullptr;
 			UE_LOG(LogTemp, Log, TEXT("[APS.Gameplay.NativeStars.Diag]   base %s: loaded=%d resource=%d compiled=%d complete=%d shaderMap=%d localVF=%d ready=%d"),
 				*FPaths::GetBaseFilename(BasePath), IsValid(Base) ? 1 : 0, Resource ? 1 : 0,
-				Resource && Resource->IsCompilationFinished() ? 1 : 0, Resource && Resource->IsGameThreadShaderMapComplete() ? 1 : 0,
+				APSNativeStarsCompilationFinished(Resource) ? 1 : 0, Resource && Resource->IsGameThreadShaderMapComplete() ? 1 : 0,
 				ShaderMap ? 1 : 0, ShaderMap && ShaderMap->GetMeshShaderMap(&FLocalVertexFactory::StaticType) ? 1 : 0,
 				MaterialReady(Base, GetWorld(), BasePath) ? 1 : 0);
 		}

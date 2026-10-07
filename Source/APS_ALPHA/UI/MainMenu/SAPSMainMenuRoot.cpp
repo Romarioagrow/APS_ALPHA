@@ -2197,16 +2197,10 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildLandingPage()
 			]
 			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0.0f, 16.0f, 0.0f, 0.0f)
 			[
+				// Rio 06.10: no key hint under the buttons; the line only answers the first Q.
 				SNew(STextBlock).Font(APSMenu::Font("Regular", 13)).ColorAndOpacity(APSMenu::Readable)
-				.Text_Lambda([this, bHasWorld]()
-				{
-					if (FPlatformTime::Seconds() < QuitArmedUntil)
-					{
-						return LOCTEXT("LandingQuitArmed", "Press Q again to quit");
-					}
-					return bHasWorld ? LOCTEXT("LandingHintContinue", "A letter key picks its button   /   Enter continues your newest world")
-						: LOCTEXT("LandingHintNew", "A letter key picks its button   /   Enter starts a new world");
-				})
+				.Text(LOCTEXT("LandingQuitArmed", "Press Q again to quit"))
+				.Visibility_Lambda([this]() { return FPlatformTime::Seconds() < QuitArmedUntil ? EVisibility::HitTestInvisible : EVisibility::Hidden; })
 			]
 		];
 }

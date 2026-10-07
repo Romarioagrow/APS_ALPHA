@@ -4,6 +4,7 @@
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
 #include "APS_ALPHA/UI/StrategicMap/APSStrategicMapScene.h"
 #include "APS_ALPHA/UI/Style/APSMenuChrome.h"
+#include "APS_ALPHA/UI/Style/APSSlateLineGuard.h"
 #include "APS_ALPHA/UI/Style/APSUINumber.h"
 #include "Brushes/SlateRoundedBoxBrush.h"
 #include "CoreGlobals.h"
@@ -89,7 +90,7 @@ namespace APSStarSchemePrivate
 	void PaintLines(FSlateWindowElementList& Out, const int32 Layer, const FGeometry& Geometry, const TArray<FVector2D>& Points,
 		const FLinearColor& Colour, const float Thickness)
 	{
-		if (Points.Num() >= 2)
+		if (Points.Num() >= 2 && APSSlateLineGuard::IsDrawable(Points))
 		{
 			FSlateDrawElement::MakeLines(Out, Layer, Geometry.ToPaintGeometry(), Points, ESlateDrawEffect::None, Colour, true, Thickness);
 		}
@@ -1682,6 +1683,15 @@ void SAPSStarScheme::OnMouseLeave(const FPointerEvent& Event)
 {
 	SLeafWidget::OnMouseLeave(Event);
 	Hovered = INDEX_NONE;
+}
+
+void SAPSStarScheme::OnMouseCaptureLost(const FCaptureLostEvent& CaptureLostEvent)
+{
+	// Rio 06.10 (audit: Alt-Tab during a drag; the next move dragged without a held button and the cursor stayed a
+	// closed hand), as SAPSStrategicMapView does.
+	bPressed = false;
+	bDragged = false;
+	SLeafWidget::OnMouseCaptureLost(CaptureLostEvent);
 }
 
 FCursorReply SAPSStarScheme::OnCursorQuery(const FGeometry&, const FPointerEvent&) const

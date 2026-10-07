@@ -2,6 +2,7 @@
 #include "APSAtmosphereGeneration.h"
 #include "APS_ALPHA/Core/Rendering/APSAtmosphereTailMaterial.h"
 #include "Materials/MaterialInterface.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "APS_ALPHA/Core/Planetary/APSWorldScapeFoliagePolicy.h"
 #include "APS_ALPHA/Core/Rendering/APSPlanetCloudComponent.h"
 #include "APS_ALPHA/Actors/Astro/Moon.h"
@@ -11,6 +12,15 @@
 #include "APS_ALPHA/Core/Enums/PlanetType.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "HAL/IConsoleManager.h"
+
+// Rio 06.10 (audit: the moon tail master swap had no switch back to the 61532ed6 masters).
+static TAutoConsoleVariable<int32> CVarMoonTailMaster(
+	TEXT("aps.Sky.MoonTailMaster"), 1,
+	TEXT("1: every moon except Volcanic draws on M_APS_AtmosphereTail (06.10 evening). 0: only Icy moons, the native ")
+	TEXT("AtmoScape master for the rest (as in 61532ed6). Read when a body's atmosphere is (re)initialised: set it before ")
+	TEXT("generation (-ExecCmds)."),
+	ECVF_Default);
 
 // Sets default values
 APlanetarySurfaceGenerator::APlanetarySurfaceGenerator()
@@ -214,9 +224,14 @@ void APlanetarySurfaceGenerator::InitAtmoScape(UWorld* World, double PlanetaryRa
 	// atmosphere over the first one.
 	const APlanet* AtmospherePlanet = Cast<APlanet>(NewPlanetaryBody);
 	const AMoon* AtmosphereMoon = Cast<AMoon>(NewPlanetaryBody);
+	// Rio 06.10 (audit): aps.Sky.MoonTailMaster 0 keeps the 61532ed6 moon masters (tail master on Icy moons only). The
+	// re-initialisation branch below returns a moon already on the tail master to the native master in that case.
+	const bool bMoonTail = AtmosphereMoon && (CVarMoonTailMaster.GetValueOnGameThread() != 0
+		? APSAtmosphereTailMaterial::ManagedFor(AtmosphereMoon->MoonType)
+		: APSAtmosphereTailMaterial::EnabledFor(AtmosphereMoon->MoonType));
 	const bool bUseContinuousAtmosphere = (AtmospherePlanet
-		&& APSAtmosphereTailMaterial::EnabledFor(AtmospherePlanet->PlanetType))
-		|| (AtmosphereMoon && APSAtmosphereTailMaterial::EnabledFor(AtmosphereMoon->MoonType));
+		&& APSAtmosphereTailMaterial::ManagedFor(AtmospherePlanet->PlanetType))
+		|| bMoonTail;
 	if (!IsValid(PlanetAtmosphere))
 	{
 		PlanetAtmosphere = World->SpawnActorDeferred<AAtmoScape>(AAtmoScape::StaticClass(), FTransform());
@@ -256,6 +271,21 @@ void APlanetarySurfaceGenerator::InitAtmoScape(UWorld* World, double PlanetaryRa
 	if (bUseContinuousAtmosphere && !ContinuousAtmosphereMaterial)
 		UE_LOG(LogTemp, Warning, TEXT("[APS.AtmosphereTail] Missing installed master; preserving native atmosphere for %s"),
 			*GetNameSafe(NewPlanetaryBody));
+	// Rio 06.10 (Krathys hard outline): a moon newly on the tail master starts with the native math (tail 0); the
+	// gameplay sky (aps.Sky.AtmosphereTail) weighs it by the shell's thinness, so the menu preview stays as it was.
+	if (IsValid(PlanetAtmosphere) && AtmosphereMoon && ContinuousAtmosphereMaterial
+		&& !APSAtmosphereTailMaterial::EnabledFor(AtmosphereMoon->MoonType))
+	{
+		TInlineComponentArray<UStaticMeshComponent*> ShellMeshes(PlanetAtmosphere);
+		for (UStaticMeshComponent* ShellMesh : ShellMeshes)
+		{
+			UMaterialInstanceDynamic* Shell = ShellMesh ? Cast<UMaterialInstanceDynamic>(ShellMesh->GetMaterial(0)) : nullptr;
+			if (Shell && Shell->Parent == ContinuousAtmosphereMaterial)
+			{
+				Shell->SetScalarParameterValue(APSAtmosphereTailMaterial::TailParameter, 0.0f);
+			}
+		}
+	}
 
     if (PlanetAtmosphere)
     {

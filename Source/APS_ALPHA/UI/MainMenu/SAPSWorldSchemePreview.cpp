@@ -1,4 +1,5 @@
 #include "SAPSWorldSchemePreview.h"
+#include "APS_ALPHA/UI/Style/APSSlateLineGuard.h"
 
 #include "Brushes/SlateRoundedBoxBrush.h"
 #include "Math/RandomStream.h"
@@ -639,14 +640,14 @@ int32 SAPSWorldSchemePreview::OnPaint(const FPaintArgs&, const FGeometry& Allott
 	};
 	const auto DrawLine = [&](const int32 Layer, const TArray<FVector2D>& Points, const FLinearColor& Color, const float Thickness)
 	{
-		if (Points.Num() >= 2)
+		if (Points.Num() >= 2 && APSSlateLineGuard::IsDrawable(Points))
 		{
 			FSlateDrawElement::MakeLines(OutDrawElements, Layer, Area, Points, ESlateDrawEffect::None, Color, true, Thickness);
 		}
 	};
 	const auto DrawFadedLine = [&](const int32 Layer, const TArray<FVector2D>& Points, const TArray<FLinearColor>& Colors)
 	{
-		if (Points.Num() >= 2 && Colors.Num() == Points.Num())
+		if (Points.Num() >= 2 && Colors.Num() == Points.Num() && APSSlateLineGuard::IsDrawable(Points))
 		{
 			FSlateDrawElement::MakeLines(OutDrawElements, Layer, Area, Points, Colors, ESlateDrawEffect::None,
 				FLinearColor::White, true, 1.0f);

@@ -9,6 +9,7 @@
 #include "APS_ALPHA/Actors/Astro/Star.h"
 #include "APS_ALPHA/Actors/Astro/StarSystem.h"
 #include "APS_ALPHA/UI/Style/APSMenuChrome.h"
+#include "APS_ALPHA/UI/Style/APSSlateLineGuard.h"
 #include "Brushes/SlateRoundedBoxBrush.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
@@ -27,16 +28,19 @@ namespace APSSystemSchemePrivate
 {
 	// The largest planet's disc radius at zoom 1; every other disc uses the same kilometre scale.
 	constexpr double LargestPlanetPixels = 34.0;
-	// Bodies that would vanish at this scale keep a visible dot (marked in the legend).
-	constexpr float MinimumPlanetPixels = 3.0f;
-	constexpr float MinimumMoonPixels = 2.5f;
+	// Bodies that would vanish at this scale keep a visible dot. Rio 06.10 ("the planets differ but look the same"): small,
+	// so a 3,600 km world and a 5,600 km one already differ at the default view where the star shows whole.
+	constexpr float MinimumPlanetPixels = 1.5f;
+	constexpr float MinimumMoonPixels = 1.5f;
 	// Between neighbouring slots (each slot fits its disc, its labels and its moon column).
 	constexpr double SlotGapPixels = 34.0;
 	// Above a lane's axis: the star's labels.
 	constexpr double LaneHeaderPixels = 70.0;
-	// From the largest disc of a lane to its label row; the row itself (designation, name, type); to the first moon.
+	// From the largest disc of a lane to its label row; to the first moon. The row's own height follows its fonts
+	// (LabelRowHeight: the name with its designation after it, then the type).
 	constexpr double LabelGapPixels = 14.0;
-	constexpr double LabelRowPixels = 52.0;
+	constexpr double NameDesignationGap = 7.0;
+	constexpr double LabelLineGap = 2.0;
 	constexpr double MoonGapPixels = 12.0;
 	constexpr double MoonRowPixels = 20.0;
 	constexpr double MoonTextGapPixels = 7.0;
@@ -51,6 +55,24 @@ namespace APSSystemSchemePrivate
 	{
 		return Text.IsEmpty() ? FVector2D::ZeroVector
 			: FSlateApplication::Get().GetRenderer()->GetFontMeasureService()->Measure(Text, Font);
+	}
+
+	/** A line's height in this font, text or not. */
+	double LineHeight(const FSlateFontInfo& Font)
+	{
+		return FSlateApplication::Get().GetRenderer()->GetFontMeasureService()->GetMaxCharacterHeight(Font);
+	}
+
+	/** Rio 06.10: "KYPHOTHEA  A1", the designation after the name, then the type under it. */
+	double LabelRowHeight()
+	{
+		return LineHeight(NameFont()) + LabelLineGap + LineHeight(DetailFont());
+	}
+
+	double NameLineWidth(const FText& Name, const FText& Designation)
+	{
+		const double Designated = Designation.IsEmpty() ? 0.0 : NameDesignationGap + Measure(Designation, DesignationFont()).X;
+		return Measure(Name, NameFont()).X + Designated;
 	}
 	// Rio 04.10 ("what are these stars? it was fine"): a star is always a filled round disc inside its lane. Up to the
 	// lane's room it is whole and to scale; a larger one slides off the left edge (whole radius, up to twice the room) and
@@ -111,8 +133,11 @@ namespace APSSystemSchemePrivate
 			const float Angle = FMath::Lerp(From, To, static_cast<float>(Index) / Segments);
 			Points.Add(Centre + FVector2D(FMath::Cos(Angle), FMath::Sin(Angle)) * Radius);
 		}
-		FSlateDrawElement::MakeLines(Elements, Layer, Geometry.ToPaintGeometry(), Points, ESlateDrawEffect::None, Color,
-			true, Width);
+		if (APSSlateLineGuard::IsDrawable(Points))
+		{
+			FSlateDrawElement::MakeLines(Elements, Layer, Geometry.ToPaintGeometry(), Points, ESlateDrawEffect::None, Color,
+				true, Width);
+		}
 	}
 }
 
@@ -130,7 +155,8 @@ void SAPSSystemScheme::ShowSystem(AActor* Star)
 	{
 		PinnedStar = Star;
 		Picked = nullptr;
-		Zoom = 1.0;
+		bFitPending = true;
+		FitPasses = 2;
 		Pan = FVector2D::ZeroVector;
 	}
 	Refresh();
@@ -293,7 +319,7 @@ void SAPSSystemScheme::Layout(const FVector2D& Size) const
 	// allows.
 	const auto LaneShape = [BaseLaneHeight](const double Largest, const double MoonsBelow, double& OutHeight, double& OutOffset)
 	{
-		const double Below = Largest + LabelGapPixels + LabelRowPixels + MoonsBelow + LaneMarginPixels;
+		const double Below = Largest + LabelGapPixels + LabelRowHeight() + MoonsBelow + LaneMarginPixels;
 		OutHeight = FMath::Max(BaseLaneHeight, LaneHeaderPixels + Largest + Below);
 		OutOffset = FMath::Max(LaneHeaderPixels + Largest, FMath::Min(OutHeight * 0.5, OutHeight - Below));
 	};
@@ -322,15 +348,41 @@ void SAPSSystemScheme::Layout(const FVector2D& Size) const
 	// which every star fits its lane whole and to scale, with its planets at their smallest dots; the upper limit keeps
 	// the largest planet within about 40% of the view's height.
 	MaxZoom = FMath::Max(1.0, 0.4 * Size.Y / LargestPlanetPixels);
-	MinZoom = 0.25;
+	// Rio 06.10 (audit: the default view took the wheel's limit, capped at 0.25, so a small star with a gas giant opened
+	// smaller than its lane; and the fit was judged with the planets at their smallest dots): FitZoom is the uncapped zoom
+	// at which every star fits its lane whole, and the wheel's lower limit keeps its old cap. On the fit's second pass the
+	// zoom is a candidate, so the lanes are shaped with their real largest discs at it.
+	const bool bFitAtCandidate = bFitPending && FitPasses < 2;
+	double FitZoom = TNumericLimits<double>::Max();
+	double CandidateFitZoom = TNumericLimits<double>::Max();
 	for (const FBody& Body : Bodies)
 	{
 		if (!Body.bStar || Body.RadiusKm <= 0.0 || Body.Lane >= Lanes) continue;
+		const double ZoomPerRoomPixel = LargestPlanetKm / (LargestPlanetPixels * Body.RadiusKm);
 		double Height = 0.0;
 		double Offset = 0.0;
 		LaneShape(MinimumPlanetPixels, LaneBelow[Body.Lane], Height, Offset);
-		const double Fit = 0.97 * RoomOf(Height, Offset, MinimumPlanetPixels) * LargestPlanetKm / (LargestPlanetPixels * Body.RadiusKm);
-		MinZoom = FMath::Min(MinZoom, FMath::Max(Fit, 1.0e-5));
+		const double Fit = 0.97 * RoomOf(Height, Offset, MinimumPlanetPixels) * ZoomPerRoomPixel;
+		FitZoom = FMath::Min(FitZoom, FMath::Max(Fit, 1.0e-5));
+		if (bFitAtCandidate)
+		{
+			const double Largest = FMath::Max(LaneLargest[Body.Lane], static_cast<double>(MinimumPlanetPixels));
+			LaneShape(Largest, LaneBelow[Body.Lane], Height, Offset);
+			CandidateFitZoom = FMath::Min(CandidateFitZoom, FMath::Max(0.97 * RoomOf(Height, Offset, Largest) * ZoomPerRoomPixel, 1.0e-5));
+		}
+	}
+	MinZoom = FMath::Min(0.25, FitZoom);
+	// The fit waits for a real size (a zero-size layout would judge it with lanes of no height).
+	if (bFitPending && Size.X > 1.0 && Size.Y > 1.0)
+	{
+		// Rio 06.10 ("by default it should look like this", the star whole beside its planets): a new system opens at the
+		// zoom where every star fits its lane whole and to scale, never more zoomed in than the base 1.0; the wheel zooms
+		// in from there. Two passes: the first from the smallest dots, the second at that candidate zoom.
+		Zoom = FMath::Clamp(bFitAtCandidate ? CandidateFitZoom : FitZoom, 1.0e-5, 1.0);
+		--FitPasses;
+		bFitPending = FitPasses > 0;
+		Layout(Size);
+		return;
 	}
 	double Along = 0.0;
 	double MoonY = 0.0;
@@ -370,14 +422,13 @@ void SAPSSystemScheme::Layout(const FVector2D& Size) const
 		if (!Body.bMoon)
 		{
 			Radii[Index] = FMath::Max(static_cast<float>(Radius), MinimumPlanetPixels);
-			const double Labels = FMath::Max3(Measure(Body.Designation, DesignationFont()).X,
-				Measure(Body.Name, NameFont()).X, Measure(Body.Detail, DetailFont()).X);
+			const double Labels = FMath::Max(NameLineWidth(Body.Name, Body.Designation), Measure(Body.Detail, DetailFont()).X);
 			const double Slot = FMath::Max3(2.0 * Radii[Index], Labels, MoonColumns[Index]) + SlotGapPixels;
 			Centres[Index] = FVector2D(Along + Slot * 0.5, AxisY);
 			Along += Slot;
 			Right = FMath::Max(Right, Along);
 			// The moon column sits centred under the planet's labels.
-			MoonY = AxisY + LaneLargest[Lane] + LabelGapPixels + LabelRowPixels + MoonGapPixels;
+			MoonY = AxisY + LaneLargest[Lane] + LabelGapPixels + LabelRowHeight() + MoonGapPixels;
 			MoonLeft = Centres[Index].X - MoonColumns[Index] * 0.5;
 			continue;
 		}
@@ -448,6 +499,16 @@ int32 SAPSSystemScheme::OnPaint(const FPaintArgs&, const FGeometry& Geometry, co
 	};
 	FSlateDrawElement::MakeBox(Elements, LayerId, Geometry.ToPaintGeometry(), FAppStyle::GetBrush("WhiteBrush"),
 		ESlateDrawEffect::None, APSUITheme::Retint(FLinearColor(0.002f, 0.010f, 0.018f, 0.92f)));
+	// Rio 06.10: the name, then its designation in the body's colour, both centred on the name line's capitals.
+	const auto NameLineAt = [&](const FBody& Body, const FVector2D& LineTop, const bool bCentred, const bool bIsPicked)
+	{
+		const double Width = NameLineWidth(Body.Name, Body.Designation);
+		const double Left = bCentred ? LineTop.X - Width * 0.5 : LineTop.X;
+		const double Middle = LineTop.Y + LineHeight(NameFont) * 0.5;
+		Text(Body.Name, FVector2D(Left, Middle), NameFont, bIsPicked ? APSChrome::Amber() : APSChrome::White(), false, true);
+		Text(Body.Designation, FVector2D(Left + APSSystemSchemePrivate::Measure(Body.Name, NameFont).X + NameDesignationGap, Middle),
+			DesignationFont, bIsPicked ? APSChrome::Amber() : Body.Color, false, true);
+	};
 	if (Bodies.IsEmpty())
 	{
 		Text(LOCTEXT("NoSystem", "NO STAR SYSTEM NEARBY"), Size * 0.5, NameFont, APSChrome::Muted(), true);
@@ -457,8 +518,12 @@ int32 SAPSSystemScheme::OnPaint(const FPaintArgs&, const FGeometry& Geometry, co
 	{
 		const double Y = LaneTops[Lane] + LaidOutPan.Y;
 		if (Y <= 0.0 || Y >= Size.Y) continue;
-		FSlateDrawElement::MakeLines(Elements, LayerId + 1, Geometry.ToPaintGeometry(),
-			TArray<FVector2D>{FVector2D(0.0, Y), FVector2D(Size.X, Y)}, ESlateDrawEffect::None, APSChrome::CyanDim(), true, 1.0f);
+		const TArray<FVector2D> LanePoints{FVector2D(0.0, Y), FVector2D(Size.X, Y)};
+		if (APSSlateLineGuard::IsDrawable(LanePoints))
+		{
+			FSlateDrawElement::MakeLines(Elements, LayerId + 1, Geometry.ToPaintGeometry(),
+				LanePoints, ESlateDrawEffect::None, APSChrome::CyanDim(), true, 1.0f);
+		}
 	}
 	const AActor* PickedActor = Picked.Get();
 	for (int32 Index = 0; Index < Bodies.Num(); ++Index)
@@ -470,10 +535,14 @@ int32 SAPSSystemScheme::OnPaint(const FPaintArgs&, const FGeometry& Geometry, co
 		if (Body.bStar)
 		{
 			// The orbital order axis from the star through its planets.
-			FSlateDrawElement::MakeLines(Elements, LayerId + 1, Geometry.ToPaintGeometry(),
-				TArray<FVector2D>{FVector2D(FMath::Max(0.0, Centre.X + Radius), Centre.Y), FVector2D(Size.X, Centre.Y)},
-				ESlateDrawEffect::None, FLinearColor(APSChrome::Cyan().R, APSChrome::Cyan().G, APSChrome::Cyan().B, 0.18f),
-				true, 1.0f);
+			const TArray<FVector2D> AxisPoints{FVector2D(FMath::Max(0.0, Centre.X + Radius), Centre.Y), FVector2D(Size.X, Centre.Y)};
+			if (APSSlateLineGuard::IsDrawable(AxisPoints))
+			{
+				FSlateDrawElement::MakeLines(Elements, LayerId + 1, Geometry.ToPaintGeometry(),
+					AxisPoints,
+					ESlateDrawEffect::None, FLinearColor(APSChrome::Cyan().R, APSChrome::Cyan().G, APSChrome::Cyan().B, 0.18f),
+					true, 1.0f);
+			}
 			if (Centre.X + Radius < -2.0) continue;
 			// Rio 04.10 ("what are these stars? it was fine"): the filled disc with a soft glow and a bright limb, always;
 			// Layout keeps it inside its lane, and the widget's left edge cuts the part that slid off (the limb is drawn
@@ -500,8 +569,12 @@ int32 SAPSSystemScheme::OnPaint(const FPaintArgs&, const FGeometry& Geometry, co
 			const FText ScaleNote = TrueRadius > Radius * 1.05
 				? FText::Format(LOCTEXT("StarScaleNote", "SHOWN {0}x SMALLER"), APSUINumber::Number(FMath::RoundToInt(TrueRadius / Radius)))
 				: FText::GetEmpty();
-			const double PlateWidth = FMath::Max(FMath::Max3(Measure(Body.Designation, DesignationFont).X,
-				Measure(Body.Name, NameFont).X, Measure(Body.Detail, DetailFont).X), Measure(ScaleNote, DetailFont).X) + 20.0;
+			const double NameLine = LineHeight(NameFont);
+			const double DetailLine = LineHeight(DetailFont);
+			const double PlateWidth = FMath::Max3(NameLineWidth(Body.Name, Body.Designation), Measure(Body.Detail, DetailFont).X,
+				Measure(ScaleNote, DetailFont).X) + 20.0;
+			const double PlateHeight = 12.0 + NameLine + (Body.Detail.IsEmpty() ? 0.0 : LabelLineGap + DetailLine)
+				+ (ScaleNote.IsEmpty() ? 0.0 : LabelLineGap + DetailLine);
 			FVector2D LabelAt;
 			const double LaneHeight = LaneHeights.IsValidIndex(Body.Lane) ? LaneHeights[Body.Lane] : Size.Y;
 			if (2.0 * Radius < LaneHeight * 0.5)
@@ -513,17 +586,16 @@ int32 SAPSSystemScheme::OnPaint(const FPaintArgs&, const FGeometry& Geometry, co
 				const double VisibleLeft = FMath::Max(0.0, Centre.X - Radius);
 				const double VisibleRight = FMath::Min(Size.X, Centre.X + Radius);
 				const double Left = (VisibleLeft + VisibleRight - PlateWidth) * 0.5;
-				LabelAt = FVector2D(FMath::Max(VisibleLeft + 4.0, Left) + 10.0, Centre.Y - 22.0);
+				LabelAt = FVector2D(FMath::Max(VisibleLeft + 4.0, Left) + 10.0, Centre.Y - PlateHeight * 0.5 + 6.0);
 			}
 			{
-				FSlateDrawElement::MakeBox(Elements, LayerId + 3, Geometry.ToPaintGeometry(FVector2D(PlateWidth, ScaleNote.IsEmpty() ? 56.0 : 73.0),
+				FSlateDrawElement::MakeBox(Elements, LayerId + 3, Geometry.ToPaintGeometry(FVector2D(PlateWidth, PlateHeight),
 					FSlateLayoutTransform(LabelAt - FVector2D(10.0, 6.0))), FAppStyle::GetBrush("WhiteBrush"), ESlateDrawEffect::None,
 					APSUITheme::Retint(FLinearColor(0.004f, 0.016f, 0.026f, 0.82f)));
 			}
-			Text(Body.Designation, LabelAt, DesignationFont, bPicked ? APSChrome::Amber() : Body.Color, false);
-			Text(Body.Name, LabelAt + FVector2D(0.0, 16.0), NameFont, bPicked ? APSChrome::Amber() : APSChrome::White(), false);
-			Text(Body.Detail, LabelAt + FVector2D(0.0, 35.0), DetailFont, Soft(), false);
-			Text(ScaleNote, LabelAt + FVector2D(0.0, 52.0), DetailFont, APSChrome::Muted(), false);
+			NameLineAt(Body, LabelAt, false, bPicked);
+			Text(Body.Detail, LabelAt + FVector2D(0.0, NameLine + LabelLineGap), DetailFont, Soft(), false);
+			Text(ScaleNote, LabelAt + FVector2D(0.0, NameLine + 2.0 * LabelLineGap + DetailLine), DetailFont, APSChrome::Muted(), false);
 			continue;
 		}
 		FSlateDrawElement::MakeBox(Elements, LayerId + 2, Geometry.ToPaintGeometry(FVector2D(2.0f * Radius),
@@ -542,9 +614,8 @@ int32 SAPSSystemScheme::OnPaint(const FPaintArgs&, const FGeometry& Geometry, co
 					TArray<FVector2D>{FVector2D(Centre.X, Centre.Y + Radius + 4.0), FVector2D(Centre.X, Row - 4.0)},
 					ESlateDrawEffect::None, FLinearColor(Body.Color.R, Body.Color.G, Body.Color.B, 0.28f), true, 1.0f);
 			}
-			Text(Body.Designation, FVector2D(Centre.X, Row), DesignationFont, bPicked ? APSChrome::Amber() : Body.Color, true);
-			Text(Body.Name, FVector2D(Centre.X, Row + 16.0), NameFont, bPicked ? APSChrome::Amber() : APSChrome::White(), true);
-			Text(Body.Detail, FVector2D(Centre.X, Row + 35.0), DetailFont, Soft(), true);
+			NameLineAt(Body, FVector2D(Centre.X, Row), true, bPicked);
+			Text(Body.Detail, FVector2D(Centre.X, Row + LineHeight(NameFont) + LabelLineGap), DetailFont, Soft(), true);
 		}
 		else
 		{
@@ -568,7 +639,9 @@ FReply SAPSSystemScheme::OnMouseWheel(const FGeometry& Geometry, const FPointerE
 {
 	const double Previous = Zoom;
 	// Rio 04.10 evening: zoomed out far enough, every star of the system shows whole and to scale (MinZoom).
-	Zoom = FMath::Clamp(Zoom * FMath::Pow(1.2, Event.GetWheelDelta()), FMath::Min(MinZoom, 0.25), FMath::Max(MaxZoom, 1.0));
+	// Rio 06.10: zooming scales the whole system; out no further than a little under the fitting view. Rio 06.10 (audit:
+	// the default view can open below that limit, and a wheel-out then jumped in): the limit never raises the zoom.
+	Zoom = FMath::Clamp(Zoom * FMath::Pow(1.2, Event.GetWheelDelta()), FMath::Min(MinZoom * 0.8, Zoom), FMath::Max(MaxZoom, 1.0));
 	// Keep the point under the cursor roughly in place (discs, slots and the lanes that grow with them follow the zoom);
 	// the next layout keeps the pan within the scheme (ClampPan).
 	const FVector2D Pointer = Geometry.AbsoluteToLocal(Event.GetScreenSpacePosition());
@@ -628,6 +701,14 @@ FReply SAPSSystemScheme::OnMouseButtonUp(const FGeometry& Geometry, const FPoint
 FCursorReply SAPSSystemScheme::OnCursorQuery(const FGeometry&, const FPointerEvent&) const
 {
 	return FCursorReply::Cursor(bDragged ? EMouseCursor::GrabHandClosed : EMouseCursor::Default);
+}
+
+void SAPSSystemScheme::OnMouseCaptureLost(const FCaptureLostEvent& CaptureLostEvent)
+{
+	// Rio 06.10 (audit: the terminal closing or a window switch mid-drag left bDragging set, so the next hover panned):
+	// only the drag stops; bDragged stays as a normal release leaves it, so the cursor is the same.
+	bDragging = false;
+	SLeafWidget::OnMouseCaptureLost(CaptureLostEvent);
 }
 
 #undef LOCTEXT_NAMESPACE

@@ -10,6 +10,12 @@ namespace APSPlanetCloudWeather
 inline constexpr const TCHAR* MaterialPath=TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/CloudWeather20261002V27/M_APS_PlanetCloud.M_APS_PlanetCloud");
 inline constexpr const TCHAR* CandidateMaterialPath=TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/CloudWeather20261003V31/M_APS_PlanetCloud.M_APS_PlanetCloud");
 inline constexpr const TCHAR* LayeredMaterialPath=TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/CloudWeather20261002V30/M_APS_PlanetCloud.M_APS_PlanetCloud");
+// Rio 06.10 (clouds vanish at an altitude): V27 field, both deck crossings of a
+// dipping ray in one march (APSPlanetCloudHlsl::TwoCrossingCode). NEW package only;
+// V27/V30/V31 are never touched. "V32" is already the unconnected clustered-shape
+// experiment (APSPlanetCloudClusteredHlsl.h), so this graph is V33. At runtime it is
+// chosen by aps.Surface.CloudTwoCrossings (APSPlanetCloudComponent.cpp), V27 if absent.
+inline constexpr const TCHAR* TwoCrossingMaterialPath=TEXT("/Game/APS/APS_ALPHA/WSC/PlanetSurface/Diagnostics/CloudWeather20261006V33/M_APS_PlanetCloud.M_APS_PlanetCloud");
 // Process-only diagnostic selection. The accepted path and saved settings stay V27.
 inline bool CandidateRequested()
 {
@@ -19,9 +25,15 @@ inline bool LayeredRequested()
 {
     return FParse::Param(FCommandLine::Get(),TEXT("APSCloudLayeredCandidate"));
 }
+// Rio 06.10 (clouds vanish at an altitude): bake flag for V33; also pins V33 for probes.
+inline bool TwoCrossingRequested()
+{
+    return FParse::Param(FCommandLine::Get(),TEXT("APSCloudTwoCrossingCandidate"));
+}
 inline const TCHAR* SelectedMaterialPath()
 {
     if(LayeredRequested()) return LayeredMaterialPath;
+    if(TwoCrossingRequested()) return TwoCrossingMaterialPath;
     return CandidateRequested()?CandidateMaterialPath:MaterialPath;
 }
 enum class ECondensate : uint8 { None, Water, Ice, Ammonia, AcidAerosol, Dust, Ash, Hydrocarbon };

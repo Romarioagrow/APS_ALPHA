@@ -39,6 +39,8 @@ public:
 	virtual FReply OnMouseButtonUp(const FGeometry& Geometry, const FPointerEvent& Event) override;
 	virtual FReply OnMouseMove(const FGeometry& Geometry, const FPointerEvent& Event) override;
 	virtual FCursorReply OnCursorQuery(const FGeometry& Geometry, const FPointerEvent& Event) const override;
+	/** Rio 06.10 (audit: a drag whose capture was taken away kept panning on the next hover): stops the drag. */
+	virtual void OnMouseCaptureLost(const FCaptureLostEvent& CaptureLostEvent) override;
 
 private:
 	struct FBody
@@ -67,7 +69,13 @@ private:
 	TArray<FBody> Bodies;
 	int32 Lanes{0};
 	TWeakObjectPtr<AActor> Picked;
-	double Zoom{1.0};
+	/** Rio 06.10: set by Layout to the zoom that shows every star whole (the default view), then by the wheel. */
+	mutable double Zoom{1.0};
+	/** A new system opens at the fitting zoom (Layout resolves it once it knows the view's size). */
+	mutable bool bFitPending{true};
+	/** Rio 06.10 (audit: the fit was judged with the planets at their smallest dots): the fit's passes left; the second one
+	 * re-judges it at the candidate zoom with the lanes' real largest discs. Set to 2 with bFitPending. */
+	mutable int32 FitPasses{2};
 	FVector2D Pan{FVector2D::ZeroVector};
 	bool bDragging{false};
 	bool bDragged{false};

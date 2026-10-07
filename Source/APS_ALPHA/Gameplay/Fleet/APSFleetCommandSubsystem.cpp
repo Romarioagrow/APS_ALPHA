@@ -33,6 +33,8 @@ void UAPSFleetCommandSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 
 void UAPSFleetCommandSubsystem::Deinitialize()
 {
+	// Rio 06.10 (audit: perf probe lifetime): the probe's own hitch dump ends with the world that started it.
+	APSPerfProbe::WorldEnded(GetWorld());
 	APSMemoryProbe::Log(GetWorld(), TEXT("world end"));
 	APSMissionTracker::Remove(GetWorld());
 	APSMissionsRegister(GetWorld(), nullptr);

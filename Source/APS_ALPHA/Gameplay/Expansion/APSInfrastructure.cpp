@@ -2,6 +2,8 @@
 
 #include "APSMissions.h"
 #include "APSStarSystems.h"
+#include "APSSystemMaterializer.h"
+#include "APS_ALPHA/Actors/Astro/Moon.h"
 #include "APS_ALPHA/Actors/Astro/Planet.h"
 #include "APS_ALPHA/Actors/Astro/PlanetaryBody.h"
 #include "APS_ALPHA/Actors/Astro/PlanetarySystem.h"
@@ -21,6 +23,7 @@
 #include "APS_ALPHA/Generation/AstroGenerator.h"
 #include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
 #include "APS_ALPHA/Gameplay/Construction/APSConstructionCatalog.h"
+#include "HAL/IConsoleManager.h"
 #include "HAL/PlatformTime.h"
 #include "Engine/GameInstance.h"
 #include "Engine/StaticMeshActor.h"
@@ -59,6 +62,89 @@ namespace APSInfrastructureLocal
 	constexpr float PropSettleAfterGroundSeconds = 2.0f;
 	constexpr double PropSettleToleranceCm = 10.0;
 	constexpr double PropSettleSearchCm = 4000.0;
+
+	/** Rio 06.10 (audit: galaxy-reach systems register ~1-3 s after the restore, materialized bodies are absent at load). */
+	TAutoConsoleVariable<int32> CVarHoldUnresolvedStructures(TEXT("aps.Save.HoldUnresolvedStructures"), 1,
+		TEXT("1: a saved structure whose star system or body is not standing at load is kept (written to the next save) and its ")
+		TEXT("visual is raised once the site appears. 0: dropped, as before."));
+
+	/** Rio 07.10 (buildings on the worlds of other star systems were lost once the system went back to a catalogue point). */
+	TAutoConsoleVariable<int32> CVarHoldReleasedStructures(TEXT("aps.Stars.HoldReleasedStructures"), 1,
+		TEXT("1: structures, placed props, fleet stations/outposts/surveys on the worlds of a released star system are kept as ")
+		TEXT("records (saved, still counted, still producing) and raised again on the same worlds when the system stands; the ")
+		TEXT("fleet's ships there wait at its beacon (their order ends, a build's cost is returned). 0: as before."));
+	/** Rio 07.10 (a structure built at a foreign star was filed under the home system, went with the star, came back at home). */
+	TAutoConsoleVariable<int32> CVarForeignStarSites(TEXT("aps.Stars.ForeignStarSites"), 1,
+		TEXT("1: the foreign star the materializer stands up is a site of its own star system (its knowledge, chains, limits and ")
+		TEXT("claims, as at that system's beacon), and what is built there rides the system's anchor, which stays when the star ")
+		TEXT("goes. 0: every star stands for the home system, as before."));
+	/** Rio 07.10: held records raised per half second once their released system stands again (megastructure meshes load
+	 * at once, on the game thread). */
+	constexpr int32 HostRaisesPerTick = 2;
+	constexpr int32 PropRaisesPerTick = 8;
+
+	/**
+	 * Rio 07.10 (aps.Stars.ForeignStarSites): the foreign star the materializer stands up, exactly that actor (the home star
+	 * and any star of the home system never match), and its system's id.
+	 */
+	bool MaterializedForeignStar(const UWorld* World, const AActor* Site, FGuid& OutSystemId)
+	{
+		if (!Site || CVarForeignStarSites.GetValueOnAnyThread() == 0)
+		{
+			return false;
+		}
+		const FAPSStarSystems* Stars = APSStarSystemsFind(World);
+		const FAPSSystemMaterializer* Materializer = Stars ? Stars->GetMaterializer() : nullptr;
+		if (!Materializer || Materializer->GetStar() != Site)
+		{
+			return false;
+		}
+		const FAPSStarSystemInfo* Info = Stars->Get(Materializer->GetActiveIndex());
+		if (!Info || Info->bHome)
+		{
+			return false;
+		}
+		OutSystemId = Info->Id;
+		return true;
+	}
+
+	/**
+	 * Rio 07.10: the foreign star system the materializer stands up now (invalid when none) and, when OutBodies is given,
+	 * its own planets and moons by fleet key: a record held when that system was released stands again only on these,
+	 * never on a body of the same name elsewhere (names are syllable words; a home world may share one).
+	 */
+	FGuid ActiveHostBodies(const UWorld* World, TMap<FString, AActor*>* OutBodies)
+	{
+		const FAPSStarSystems* Stars = APSStarSystemsFind(World);
+		const FAPSSystemMaterializer* Materializer = Stars ? Stars->GetMaterializer() : nullptr;
+		const FAPSStarSystemInfo* Info = Materializer ? Stars->Get(Materializer->GetActiveIndex()) : nullptr;
+		if (!Info || Info->bHome)
+		{
+			return FGuid();
+		}
+		if (OutBodies)
+		{
+			TArray<APlanet*> Planets;
+			Materializer->GetPlanets(Planets);
+			for (APlanet* Planet : Planets)
+			{
+				const FString PlanetKey = FAPSFleetCommand::KeyOf(Planet);
+				if (!OutBodies->Contains(PlanetKey))
+				{
+					OutBodies->Add(PlanetKey, Planet);
+				}
+				for (AMoon* Moon : Planet->Moons)
+				{
+					const FString MoonKey = IsValid(Moon) ? FAPSFleetCommand::KeyOf(Moon) : FString();
+					if (!MoonKey.IsEmpty() && !OutBodies->Contains(MoonKey))
+					{
+						OutBodies->Add(MoonKey, Moon);
+					}
+				}
+			}
+		}
+		return Info->Id;
+	}
 
 	/** Surface actors still to settle, per world, refreshed every few seconds. */
 	struct FSettleCache
@@ -221,6 +307,7 @@ void FAPSInfrastructure::Tick(const float DeltaSeconds)
 	{
 		const float SettleElapsed = SettleClock;
 		SettleClock = 0.0f;
+		RaiseHeldStructures();
 		SettleSurfaceActors();
 		SettlePlacedProps(SettleElapsed);
 	}
@@ -279,6 +366,9 @@ bool FAPSInfrastructure::SiteSystem(const UWorld* World, const AActor* Site, FGu
 	if (FAPSStarSystems::AnchorSystem(Site, OutSystemId)) return true;
 	if (Cast<AStar>(Site))
 	{
+		// Rio 07.10 (aps.Stars.ForeignStarSites): the foreign star the materializer stands up stands for its own system, as
+		// that system's anchor does (before, every star was the home system's and what was built there was filed at home).
+		if (APSInfrastructureLocal::MaterializedForeignStar(World, Site, OutSystemId)) return true;
 		// The home star stands for the home system (the only star with an actor in a game).
 		const FAPSStarSystems* Stars = APSStarSystemsFind(World);
 		if (const FAPSStarSystemInfo* Home = Stars ? Stars->GetHome() : nullptr)
@@ -589,13 +679,26 @@ AActor* FAPSInfrastructure::Complete(const FName TypeId, AActor* Site, const FVe
 	const FString ActorName = FString::Printf(TEXT("APS_Infra_%s_%d"), *Type->Id.ToString(), ++Serial);
 	AActor* Actor = SpawnVisual(*Type, Site, Placement, ActorName, Name);
 	if (!Actor) return nullptr;
+	// Rio 07.10 (aps.Stars.ForeignStarSites: built at a foreign star it went with the star and came back at the home star
+	// after a load): at the star the materializer stands up it is that system's (SiteKey above) and rides the system's
+	// anchor, which stays when the star goes; a load puts it back at the anchor (ResolveSite). Placed and shaped by the star.
+	const AActor* Frame = Site;
+	if (FGuid ForeignId; Stars && APSInfrastructureLocal::MaterializedForeignStar(LiveWorld, Site, ForeignId))
+	{
+		if (AActor* Anchor = Stars->GetAnchor(ForeignId))
+		{
+			Actor->AttachToActor(Anchor, FAttachmentTransformRules::KeepWorldTransform);
+			Frame = Anchor;
+			UE_LOG(LogTemp, Log, TEXT("[APS.Infra] %s built at the star of %s rides its anchor"), *Actor->GetName(), *SiteKey);
+		}
+	}
 	FAPSBuiltStructure& Built = Structures.AddDefaulted_GetRef();
 	Built.Type = Type->Id;
 	Built.SiteKey = SiteKey;
 	Built.SystemId = SystemId;
 	Built.Actor = Actor;
 	Built.ActorName = Actor->GetName();
-	Built.RelativeTransform = Actor->GetActorTransform().GetRelativeTransform(Site->GetActorTransform());
+	Built.RelativeTransform = Actor->GetActorTransform().GetRelativeTransform(Frame->GetActorTransform());
 	Built.BuiltSeconds = LiveWorld->GetTimeSeconds();
 	RecountRates();
 	++Revision;
@@ -639,7 +742,11 @@ AActor* FAPSInfrastructure::CompleteAt(const FName TypeId, AActor* Site, const F
 			return Structure.Actor.Get() == Actor;
 		}))
 	{
-		Built->RelativeTransform = Actor->GetActorTransform().GetRelativeTransform(Site->GetActorTransform());
+		// Rio 07.10: relative to the system's anchor when Complete moved it there (aps.Stars.ForeignStarSites), else the site.
+		FGuid AnchorId;
+		const AActor* Parent = Actor->GetAttachParentActor();
+		const AActor* Frame = Parent && Parent != Site && FAPSStarSystems::AnchorSystem(Parent, AnchorId) ? Parent : Site;
+		Built->RelativeTransform = Actor->GetActorTransform().GetRelativeTransform(Frame->GetActorTransform());
 		Built->bPlaced = true;
 	}
 	++Revision;
@@ -685,7 +792,9 @@ void FAPSInfrastructure::GetAt(const AActor* Site, TArray<const FAPSBuiltStructu
 	const FString SiteKey = SiteKeyOf(Site, SystemId);
 	for (const FAPSBuiltStructure& Structure : Structures)
 	{
-		if (Structure.SiteKey == SiteKey) OutStructures.Add(&Structure);
+		// Rio 06.10: a structure held at load (bAwaitingSite) stands nowhere yet; it is counted at its place once raised,
+		// in its saved order (a swarm segment's ring counts the segments raised before it, as the restore does).
+		if (Structure.SiteKey == SiteKey && !Structure.bAwaitingSite) OutStructures.Add(&Structure);
 	}
 }
 
@@ -758,6 +867,13 @@ int32 FAPSInfrastructure::CountInSystem(const AActor* Site, const FName Type) co
 	const FAPSStarSystems* Stars = APSStarSystemsFind(LiveWorld);
 	const FAPSStarSystemInfo* Home = Stars ? Stars->GetHome() : nullptr;
 	const bool bHomeSystem = !bSystemSite || (Home && Home->Id == SystemId);
+	// Rio 07.10 (review: with the foreign star its own system's site, a Dyson swarm there never found the orbital ring it
+	// needs, a ring standing on a world): at a foreign system's star or anchor the structures on that system's own worlds
+	// count too, those on the bodies the materializer stands up now and those held while its worlds are away
+	// (aps.Stars.ForeignStarSites; 0: only what stands at the system itself, as before).
+	const bool bForeignWorlds = bSystemSite && !bHomeSystem && APSInfrastructureLocal::CVarForeignStarSites.GetValueOnAnyThread() != 0;
+	TSet<const AActor*> HostBodies;
+	bool bHostBodiesRead = false;
 	int32 Count = 0;
 	for (const FAPSBuiltStructure& Structure : Structures)
 	{
@@ -766,7 +882,31 @@ int32 FAPSInfrastructure::CountInSystem(const AActor* Site, const FName Type) co
 			continue;
 		}
 		const bool bAtBody = !Structure.SystemId.IsValid();
-		Count += (bAtBody && bHomeSystem) || (!bAtBody && bSystemSite && Structure.SystemId == SystemId)
+		bool bOnSystemWorld = false;
+		if (bForeignWorlds && bAtBody)
+		{
+			if (Structure.bAwaitingSite)
+			{
+				bOnSystemWorld = Structure.HostSystemId == SystemId;
+			}
+			else if (const AActor* Actor = Structure.Actor.Get())
+			{
+				if (!bHostBodiesRead)
+				{
+					bHostBodiesRead = true;
+					TMap<FString, AActor*> ByKey;
+					if (APSInfrastructureLocal::ActiveHostBodies(LiveWorld, &ByKey) == SystemId)
+					{
+						for (const TPair<FString, AActor*>& Pair : ByKey)
+						{
+							HostBodies.Add(Pair.Value);
+						}
+					}
+				}
+				bOnSystemWorld = HostBodies.Contains(FAPSFleetCommand::OrbitedBody(Actor));
+			}
+		}
+		Count += (bAtBody && bHomeSystem) || bOnSystemWorld || (!bAtBody && bSystemSite && Structure.SystemId == SystemId)
 			|| (!bAtBody && !bSystemSite && Home && Structure.SystemId == Home->Id) ? 1 : 0;
 	}
 	return Count;
@@ -945,8 +1085,10 @@ void FAPSInfrastructure::SettleSurfaceActors()
 			FCollisionQueryParams Params(SCENE_QUERY_STAT(APSInfraSettle), false, Actor);
 			Params.AddIgnoredActor(Pawn);
 			FHitResult Hit;
+			// Rio 06.10 (audit: a blocking hit without an actor dereferenced null here): such a hit is not ground to settle
+			// on; the field placement below handles it, as for no hit.
 			if (LiveWorld->LineTraceSingleByChannel(Hit, Centre + Up * (Radius + SurfaceBandCm), Centre + Up * (Radius - SurfaceBandCm),
-				ECC_Visibility, Params) && !Cast<APawn>(Hit.GetActor()) && !Hit.GetActor()->ActorHasTag(BuiltTag))
+				ECC_Visibility, Params) && Hit.GetActor() && !Cast<APawn>(Hit.GetActor()) && !Hit.GetActor()->ActorHasTag(BuiltTag))
 			{
 				// Never under the sea the field puts over this ground.
 				const double FieldRadius = FieldSurfaceRadius(Body, Up);
@@ -1046,28 +1188,41 @@ void FAPSInfrastructure::ApplyPendingRestore()
 	if (!LiveWorld) return;
 	FAPSStarSystems* Stars = APSStarSystemsFind(LiveWorld);
 	int32 Restored = 0;
+	// Rio 06.10 (audit: galaxy-reach systems register ~1-3 s after this restore and materialized bodies are absent, so their
+	// structures were dropped for good): with aps.Save.HoldUnresolvedStructures a structure whose site is not standing is
+	// kept as a record (written to the next save) and raised by RaiseHeldStructures once the site appears.
+	const bool bHoldUnresolved = APSInfrastructureLocal::CVarHoldUnresolvedStructures.GetValueOnGameThread() != 0;
+	int32 Held = 0;
+	int32 HeldSerial = 0;
 	for (const FAPSInfrastructureSaveData::FStructure& Saved : Data.Structures)
 	{
 		const APSInfrastructure::FType* Type = APSInfrastructure::Find(Saved.Type);
 		if (!Type) continue;
-		AActor* Site = nullptr;
-		if (Saved.SystemId.IsValid())
+		AActor* Site = ResolveSite(LiveWorld, Stars, Saved.SystemId, Saved.SiteKey);
+		if (!Site)
 		{
-			const FAPSStarSystemInfo* Home = Stars ? Stars->GetHome() : nullptr;
-			if (Home && Home->Id == Saved.SystemId)
+			if (bHoldUnresolved)
 			{
-				for (TActorIterator<AAstroGenerator> It(LiveWorld); It && !Site; ++It) Site = It->HomeStar;
+				FAPSBuiltStructure& Waiting = Structures.AddDefaulted_GetRef();
+				Waiting.Type = Saved.Type;
+				Waiting.SiteKey = Saved.SiteKey;
+				Waiting.SystemId = Saved.SystemId;
+				Waiting.ActorName = Saved.ActorName;
+				Waiting.RelativeTransform = Saved.RelativeTransform;
+				Waiting.BuiltSeconds = Saved.BuiltSeconds;
+				Waiting.bPlaced = Data.PlacedStructures.Contains(Saved.ActorName);
+				Waiting.bAwaitingSite = true;
+				// Its saved name is free until it is raised: a new build must not take it (the placed list matches by name).
+				FString Digits;
+				if (Saved.ActorName.Split(TEXT("_"), nullptr, &Digits, ESearchCase::IgnoreCase, ESearchDir::FromEnd))
+				{
+					HeldSerial = FMath::Max(HeldSerial, FCString::Atoi(*Digits));
+				}
+				++Held;
+				++Restored;
 			}
-			if (!Site && Stars) Site = Stars->GetAnchor(Saved.SystemId);
+			continue;
 		}
-		else
-		{
-			for (TActorIterator<APlanetaryBody> It(LiveWorld); It; ++It)
-			{
-				if (FAPSFleetCommand::KeyOf(*It) == Saved.SiteKey) { Site = *It; break; }
-			}
-		}
-		if (!Site) continue;
 		const FTransform Transform = Saved.RelativeTransform * Site->GetActorTransform();
 		const FText Name = FText::Format(LOCTEXT("StructureName", "{0} {1}"), Type->Name, APSInfrastructureLocal::SiteName(Site, Stars));
 		AActor* Actor = SpawnVisual(*Type, Site, Transform, Saved.ActorName, Name);
@@ -1089,11 +1244,269 @@ void FAPSInfrastructure::ApplyPendingRestore()
 		}
 		++Restored;
 	}
-	Serial = FMath::Max(Serial, Structures.Num());
+	Serial = FMath::Max3(Serial, Structures.Num(), HeldSerial);
 	RecountRates();
 	++Revision;
-	UE_LOG(LogTemp, Log, TEXT("[APS.Infra] restored %d of %d structures"), Restored, Data.Structures.Num());
+	UE_LOG(LogTemp, Log, TEXT("[APS.Infra] restored %d of %d structures (%d held until their site stands)"), Restored,
+		Data.Structures.Num(), Held);
 	RestorePlacedProps(Data.Props);
+}
+
+AActor* FAPSInfrastructure::ResolveSite(UWorld* LiveWorld, FAPSStarSystems* Stars, const FGuid& SystemId, const FString& SiteKey,
+	const TMap<FString, AActor*>* BodiesByKey) const
+{
+	if (!LiveWorld)
+	{
+		return nullptr;
+	}
+	AActor* Site = nullptr;
+	if (SystemId.IsValid())
+	{
+		const FAPSStarSystemInfo* Home = Stars ? Stars->GetHome() : nullptr;
+		if (Home && Home->Id == SystemId)
+		{
+			for (TActorIterator<AAstroGenerator> It(LiveWorld); It && !Site; ++It) Site = It->HomeStar;
+		}
+		if (!Site && Stars) Site = Stars->GetAnchor(SystemId);
+	}
+	else if (BodiesByKey)
+	{
+		Site = BodiesByKey->FindRef(SiteKey);
+	}
+	else
+	{
+		for (TActorIterator<APlanetaryBody> It(LiveWorld); It; ++It)
+		{
+			if (FAPSFleetCommand::KeyOf(*It) == SiteKey) { Site = *It; break; }
+		}
+	}
+	return Site;
+}
+
+void FAPSInfrastructure::RaiseHeldStructures()
+{
+	// Rio 07.10: props wait too (held with their released world, or not placed by a load; aps.Stars.HoldReleasedStructures).
+	if (PendingRestore.IsSet()
+		|| (!Structures.ContainsByPredicate([](const FAPSBuiltStructure& Structure) { return Structure.bAwaitingSite; })
+			&& !PlacedProps.ContainsByPredicate([](const FAPSPlacedProp& Prop) { return Prop.bAwaitingSite; })))
+	{
+		return;
+	}
+	UWorld* LiveWorld = World.Get();
+	if (!LiveWorld)
+	{
+		return;
+	}
+	FAPSStarSystems* Stars = APSStarSystemsFind(LiveWorld);
+	// The bodies once for every held record (the first body of a key, as the restore's walk takes it); not for the records
+	// a released system holds (below).
+	TMap<FString, AActor*> Bodies;
+	if (Structures.ContainsByPredicate([](const FAPSBuiltStructure& Structure)
+		{
+			return Structure.bAwaitingSite && !Structure.SystemId.IsValid() && !Structure.HostSystemId.IsValid();
+		})
+		|| PlacedProps.ContainsByPredicate([](const FAPSPlacedProp& Prop) { return Prop.bAwaitingSite && !Prop.HostSystemId.IsValid(); }))
+	{
+		for (TActorIterator<APlanetaryBody> It(LiveWorld); It; ++It)
+		{
+			const FString Key = FAPSFleetCommand::KeyOf(*It);
+			if (!Bodies.Contains(Key))
+			{
+				Bodies.Add(Key, *It);
+			}
+		}
+	}
+	// Rio 07.10: a record held when its star system was released stands again only while that system stands, only on its
+	// own bodies (the materializer's), never on a body of the same name elsewhere.
+	FGuid ActiveHost;
+	TMap<FString, AActor*> HostBodies;
+	const bool bAnyHosted = Structures.ContainsByPredicate([](const FAPSBuiltStructure& Structure)
+		{
+			return Structure.bAwaitingSite && Structure.HostSystemId.IsValid();
+		})
+		|| PlacedProps.ContainsByPredicate([](const FAPSPlacedProp& Prop) { return Prop.bAwaitingSite && Prop.HostSystemId.IsValid(); });
+	if (bAnyHosted)
+	{
+		ActiveHost = APSInfrastructureLocal::ActiveHostBodies(LiveWorld, nullptr);
+		const bool bHostHere = ActiveHost.IsValid() && (Structures.ContainsByPredicate([&ActiveHost](const FAPSBuiltStructure& Structure)
+			{
+				return Structure.bAwaitingSite && Structure.HostSystemId == ActiveHost;
+			})
+			|| PlacedProps.ContainsByPredicate([&ActiveHost](const FAPSPlacedProp& Prop)
+			{
+				return Prop.bAwaitingSite && Prop.HostSystemId == ActiveHost;
+			}));
+		if (bHostHere)
+		{
+			APSInfrastructureLocal::ActiveHostBodies(LiveWorld, &HostBodies);
+		}
+		else
+		{
+			ActiveHost.Invalidate();
+		}
+	}
+	int32 Raised = 0;
+	int32 HostRaised = 0;
+	// By index, in their saved order (a swarm's segments count the ones raised before them, as at the restore).
+	for (int32 Index = 0; Index < Structures.Num(); ++Index)
+	{
+		if (!Structures[Index].bAwaitingSite)
+		{
+			continue;
+		}
+		// Rio 07.10: a released system's records a few a time (a megastructure's meshes load at once, on this thread).
+		const bool bHosted = Structures[Index].HostSystemId.IsValid();
+		if (bHosted && (!ActiveHost.IsValid() || Structures[Index].HostSystemId != ActiveHost
+			|| HostRaised >= APSInfrastructureLocal::HostRaisesPerTick))
+		{
+			continue;
+		}
+		const APSInfrastructure::FType* Type = APSInfrastructure::Find(Structures[Index].Type);
+		AActor* Site = Type ? ResolveSite(LiveWorld, Stars, Structures[Index].SystemId, Structures[Index].SiteKey,
+			bHosted ? &HostBodies : &Bodies) : nullptr;
+		if (!Site)
+		{
+			continue;
+		}
+		const FTransform Transform = Structures[Index].RelativeTransform * Site->GetActorTransform();
+		const FText Name = FText::Format(LOCTEXT("StructureName", "{0} {1}"), Type->Name, APSInfrastructureLocal::SiteName(Site, Stars));
+		const FString SavedName = Structures[Index].ActorName;
+		AActor* Actor = SpawnVisual(*Type, Site, Transform, SavedName, Name);
+		if (!Actor)
+		{
+			continue;
+		}
+		FAPSBuiltStructure& Built = Structures[Index];
+		Built.Actor = Actor;
+		Built.ActorName = Actor->GetName();
+		Built.bAwaitingSite = false;
+		if (Built.bPlaced)
+		{
+			// Raised by hand: back exactly where the player put it, not settled again.
+			Actor->Tags.AddUnique(APSInfrastructureLocal::SettledTag);
+			Actor->Tags.AddUnique(APSInfrastructureLocal::PlacedTag);
+		}
+		++Raised;
+		HostRaised += bHosted ? 1 : 0;
+		UE_LOG(LogTemp, Log, TEXT("[APS.Infra] held structure %s raised at %s"), *Built.ActorName, *Built.SiteKey);
+	}
+	// Rio 07.10: the held props, as RestorePlacedProps spawns them (where they stood on the body, settled again near the pilot).
+	int32 PropsRaised = 0;
+	for (FAPSPlacedProp& Prop : PlacedProps)
+	{
+		if (!Prop.bAwaitingSite || PropsRaised >= APSInfrastructureLocal::PropRaisesPerTick)
+		{
+			continue;
+		}
+		const bool bHosted = Prop.HostSystemId.IsValid();
+		if (bHosted && (!ActiveHost.IsValid() || Prop.HostSystemId != ActiveHost))
+		{
+			continue;
+		}
+		AActor* Site = (bHosted ? HostBodies : Bodies).FindRef(Prop.SiteKey);
+		if (!Site)
+		{
+			continue;
+		}
+		FTransform Transform = Prop.RelativeTransform * Site->GetActorTransform();
+		Transform.SetScale3D(Prop.Scale);
+		AActor* Actor = APSConstruction::SpawnProp(LiveWorld, Prop.PropId, Prop.MeshPath, Transform, Site);
+		Prop.bAwaitingSite = false;
+		if (!Actor)
+		{
+			// Kept as a record for the next save, as a load keeps one, and not loaded again twice a second.
+			UE_LOG(LogTemp, Warning, TEXT("[APS.Construction] held prop %s could not be raised at %s; kept as a record"),
+				*Prop.PropId.ToString(), *Prop.SiteKey);
+			continue;
+		}
+		Prop.Actor = Actor;
+		Prop.bPendingSettle = Prop.bOnGround;
+		++PropsRaised;
+		UE_LOG(LogTemp, Log, TEXT("[APS.Construction] held prop %s raised at %s"), *Actor->GetName(), *Prop.SiteKey);
+	}
+	if (Raised > 0)
+	{
+		RecountRates();
+		++Revision;
+	}
+	else if (PropsRaised > 0)
+	{
+		++Revision;
+	}
+}
+
+bool FAPSInfrastructure::HoldsReleased()
+{
+	return APSInfrastructureLocal::CVarHoldReleasedStructures.GetValueOnAnyThread() != 0;
+}
+
+void FAPSInfrastructure::HoldOnRelease(const TArray<APlanetaryBody*>& Bodies, const FGuid& HostSystemId)
+{
+	if (!HoldsReleased() || Bodies.IsEmpty() || !HostSystemId.IsValid())
+	{
+		return;
+	}
+	// What stands on a released world: attached to it (through its attach parents) and recorded at its key, so it can stand
+	// there again. A structure filed under a star system (its anchor or its star) never stands on a body.
+	TMap<const AActor*, FString> Released;
+	for (const APlanetaryBody* Body : Bodies)
+	{
+		if (Body)
+		{
+			Released.Add(Body, FAPSFleetCommand::KeyOf(Body));
+		}
+	}
+	const auto OnReleased = [&Released](const AActor* Actor, const FString& SiteKey) -> const AActor*
+	{
+		const AActor* Body = Actor ? FAPSFleetCommand::OrbitedBody(Actor) : nullptr;
+		const FString* Key = Body ? Released.Find(Body) : nullptr;
+		return Key && *Key == SiteKey ? Body : nullptr;
+	};
+	const FAPSStarSystems* Stars = APSStarSystemsFind(World.Get());
+	const FAPSStarSystemInfo* Info = Stars ? Stars->Find(HostSystemId) : nullptr;
+	const FString SystemName = Info ? Info->Name : HostSystemId.ToString(EGuidFormats::Digits);
+	int32 Held = 0;
+	for (FAPSBuiltStructure& Structure : Structures)
+	{
+		if (Structure.bAwaitingSite || Structure.SystemId.IsValid() || !OnReleased(Structure.Actor.Get(), Structure.SiteKey))
+		{
+			continue;
+		}
+		// The record keeps its transform on the world (the one a save writes; exact for one raised by hand) and its name;
+		// its actor goes with the world in a moment. Rates are not recounted: they count every record, so it still produces.
+		Structure.bAwaitingSite = true;
+		Structure.HostSystemId = HostSystemId;
+		Structure.Actor.Reset();
+		++Held;
+		UE_LOG(LogTemp, Log, TEXT("[APS.Infra] %s held: its world went with %s (%s)"), *Structure.ActorName, *SystemName,
+			*Structure.SiteKey);
+	}
+	int32 PropsHeld = 0;
+	for (FAPSPlacedProp& Prop : PlacedProps)
+	{
+		const AActor* Actor = Prop.Actor.Get();
+		const AActor* Body = Prop.bAwaitingSite ? nullptr : OnReleased(Actor, Prop.SiteKey);
+		if (!Body)
+		{
+			continue;
+		}
+		// Where it stands now on its world, as a save would write it.
+		Prop.RelativeTransform = Actor->GetActorTransform().GetRelativeTransform(Body->GetActorTransform());
+		Prop.Scale = Actor->GetActorScale3D();
+		Prop.bAwaitingSite = true;
+		Prop.bPendingSettle = false;
+		Prop.HostSystemId = HostSystemId;
+		Prop.Actor.Reset();
+		++PropsHeld;
+	}
+	if (PropsHeld > 0)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[APS.Construction] %d placed prop(s) held: their world went with %s"), PropsHeld, *SystemName);
+	}
+	if (Held + PropsHeld > 0)
+	{
+		++Revision;
+	}
 }
 
 void FAPSInfrastructure::RestorePlacedProps(const TArray<FAPSInfrastructureSaveData::FProp>& Saved)
@@ -1109,6 +1522,8 @@ void FAPSInfrastructure::RestorePlacedProps(const TArray<FAPSInfrastructureSaveD
 		Bodies.Add(FAPSFleetCommand::KeyOf(*It), *It);
 	}
 	int32 Restored = 0;
+	int32 Held = 0;
+	const bool bHoldReleased = HoldsReleased();
 	for (const FAPSInfrastructureSaveData::FProp& Entry : Saved)
 	{
 		// Every record is kept: one whose body is not found here still goes into the next save.
@@ -1122,6 +1537,10 @@ void FAPSInfrastructure::RestorePlacedProps(const TArray<FAPSInfrastructureSaveD
 		AActor* Site = Bodies.FindRef(Entry.SiteKey);
 		if (!Site)
 		{
+			// Rio 07.10 (aps.Stars.HoldReleasedStructures): a prop on a world that does not stand now (another star system's)
+			// waits for it and is raised there by the world's name, as the structures held at load are.
+			Prop.bAwaitingSite = bHoldReleased && Entry.SiteKey.StartsWith(TEXT("BODY:"));
+			Held += Prop.bAwaitingSite ? 1 : 0;
 			continue;
 		}
 		FTransform Transform = Entry.RelativeTransform * Site->GetActorTransform();
@@ -1135,6 +1554,10 @@ void FAPSInfrastructure::RestorePlacedProps(const TArray<FAPSInfrastructureSaveD
 	}
 	++Revision;
 	UE_LOG(LogTemp, Log, TEXT("[APS.Construction] restored %d of %d placed props"), Restored, Saved.Num());
+	if (Held > 0)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[APS.Construction] %d placed prop(s) held until their world stands"), Held);
+	}
 }
 
 void FAPSInfrastructure::SettlePlacedProps(const float DeltaSeconds)

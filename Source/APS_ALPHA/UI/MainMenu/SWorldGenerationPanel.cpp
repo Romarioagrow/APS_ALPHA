@@ -35,6 +35,7 @@ CSV_DECLARE_CATEGORY_EXTERN(APSPreview);
 #include "APS_ALPHA/UI/MainMenu/WorldGenerationViewModel.h"
 #include "APS_ALPHA/UI/Style/APSUIStyle.h"
 #include "APS_ALPHA/UI/Style/APSMenuChrome.h"
+#include "APS_ALPHA/UI/Style/APSSlateLineGuard.h"
 #include "APS_ALPHA/UI/Style/APSUITheme.h"
 #include "Engine/Font.h"
 #include "Fonts/FontMeasure.h"
@@ -283,10 +284,14 @@ namespace APSGenerationUI
 			for (int32 Level = 0; Level < Depth; ++Level)
 			{
 				const float X = 7.0f + static_cast<float>(Level) * 14.0f;
-				FSlateDrawElement::MakeLines(OutDrawElements, LayerId, Geometry.ToPaintGeometry(),
-					TArray<FVector2D>{FVector2D(X, 0.0f), FVector2D(X, Size.Y)},
-					ESlateDrawEffect::None,
-					FLinearColor(DrawColor.R, DrawColor.G, DrawColor.B, 0.42f), true, 1.0f);
+				const TArray<FVector2D> BranchPoints{FVector2D(X, 0.0f), FVector2D(X, Size.Y)};
+				if (APSSlateLineGuard::IsDrawable(BranchPoints))
+				{
+					FSlateDrawElement::MakeLines(OutDrawElements, LayerId, Geometry.ToPaintGeometry(),
+						BranchPoints,
+						ESlateDrawEffect::None,
+						FLinearColor(DrawColor.R, DrawColor.G, DrawColor.B, 0.42f), true, 1.0f);
+				}
 			}
 			if (Depth > 0)
 			{
@@ -619,13 +624,12 @@ namespace APSGenerationUI
 				5.0f, FLinearColor(CyanDim.R, CyanDim.G, CyanDim.B, 0.55f), 1.0f));
 	}
 
-	static FButtonStyle SecondaryButton = MakeButtonStyle(
-		CyanDim, FLinearColor(0.003f, 0.022f, 0.038f, 0.94f), Cyan,
-		FLinearColor(0.02f, 0.14f, 0.20f, 1.0f));
-	static FButtonStyle PrimaryButton = MakeButtonStyle(
-		Amber, FLinearColor(0.30f, 0.12f, 0.004f, 0.96f),
-		FLinearColor(1.0f, 0.76f, 0.18f, 1.0f), FLinearColor(0.52f, 0.22f, 0.006f, 1.0f));
-	static FButtonStyle HierarchyButton = MakeHierarchyButton();
+	// Rio 06.10 (audit: static-init order): built at module load these called APSUITheme::Current() in another unit before
+	// its statics were guaranteed to exist. ApplyTheme() in SWorldGenerationPanel::Construct fills all three on its first
+	// call (AppliedThemeRevision 0, APSUITheme::Revision() starts at 1), before any widget reads them.
+	static FButtonStyle SecondaryButton;
+	static FButtonStyle PrimaryButton;
+	static FButtonStyle HierarchyButton;
 	static uint32 AppliedThemeRevision = 0;
 
 	/** Rio 06.10: copies the active interface theme into the palette, brushes and button styles above. */
@@ -1501,6 +1505,10 @@ namespace APSGenerationUI
 				// (giants, the GPU glow); a dark under-stroke keeps it readable on any background.
 				const auto EmitSegment = [&]()
 				{
+					if (!APSSlateLineGuard::IsDrawable(Segment))
+					{
+						return;
+					}
 					FSlateDrawElement::MakeLines(OutDrawElements, LayerId,
 						AllottedGeometry.ToPaintGeometry(), Segment, ESlateDrawEffect::None,
 						APSUITheme::Retint(FLinearColor(0.0f, 0.02f, 0.04f, 0.55f)), true, 2.6f);
@@ -1551,6 +1559,16 @@ namespace APSGenerationUI
 			if (ContinuousGenerator && ContinuousGenerator->GetPreviewFocusPhysicalDistance(Focus, FocusDistanceCm)
 				&& InverseHalfWidthTangent > UE_SMALL_NUMBER && ViewportLocalSize.X > 1.0)
 			{
+				// Rio 06.10 ("the AU plate is white and sits unevenly over FULL SCALE"): the ruler shares one centre with the
+				// FULL SCALE chip under the preview (right-aligned there, 10 px in) and has its look: the chip's dark plate,
+				// font and paddings.
+				const FSlateFontInfo ChipFont = Font("Bold", 8);
+				const FText ChipText = LOCTEXT("PreviewCornerBR", "FULL SCALE  +");
+				const double ChipWidth = FSlateApplication::Get().GetRenderer()->GetFontMeasureService()->Measure(ChipText, ChipFont).X + 16.0;
+				double RulerCentreX = PanelSize.X - 10.0 - ChipWidth * 0.5;
+				// Rio 06.10 (audit: a bar up to 150 px wide centred over the chip could run past the panel's right edge): the
+				// bar fits the room either side of that centre, 12 px from the edge.
+				const double RoomPx = 2.0 * (PanelSize.X - 12.0 - RulerCentreX);
 				constexpr double KmCm = 1.0e5;
 				constexpr double AuCm = 1.495978707e13;
 				constexpr double LyCm = 9.4607304725808e17;
@@ -1559,11 +1577,21 @@ namespace APSGenerationUI
 				const double UnitCm = WantedCm >= 0.05 * LyCm ? LyCm : WantedCm >= 0.02 * AuCm ? AuCm : KmCm;
 				const double Wanted = WantedCm / UnitCm;
 				const double Decade = FMath::Pow(10.0, FMath::FloorToDouble(FMath::LogX(10.0, Wanted)));
-				const double Step = Wanted >= 5.0 * Decade ? 5.0 * Decade : Wanted >= 2.0 * Decade ? 2.0 * Decade : Decade;
-				const double BarPixels = Step * UnitCm / CmPerPixel;
+				double Multiple = Wanted >= 5.0 * Decade ? 5.0 : Wanted >= 2.0 * Decade ? 2.0 : 1.0;
+				double Step = Multiple * Decade;
+				double BarPixels = Step * UnitCm / CmPerPixel;
+				if (BarPixels > RoomPx)
+				{
+					// One step down the 1-2-5 sequence: 5 -> 2, 2 -> 1, 1 -> 0.5 of the decade.
+					Multiple = Multiple > 2.5 ? 2.0 : Multiple > 1.5 ? 1.0 : 0.5;
+					Step = Multiple * Decade;
+					BarPixels = Step * UnitCm / CmPerPixel;
+				}
 				if (FMath::IsFinite(BarPixels) && BarPixels > 8.0 && BarPixels < PanelSize.X * 0.5)
 				{
-					const FVector2D End(PanelSize.X - 28.0, PanelSize.Y - 26.0);
+					// Last resort (a very wide chip or a narrow panel): the centre moves left so the bar's end stays inside.
+					RulerCentreX = FMath::Min(RulerCentreX, PanelSize.X - 12.0 - BarPixels * 0.5);
+					const FVector2D End(RulerCentreX + BarPixels * 0.5, PanelSize.Y - 16.0);
 					const FVector2D Start(End.X - BarPixels, End.Y);
 					const TArray<FVector2D> Bar{Start + FVector2D(0.0, -6.0), Start, End, End + FVector2D(0.0, -6.0)};
 					FSlateDrawElement::MakeLines(OutDrawElements, LayerId, AllottedGeometry.ToPaintGeometry(), Bar,
@@ -1577,17 +1605,19 @@ namespace APSGenerationUI
 					const FText RulerText = FText::Format(LOCTEXT("RulerLabel", "{0} {1}"),
 						Step < 1.0 ? FText::AsNumber(Step, &Digits) : APSUINumber::Number(static_cast<int64>(FMath::RoundToDouble(Step))),
 						UnitName);
-					const FSlateFontInfo RulerFont = ReadableFont("Bold", 9);
+					const FSlateFontInfo RulerFont = ChipFont;
 					const FVector2D TextSize = FSlateApplication::Get().GetRenderer()->GetFontMeasureService()->Measure(RulerText, RulerFont);
-					const FVector2D TextAt(Start.X + (BarPixels - TextSize.X) * 0.5, Start.Y - 8.0 - TextSize.Y);
+					const FVector2D TextAt(Start.X + (BarPixels - TextSize.X) * 0.5, Start.Y - 9.0 - TextSize.Y);
 					// A dark plate under the label keeps it readable over a bright cluster (Rio 05.10); Rio 06.10 ("white
 					// on white"): the chip plate with its frame, as the preview's corner texts.
-					FSlateDrawElement::MakeBox(OutDrawElements, LayerId,
-						AllottedGeometry.ToPaintGeometry(TextSize + FVector2D(14.0, 6.0), FSlateLayoutTransform(TextAt - FVector2D(7.0, 2.0))),
-						&ChipBrush, ESlateDrawEffect::None, FLinearColor::White);
-					FSlateDrawElement::MakeText(OutDrawElements, LayerId + 1,
+					// A drawn box takes its colour from the tint given here, not from the brush (an SBorder multiplies them):
+					// White painted the chip's plate white.
+					FSlateDrawElement::MakeBox(OutDrawElements, LayerId + 1,
+						AllottedGeometry.ToPaintGeometry(TextSize + FVector2D(16.0, 6.0), FSlateLayoutTransform(TextAt - FVector2D(8.0, 3.0))),
+						&ChipBrush, ESlateDrawEffect::None, ChipBrush.TintColor.GetSpecifiedColor());
+					FSlateDrawElement::MakeText(OutDrawElements, LayerId + 2,
 						AllottedGeometry.ToPaintGeometry(TextSize + FVector2D(2.0, 2.0), FSlateLayoutTransform(TextAt)),
-						RulerText, RulerFont, ESlateDrawEffect::None, FLinearColor(Cyan.R, Cyan.G, Cyan.B, 0.95f));
+						RulerText, RulerFont, ESlateDrawEffect::None, FLinearColor(Cyan.R, Cyan.G, Cyan.B, 0.9f));
 				}
 			}
 			AActor* SelectedBody = VM->GetSelectedPreviewBody();
@@ -1723,7 +1753,7 @@ namespace APSGenerationUI
 				double SampleAngle = 0.0;
 				const auto FlushOrbit = [&]()
 				{
-					if (OrbitSegment.Num() > 1)
+					if (OrbitSegment.Num() > 1 && APSSlateLineGuard::IsDrawable(OrbitSegment))
 					{
 						const double Middle = SegmentAngleCount > 0 ? SegmentAngleSum / SegmentAngleCount - BodyAngle : UE_DOUBLE_PI;
 						const float Near = FMath::Pow(0.5f + 0.5f * static_cast<float>(FMath::Cos(Middle)), 1.6f);
@@ -2024,9 +2054,13 @@ namespace APSGenerationUI
 				const FVector2D LeaderStart = bRing ? Anchor + (PoleEnd - Anchor).GetSafeNormal() * RingRadius : Anchor;
 				if (!bDocked)
 				{
-					FSlateDrawElement::MakeLines(OutDrawElements, LayerId + 2, AllottedGeometry.ToPaintGeometry(),
-						TArray<FVector2D>{LeaderStart, PoleEnd}, ESlateDrawEffect::None,
-						FLinearColor(MarkerColor.R, MarkerColor.G, MarkerColor.B, 0.72f), true, 1.0f);
+					const TArray<FVector2D> LeaderPoints{LeaderStart, PoleEnd};
+					if (APSSlateLineGuard::IsDrawable(LeaderPoints))
+					{
+						FSlateDrawElement::MakeLines(OutDrawElements, LayerId + 2, AllottedGeometry.ToPaintGeometry(),
+							LeaderPoints, ESlateDrawEffect::None,
+							FLinearColor(MarkerColor.R, MarkerColor.G, MarkerColor.B, 0.72f), true, 1.0f);
+					}
 				}
 				FSlateDrawElement::MakeBox(OutDrawElements, LayerId + 3,
 					AllottedGeometry.ToPaintGeometry(LabelSize, FSlateLayoutTransform(LabelPosition)),

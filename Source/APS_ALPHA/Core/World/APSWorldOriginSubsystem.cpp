@@ -6,6 +6,7 @@
 #include "APS_ALPHA/Actors/Astro/PlanetaryBody.h"
 #include "APS_ALPHA/Actors/Astro/Star.h"
 #include "APS_ALPHA/Actors/Astro/StarCluster.h"
+#include "APS_ALPHA/Actors/Astro/StarSystem.h"
 #include "APS_ALPHA/Actors/Tech/SpaceStation.h"
 #include "APS_ALPHA/Core/Controllers/GravityPlayerController.h"
 #include "APS_ALPHA/Core/Rendering/APSGalaxyGpuStars.h"
@@ -93,12 +94,151 @@ namespace APSWorldOrigin
 	TAutoConsoleVariable<int32> CVarShiftCameraJump(
 		TEXT("aps.WorldOrigin.ShiftCameraJump"), 1,
 		TEXT("Test: 1 tells the renderer the camera jumped on a shift (virtual shadow map panning off); 0 does not."));
+	// Rio 06.10 ("the star material smears at high speed"): on a flow or pay frame the view is told it moved only with the
+	// ship's own step, so the renderer moves every proxy's previous transform with the world and a star a few radii off
+	// gets no motion although it slides pixels on screen; TSR then drags its surface into streaks. Within a star's 1000
+	// radii no still ship takes over (aps.RealScale.DeferBodyClearRadii), so close approaches are all flow frames.
+	TAutoConsoleVariable<int32> CVarFlowBodyParallax(
+		TEXT("aps.RealScale.FlowBodyParallax"), 1,
+		TEXT("1: on flow and pay frames a nearby star's photosphere gets its real previous place relative to the still view, ")
+		TEXT("so TSR reprojects it instead of smearing it. 0: as before (no motion vectors for the world on those frames)."));
+	/** The view's own step on this flow or pay frame (a nearby star moved by minus it relative to the still view). */
+	TWeakObjectPtr<const UWorld> FlowViewStepWorld;
+	FVector FlowViewStep{FVector::ZeroVector};
+	void SetFlowViewStep(const UWorld* World, const FVector& Step)
+	{
+		FlowViewStepWorld = World;
+		FlowViewStep = Step;
+	}
 	TAutoConsoleVariable<int32> CVarFlowViewStill(
 		TEXT("aps.RealScale.FlowViewStill"), 1,
 		TEXT("Rio 05.10 evening (\"the edges ripple at speed, aboard too\"): 1 tells the renderer that a view riding a fast ")
 		TEXT("REAL SCALE ship moved only with the ship's own small step when the world flows past it (not by the whole ")
 		TEXT("shift: its previous view a light year away left TSR, Lumen and the motion vectors nothing but float noise, and ")
 		TEXT("no frame kept any history), and resets the riders' velocity state the scene shift moved. 0: as before."));
+	/**
+	 * Rio 06.10 (walking aboard a fast ship: 120 -> 40-60 fps, back in the seat 120 at once): a walker has the detailed
+	 * hull's own body in the physics scene (aps.Ship.WalkOnShellAtSpeed 0), and at drive speed every frame's flow moved the
+	 * ship by its rest after the shift: a kinematic move of all 13.5k shapes (~1.5 ms), their overlaps (~1.25 ms), the
+	 * waits of every query near the hull and ~2.2 ms of physics-thread wait. With the switch on, a flow frame with the
+	 * player walking aboard leaves the ship (and its body) where it is: the world still shifts by the whole grains, the
+	 * sub-grain rest (at most a grain, 10.5 km; 168 km beyond 1.5 kpc) is added to the ship's next step (paid by a plain move
+	 * if no step takes it the next frame, and before a settle), and the ship's and its riders' render state, which the
+	 * scene-wide shift moved, is sent again where they are. The view did not move, so it tells the renderer so (Grains,
+	 * not Grains + Rest). Seated flight is untouched.
+	 */
+	TAutoConsoleVariable<int32> CVarFlowKeepWalkerShip(
+		TEXT("aps.RealScale.FlowKeepWalkerShip"), 1, // Rio 06.10 night: on after w-stand A/B (walking aboard at speed 70 -> 96 fps); 0 if exterior effects lag
+		TEXT("Rio 06.10 (walking aboard at speed): 1: on a world flow frame with the player walking aboard (not seated) and the ")
+		TEXT("view riding the ship, the ship and its body stay where they are; the step's sub-grain rest (at most one grain, ")
+		TEXT("~10.5 km) is added to its next step, and its render state is re-sent past r.SkipRedundantTransformUpdate (no ")
+		TEXT("keep when that is set from the console). 0: the ship moves by the rest after every flow shift (as before)."));
+	/** The ship a kept flow frame left where it was, the rest it owes and the frame it was kept. */
+	TWeakObjectPtr<AActor> FlowKeptShip;
+	FVector FlowKeptRest{FVector::ZeroVector};
+	uint64 FlowKeptFrame{0};
+	/** The kept ship whose riders' render state FinishFlowMove sends again (after their previous transforms are given). */
+	TWeakObjectPtr<AActor> FlowKeptResend;
+
+	IConsoleVariable* SkipRedundantTransformUpdateVariable()
+	{
+		static IConsoleVariable* const SkipRedundant =
+			IConsoleManager::Get().FindConsoleVariable(TEXT("r.SkipRedundantTransformUpdate"));
+		return SkipRedundant;
+	}
+
+	/** Code may switch r.SkipRedundantTransformUpdate off around a resend (a console-set value outranks code), or it is off. */
+	bool CanForceRenderResend()
+	{
+		const IConsoleVariable* SkipRedundant = SkipRedundantTransformUpdateVariable();
+		return !SkipRedundant || SkipRedundant->GetInt() == 0
+			|| (uint32(SkipRedundant->GetFlags()) & ECVF_SetByMask) <= uint32(ECVF_SetByCode);
+	}
+
+	/**
+	 * Rio 06.10 (aps.RealScale.FlowKeepWalkerShip): the scene-wide shift moved every render proxy, the kept ship's and its
+	 * riders' too, while their components stayed. A plain MarkRenderTransformDirty would be judged redundant on the game
+	 * thread (UE 5.4 RendererScene.cpp ~2142 compares with the proxy, which the render thread shifts later) and leave them a
+	 * whole shift away, so the check is off while they are sent, without the sink call (as for the stars' parallax in
+	 * FinishFlowMove). Lights and decals have no such check; they are simply sent again. No body moves.
+	 */
+	int32 ForceRenderResend(const TArray<AActor*>& Parts)
+	{
+		IConsoleVariable* SkipRedundant = SkipRedundantTransformUpdateVariable();
+		const bool bToggle = SkipRedundant && SkipRedundant->GetInt() != 0
+			&& (uint32(SkipRedundant->GetFlags()) & ECVF_SetByMask) <= uint32(ECVF_SetByCode);
+		const EConsoleVariableFlags QuietCode = EConsoleVariableFlags(ECVF_SetByCode | ECVF_Set_NoSinkCall_Unsafe);
+		const int32 SavedSkip = bToggle ? SkipRedundant->GetInt() : 0;
+		if (bToggle)
+		{
+			SkipRedundant->Set(0, QuietCode);
+		}
+		int32 Sent = 0;
+		for (AActor* Part : Parts)
+		{
+			if (!IsValid(Part))
+			{
+				continue;
+			}
+			Part->ForEachComponent<USceneComponent>(false, [&Sent](USceneComponent* Component)
+			{
+				// Rio 06.10 (review): a component whose render state is dirty is re-created at the end of the frame where it
+				// is now (nothing to resend); re-created here it would run mid-tick, beside the walker's parallel animation.
+				if (!IsValid(Component) || !Component->IsRegistered() || !Component->IsRenderStateCreated()
+					|| Component->IsRenderStateDirty())
+				{
+					return;
+				}
+				if (UPrimitiveComponent* Primitive = Cast<UPrimitiveComponent>(Component))
+				{
+					// Rio 06.10 (review): a primitive's transform only (it did not move, its bounds are current). Through the
+					// deferred updates its pending dynamic data would go out too, the walker's bones while their animation
+					// may still be evaluating on a worker; that and its instances follow at the end of the frame as always.
+					UWorld* PrimitiveWorld = Primitive->GetWorld();
+					if (Primitive->SceneProxy && PrimitiveWorld && PrimitiveWorld->Scene)
+					{
+						PrimitiveWorld->Scene->UpdatePrimitiveTransform(Primitive);
+						++Sent;
+					}
+					return;
+				}
+				// Lights, decals, fog volumes, captures: their own transform send.
+				Component->MarkRenderTransformDirty();
+				Component->DoDeferredRenderUpdates_Concurrent();
+				++Sent;
+			});
+		}
+		if (bToggle)
+		{
+			SkipRedundant->Set(SavedSkip, QuietCode);
+		}
+		return Sent;
+	}
+
+	/** Rio 06.10 (aps.RealScale.FlowKeepWalkerShip): a kept ship's rest that no step took is paid with a plain move. */
+	void PayKeptFlowRest(UWorld* World, const TCHAR* Reason)
+	{
+		AActor* Kept = FlowKeptShip.Get();
+		const FVector KeptRest = FlowKeptRest;
+		FlowKeptShip.Reset();
+		FlowKeptRest = FVector::ZeroVector;
+		if (!IsValid(Kept) || KeptRest.IsZero())
+		{
+			return;
+		}
+		Kept->AddActorWorldOffset(KeptRest, false, nullptr, ETeleportType::None);
+		UE_LOG(LogTemp, Log, TEXT("[APS.WorldOrigin] flow keep: %s pays its kept rest %.1f m (%s)"), *Kept->GetName(),
+			KeptRest.Size() / 100.0, Reason);
+		// As after a settle: the view riding the ship is taken again from where it is now.
+		const APlayerController* Player = World ? World->GetFirstPlayerController() : nullptr;
+		APlayerCameraManager* Camera = Player ? Player->PlayerCameraManager.Get() : nullptr;
+		const AActor* ViewTarget = Camera ? Camera->GetViewTarget() : nullptr;
+		const USceneComponent* ViewRoot = ViewTarget ? ViewTarget->GetRootComponent() : nullptr;
+		if (Camera && ViewRoot && ViewRoot->GetAttachmentRootActor() == Kept)
+		{
+			Camera->UpdateCamera(0.0f);
+		}
+	}
 	TAutoConsoleVariable<float> CVarRealFloatFastKmPerS(
 		TEXT("aps.RealScale.FloatFastKmPerS"), 1000.0f,
 		TEXT("Rio 05.10 (at drive speeds the hull and the walking pilot jumped all over the screen; slowed down all was ")
@@ -154,6 +294,13 @@ namespace APSWorldOrigin
 		TEXT("after by the same offset, so its two instanced catalogues (~61k stars) keep their render state instead of being ")
 		TEXT("re-created on every flow frame (~2.5 ms); they end up where the shift would have put them. 0: the catalogue shifts ")
 		TEXT("with the world and is re-created on every shift (as before)."));
+	TAutoConsoleVariable<int32> CVarSkyMovesCatalogue(
+		TEXT("aps.Origin.SkyMovesCatalogue"), 1,
+		TEXT("Rio 06.10 (approaching a star its point vanished and came back elsewhere): 1 puts the gameplay star catalogue ")
+		TEXT("(the stellar view's AstroGenerator) at its sky place, the home system + the sky offset, inside the call that ")
+		TEXT("changes the sky offset (an owed step, a pay, a settle) and before OnSkyOffsetChanged is told, so every reader of ")
+		TEXT("the frame (the star systems registering stars, the anchors, the GPU points, the key light) finds the catalogue ")
+		TEXT("where it is drawn. 0: only the stellar view's snap moves it, later in the frame (as before)."));
 	constexpr double LightYearCm = 9.4607304725808e17;
 	/** Fast REAL SCALE shifts move by whole multiples of this (cm), beyond ~1.5 kpc of the generation origin by the larger
 	 * one: the far actors and the float origin then add every shift exactly instead of drifting by a rounding each time. */
@@ -256,6 +403,140 @@ namespace APSWorldOrigin
 		}
 	}
 
+	/** Rio 06.10 (aps.Origin.SkyMovesCatalogue): the stellar view's generator, chosen by its own rule
+	 * (UAPSStellarVisualSubsystem::UpdateGameplayStellarView: no menu preview, a final catalogue with its galaxy layer, a
+	 * home system), kept weakly; the world's actors are searched at most once a second, and only while there is none. */
+	struct FSkyCatalogueCache
+	{
+		TWeakObjectPtr<const UWorld> World;
+		TWeakObjectPtr<AAstroGenerator> Generator;
+		double NextScanSeconds{0.0};
+		/** What was said last (placed, or why it is left to the snap), so each is logged once. */
+		TWeakObjectPtr<const AAstroGenerator> LoggedGenerator;
+		int32 LoggedState{-1};
+		double LastBehindLogSeconds{0.0};
+	};
+	FSkyCatalogueCache GSkyCatalogue;
+
+	bool IsStellarViewGenerator(const AAstroGenerator& Generator)
+	{
+		const FAPSCanonicalStellarProjectionDescriptor& Descriptor = Generator.GetCanonicalStellarProjectionDescriptor();
+		return !Generator.ActorHasTag(TEXT("WorldGenerationPreview")) && !Generator.UsesContinuousPreviewFrame()
+			&& Descriptor.bFinalized && Descriptor.Galaxy.bEnabled && IsValid(Generator.GetPreviewHomeSystem());
+	}
+
+	AAstroGenerator* SkyCatalogueGenerator(UWorld* World)
+	{
+		if (!World)
+		{
+			return nullptr;
+		}
+		FSkyCatalogueCache& Cache = GSkyCatalogue;
+		if (Cache.World.Get() != World)
+		{
+			Cache = FSkyCatalogueCache();
+			Cache.World = World;
+		}
+		if (AAstroGenerator* Known = Cache.Generator.Get(); IsValid(Known) && Known->GetWorld() == World)
+		{
+			if (IsStellarViewGenerator(*Known))
+			{
+				return Known;
+			}
+			// No longer the one the stellar view would pick (a new generation): looked for again below.
+			Cache.Generator.Reset();
+		}
+		const double Now = FPlatformTime::Seconds();
+		if (Now < Cache.NextScanSeconds)
+		{
+			return nullptr;
+		}
+		Cache.NextScanSeconds = Now + 1.0;
+		for (TActorIterator<AAstroGenerator> It(World); It; ++It)
+		{
+			if (IsStellarViewGenerator(**It))
+			{
+				Cache.Generator = *It;
+				return *It;
+			}
+		}
+		return nullptr;
+	}
+
+	/**
+	 * Rio 06.10 (approaching a star, its point vanished, came back elsewhere and "went down"; aps.Origin.SkyMovesCatalogue):
+	 * the stellar view's generator (the galaxy and cluster catalogues and their GPU points) is put at its sky place, the
+	 * home system + the sky offset (the stellar view's own snap expression), inside the call that changed the sky offset
+	 * and before OnSkyOffsetChanged is told. Every listener and every later reader of the frame (the star systems
+	 * registering stars through the catalogue, the anchors, the GPU points, the key light, CanDeferTravel) then finds the
+	 * sky where it is drawn, whatever their order, also on a settle from the world-less ticker after the world's tick. Rio
+	 * 06.10 (audit: dead sky mover): the stellar view's own catalogue mover, which never bound, was removed; this function
+	 * is the only catalogue mover (aps.Origin.SkyMovesCatalogue 1). Before it the catalogue moved only at the stellar tick,
+	 * and stars the neighbour scan registered during owed flight stood one owed step (0.03-1 ly) off their drawn point;
+	 * with aps.Origin.SkyMovesCatalogue 0 that is still so. The snap now finds it in
+	 * place (Equals 0.01: no second move). ExpectedMove is the move it takes when it stood in place before (the owed step;
+	 * the owed travel back on a pay); more than that is logged (it had been left behind).
+	 */
+	void PlaceSkyCatalogue(const UAPSWorldOriginSubsystem& Origin, UWorld* World, const FVector& ExpectedMove,
+		const TCHAR* Why, const bool bLogMove)
+	{
+		if (CVarSkyMovesCatalogue.GetValueOnGameThread() == 0 || !World)
+		{
+			return;
+		}
+		AAstroGenerator* Sky = SkyCatalogueGenerator(World);
+		const AStarSystem* Home = Sky ? Sky->GetPreviewHomeSystem() : nullptr;
+		// The stellar view snaps a consumed catalogue only (the generated and REAL SCALE games); a legacy one is left alone.
+		if (!Sky || !IsValid(Home) || !Sky->GetCanonicalStellarProjectionDescriptor().bConsumedFinalizedDataset)
+		{
+			return;
+		}
+		// Left to the snap: a generator riding with the sky as a member moves with the members already, and one carrying the
+		// home system (an authored map) would carry it along, its target chasing itself on every owed step.
+		const int32 State = Origin.IsSkyMember(Sky) ? 1 : (Home->IsAttachedTo(Sky) ? 2 : 0);
+		FSkyCatalogueCache& Cache = GSkyCatalogue;
+		if (Cache.LoggedGenerator.Get() != Sky || Cache.LoggedState != State)
+		{
+			Cache.LoggedGenerator = Sky;
+			Cache.LoggedState = State;
+			if (State == 0)
+			{
+				UE_LOG(LogTemp, Log, TEXT("[APS.WorldOrigin] sky catalogue: %s moves to its sky place (home system + sky offset) with every owed step and pay, before the sky's listeners are told (aps.Origin.SkyMovesCatalogue 1)"),
+					*Sky->GetName());
+			}
+			else
+			{
+				UE_LOG(LogTemp, Log, TEXT("[APS.WorldOrigin] sky catalogue: %s is left to the stellar view's snap (%s)"),
+					*Sky->GetName(), State == 1 ? TEXT("it rides with the sky as a member") : TEXT("the home system hangs under it"));
+			}
+		}
+		if (State != 0)
+		{
+			return;
+		}
+		const FVector Target = Home->GetActorLocation() + Origin.GetSkyOffset();
+		const FVector Before = Sky->GetActorLocation();
+		if (Before.Equals(Target, 0.01))
+		{
+			return;
+		}
+		constexpr double AstronomicalUnitCm = 1.495978707e13;
+		const double BehindCm = FVector::Dist(Target - Before, ExpectedMove);
+		const double Now = FPlatformTime::Seconds();
+		if (BehindCm > 1.0e9 && Now - Cache.LastBehindLogSeconds >= 1.0)
+		{
+			Cache.LastBehindLogSeconds = Now;
+			UE_LOG(LogTemp, Warning, TEXT("[APS.WorldOrigin] f=%llu sky catalogue left behind: %s was %.4g AU off its sky place before this %s (placed now)"),
+				static_cast<unsigned long long>(GFrameCounter), *Sky->GetName(), BehindCm / AstronomicalUnitCm, Why);
+		}
+		Sky->SetActorLocation(Target, false, nullptr, ETeleportType::TeleportPhysics);
+		if (bLogMove)
+		{
+			UE_LOG(LogTemp, Log, TEXT("[APS.WorldOrigin] f=%llu sky catalogue: %s placed on the %s, moved %.4f ly"),
+				static_cast<unsigned long long>(GFrameCounter), *Sky->GetName(), Why, (Target - Before).Size() / LightYearCm);
+		}
+	}
+
 	FAutoConsoleCommandWithWorld RebaseHereCommand(
 		TEXT("aps.WorldOrigin.RebaseHere"),
 		TEXT("Shifts the world so the player pawn becomes 0,0,0."),
@@ -302,11 +583,16 @@ namespace APSWorldOrigin
 		}
 	};
 
-	TUniquePtr<FFloatingOriginTicker> GFloatingOriginTicker;
+	// Rio 06.10 (audit: static-destruction order): a namespace-static FTickableGameObject would unregister from
+	// FTickableStatics at exit after that singleton is gone in a monolithic exe; it lives until the process ends instead.
+	FFloatingOriginTicker* GFloatingOriginTicker = nullptr; // never freed: FTickableStatics' singleton dies before namespace statics in a monolithic exe
 
 	FDelayedAutoRegisterHelper GFloatingOriginRegister(EDelayedRegisterRunPhase::EndOfEngineInit, []
 	{
-		GFloatingOriginTicker = MakeUnique<FFloatingOriginTicker>();
+		if (!GFloatingOriginTicker)
+		{
+			GFloatingOriginTicker = new FFloatingOriginTicker();
+		}
 	});
 
 	FAutoConsoleCommandWithWorld ReportCommand(
@@ -693,9 +979,19 @@ int32 UAPSWorldOriginSubsystem::RefileNanite(const FVector* NearOnly, const TArr
 	return Refiled;
 }
 
-FVector UAPSWorldOriginSubsystem::FlowPastShip(AActor& Ship, const FVector& Delta, const double SpeedCmPerS)
+FVector UAPSWorldOriginSubsystem::FlowPastShip(AActor& Ship, const FVector& InDelta, const double SpeedCmPerS)
 {
 	UWorld* World = GetWorld();
+	// Rio 06.10 (aps.RealScale.FlowKeepWalkerShip): the rest a kept flow frame left this ship owing comes with its next step
+	// (whatever path takes it below: a flow, a plain move, an owed step). Another ship's step leaves it alone.
+	FVector Delta = InDelta;
+	APSWorldOrigin::FlowKeptResend.Reset();
+	if (APSWorldOrigin::FlowKeptShip.Get() == &Ship)
+	{
+		Delta += APSWorldOrigin::FlowKeptRest;
+		APSWorldOrigin::FlowKeptShip.Reset();
+		APSWorldOrigin::FlowKeptRest = FVector::ZeroVector;
+	}
 	// Rio 06.10 (still ship): a ship owing travel pays it back as soon as the world may not stay still any more; while the
 	// world cannot shift at all it keeps owing (and stays put).
 	const bool bOwes = bTravelDeferred && DeferredCarrier.Get() == &Ship;
@@ -780,6 +1076,7 @@ FVector UAPSWorldOriginSubsystem::FlowPastShip(AActor& Ship, const FVector& Delt
 		{
 			World->OriginOffsetThisFrame += Delta;
 			bFlowViewStill = true;
+			APSWorldOrigin::SetFlowViewStep(World, Delta);
 			if (const double Now = FPlatformTime::Seconds(); Now - LastFlowViewLogSeconds >= 1.0)
 			{
 				LastFlowViewLogSeconds = Now;
@@ -812,23 +1109,43 @@ FVector UAPSWorldOriginSubsystem::FlowPastShip(AActor& Ship, const FVector& Delt
 		return Delta;
 	}
 	SinceFlowShiftSeconds = 0.0;
+	// Rio 06.10 (walking aboard at speed, aps.RealScale.FlowKeepWalkerShip): the player walks aboard (the pawn is not the
+	// ship) and the view rides it: the ship and its body stay where they are, the rest waits for its next step, and
+	// FinishFlowMove sends the riders' render state again after giving them their previous transforms.
+	// Rio 06.10 (review): only a ship within a grain of where this step would leave it. One that stands farther from 0,0,0
+	// (it flew its own steps out to FloatFastDriftKm before this shift) would owe up to that whole way on every kept frame
+	// and never be centred again; it takes this frame's move (centred within half a grain) and is kept from the next one,
+	// so a kept rest never exceeds one grain on any axis.
+	const bool bKeepShip = APSWorldOrigin::CVarFlowKeepWalkerShip.GetValueOnGameThread() != 0 && Pawn != &Ship
+		&& bViewRides && Rest.GetAbsMax() <= Grain && APSWorldOrigin::CanForceRenderResend();
 	// Rio 05.10 evening (edge ripple at speed): the view rides the ship, so between the frames it moved only by the ship's
 	// Rest. The renderer moves its previous view by OriginOffsetThisFrame (UE 5.4 SceneVisibility.cpp): by the whole shift
 	// it lay light years off, and in float maths nothing kept any TSR history (r.TSR.Visualize 0: nothing accumulated,
 	// flying or aboard). Moved by Rest it is where the view is; the riders' velocity state, which the scene-wide shift
 	// moved too, is reset after the ship's own move (FinishFlowMove). The world around gets no motion of its own from the
 	// shift: far away it hardly moves on screen, and near things at these speeds pass in a frame or two.
+	// Rio 06.10 (aps.RealScale.FlowKeepWalkerShip): a kept ship did not move at all, so neither did the view (Grains only).
 	bFlowViewStill = bViewRides;
+	const FVector ViewStep = bKeepShip ? Grains : Grains + Rest;
 	if (bFlowViewStill)
 	{
-		World->OriginOffsetThisFrame += Grains + Rest;
+		World->OriginOffsetThisFrame += ViewStep;
+		APSWorldOrigin::SetFlowViewStep(World, ViewStep);
 	}
 	if (const double Now = FPlatformTime::Seconds(); Now - LastFlowViewLogSeconds >= 1.0)
 	{
 		LastFlowViewLogSeconds = Now;
-		UE_LOG(LogTemp, Log, TEXT("[APS.WorldOrigin] flow view: still=%d view=%s rest %.1f m, shift %.3e cm, frame offset %s"),
-			bFlowViewStill ? 1 : 0, *GetNameSafe(ViewTarget), Rest.Size() / 100.0, Grains.Size(),
+		UE_LOG(LogTemp, Log, TEXT("[APS.WorldOrigin] flow view: still=%d kept=%d view=%s rest %.1f m, shift %.3e cm, frame offset %s"),
+			bFlowViewStill ? 1 : 0, bKeepShip ? 1 : 0, *GetNameSafe(ViewTarget), Rest.Size() / 100.0, Grains.Size(),
 			*World->OriginOffsetThisFrame.ToCompactString());
+	}
+	if (bKeepShip)
+	{
+		APSWorldOrigin::FlowKeptShip = &Ship;
+		APSWorldOrigin::FlowKeptRest = Rest;
+		APSWorldOrigin::FlowKeptFrame = GFrameCounter;
+		APSWorldOrigin::FlowKeptResend = &Ship;
+		return FVector::ZeroVector;
 	}
 	return Rest;
 }
@@ -1170,6 +1487,8 @@ void UAPSWorldOriginSubsystem::MoveSky(const FVector& Change, AActor& StillShip)
 			Root->AddActorWorldOffset(Change, false, nullptr, ETeleportType::TeleportPhysics);
 		}
 	}
+	// Rio 06.10 (aps.Origin.SkyMovesCatalogue): the star catalogue stands at its sky place before anyone is told.
+	APSWorldOrigin::PlaceSkyCatalogue(*this, World, Change, TEXT("owed step"), false);
 	OnSkyOffsetChanged().Broadcast(World, Change);
 }
 
@@ -1271,6 +1590,10 @@ bool UAPSWorldOriginSubsystem::PayDebt(AActor& Carrier, const FVector& Delta, FV
 	{
 		Still->FlightModel->ApplyWorldShift(Owed);
 	}
+	// Rio 06.10 (aps.Origin.SkyMovesCatalogue): the stellar view's generator comes back by the owed travel here, before the
+	// broadcast, so its listeners and the rest of the frame (a settle's drawn frame too) find the sky in place; the carried
+	// sky's KeepSkyMotionStill below then covers this move as well.
+	APSWorldOrigin::PlaceSkyCatalogue(*this, World, Owed, TEXT("pay"), true);
 	// The sky (the stellar view's generator, the GPU points, the anchors, the key light) comes back by the owed travel,
 	// and the shift's listeners (clouds, materials) read the members' final places too.
 	OnSkyOffsetChanged().Broadcast(World, Owed);
@@ -1290,6 +1613,7 @@ bool UAPSWorldOriginSubsystem::PayDebt(AActor& Carrier, const FVector& Delta, FV
 	if (bFlowViewStill)
 	{
 		World->OriginOffsetThisFrame += Grains + Rest;
+		APSWorldOrigin::SetFlowViewStep(World, Delta);
 	}
 	UE_LOG(LogTemp, Log, TEXT("[APS.WorldOrigin] still ship: paid %.4f ly owed over %d steps (%s), %s moves %.1f m"),
 		Owed.Size() / APSWorldOrigin::LightYearCm, Steps, Reason, *Carrier.GetName(), Rest.Size() / 100.0);
@@ -1299,6 +1623,11 @@ bool UAPSWorldOriginSubsystem::PayDebt(AActor& Carrier, const FVector& Delta, FV
 
 void UAPSWorldOriginSubsystem::SettleDeferredTravel(const TCHAR* Reason)
 {
+	// Rio 06.10 (aps.RealScale.FlowKeepWalkerShip): a save, a load or a rebase finds the kept ship where it truly is.
+	if (APSWorldOrigin::FlowKeptShip.IsValid() || !APSWorldOrigin::FlowKeptRest.IsZero())
+	{
+		APSWorldOrigin::PayKeptFlowRest(GetWorld(), Reason);
+	}
 	if (!bTravelDeferred)
 	{
 		return;
@@ -1364,6 +1693,62 @@ void UAPSWorldOriginSubsystem::FinishFlowMove(AActor& Ship)
 			});
 		}
 	}
+	// Rio 06.10 (aps.RealScale.FlowKeepWalkerShip): the kept ship made no move that would send its riders' transforms; they
+	// are sent now, where they are, with the previous transforms just given (no motion drawn, as after a ship's own step).
+	if (APSWorldOrigin::FlowKeptResend.Get() == &Ship)
+	{
+		APSWorldOrigin::FlowKeptResend.Reset();
+		APSWorldOrigin::ForceRenderResend(Riders);
+	}
+	// Rio 06.10 (aps.RealScale.FlowBodyParallax): a nearby star's photosphere stood one view step further along a frame
+	// ago, as seen from the still view (ride: S -> S + Step; shift: S - Grains -> S - Grains + Step; a pay alike). Its
+	// corona is additive and writes no velocity. A star that hardly moves on screen, or one that passes in a frame, is left.
+	const FVector Step = APSWorldOrigin::FlowViewStepWorld.Get() == GetWorld() ? APSWorldOrigin::FlowViewStep : FVector::ZeroVector;
+	APSWorldOrigin::SetFlowViewStep(nullptr, FVector::ZeroVector);
+	if (!Step.IsZero() && APSWorldOrigin::CVarFlowBodyParallax.GetValueOnGameThread() != 0)
+	{
+		// An unmoved or shift-moved star is a "redundant" transform update in UE 5.4 (RendererScene.cpp ~2142) and would
+		// never read the simulated previous transform: the check is off while these are sent.
+		// Rio 06.10 (audit: every Set ran all console variable sinks next engine tick, on every near-system flow frame): it is
+		// switched off only once a star is actually sent, without the sink call (no sink reads it; the renderer reads the
+		// plain int in FScene::UpdatePrimitiveTransform on the game thread), and only when code may set it at all (a
+		// console-set value outranks SetByCode: it was ignored with a warning before, it is left alone now).
+		static IConsoleVariable* const SkipRedundant = IConsoleManager::Get().FindConsoleVariable(TEXT("r.SkipRedundantTransformUpdate"));
+		bool bSkipOff = false;
+		const bool bMayToggle = SkipRedundant && SkipRedundant->GetInt() != 0
+			&& (uint32(SkipRedundant->GetFlags()) & ECVF_SetByMask) <= uint32(ECVF_SetByCode);
+		const EConsoleVariableFlags QuietCode = EConsoleVariableFlags(ECVF_SetByCode | ECVF_Set_NoSinkCall_Unsafe);
+		const int32 SavedSkip = bMayToggle ? SkipRedundant->GetInt() : 0;
+		const FVector View = Ship.GetActorLocation();
+		for (TActorIterator<AStar> It(GetWorld()); It; ++It)
+		{
+			UStaticMeshComponent* Body = It->StarMesh;
+			if (!IsValid(Body) || !Body->IsRegistered() || !Body->SceneProxy || !Body->IsVisible())
+			{
+				continue;
+			}
+			const double Gap = FMath::Max(FVector::Dist(Body->Bounds.Origin, View) - Body->Bounds.SphereRadius, 1.0e5);
+			const double Parallax = Step.Size() / Gap;
+			if (Parallax < 2.0e-5 || Parallax > 0.5)
+			{
+				continue;
+			}
+			if (bMayToggle && !bSkipOff)
+			{
+				SkipRedundant->Set(0, QuietCode);
+				bSkipOff = true;
+			}
+			FTransform Previous = Body->GetComponentTransform();
+			Previous.AddToTranslation(Step);
+			Vectors.SetPreviousTransform(Body, Previous);
+			Body->MarkRenderTransformDirty();
+			Body->DoDeferredRenderUpdates_Concurrent();
+		}
+		if (bSkipOff)
+		{
+			SkipRedundant->Set(SavedSkip, QuietCode);
+		}
+	}
 }
 
 void UAPSWorldOriginSubsystem::UpdateFloatingOrigin(const float DeltaSeconds)
@@ -1381,6 +1766,13 @@ void UAPSWorldOriginSubsystem::UpdateFloatingOrigin(const float DeltaSeconds)
 		{
 			SettleDeferredTravel(TEXT("the owed travel stopped growing"));
 		}
+	}
+	// Rio 06.10 (aps.RealScale.FlowKeepWalkerShip): a kept rest that no step of its ship took by the next frame (the ship
+	// stopped, a swept move, a world without flow) is paid now with a plain move; a paused world keeps it for the next step.
+	if ((APSWorldOrigin::FlowKeptShip.IsValid() || !APSWorldOrigin::FlowKeptRest.IsZero())
+		&& GFrameCounter > APSWorldOrigin::FlowKeptFrame && !(GetWorld() && GetWorld()->IsPaused()))
+	{
+		APSWorldOrigin::PayKeptFlowRest(GetWorld(), TEXT("no step took it"));
 	}
 	// Rio 05.10 afternoon: the far Nanite meshes the flow shifts skipped are re-filed once it has stopped for a moment.
 	if (bNaniteRefileOwed && SinceFlowShiftSeconds > 0.25)

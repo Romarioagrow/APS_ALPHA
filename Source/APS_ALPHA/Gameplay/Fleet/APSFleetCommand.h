@@ -6,6 +6,7 @@
 class AActor;
 class APlanetaryBody;
 class ASpaceShipyard;
+class FAPSStarSystems;
 class UCivilization;
 class UWorld;
 
@@ -318,6 +319,16 @@ struct APS_ALPHA_API FAPSFleetBodyRecord
 	/** A navigation beacon at a located site (the map lists it, the ship can set a course to it). */
 	TWeakObjectPtr<AActor> AnomalyBeacon;
 	bool bBeaconGrounded{false};
+	/**
+	 * Rio 07.10 (the worlds of other star systems were Unknown again after a revisit, with a second record each): set while
+	 * the world is away (aps.Stars.HoldReleasedStructures): its fleet key, and the star system that released it (invalid
+	 * for one a load could not find). Such a record is saved by its key and taken up again when a world of that key stands
+	 * (of that system). Runtime only.
+	 */
+	FString Key;
+	FGuid HostSystemId;
+	/** Rio 07.10: kept from a save for a world away at load: its investigation (1 by an expedition, 2 in person). */
+	uint8 HeldInvestigation{0};
 };
 
 class APS_ALPHA_API FAPSFleetCommand
@@ -415,6 +426,17 @@ public:
 	static APlanetaryBody* OrbitedBody(const AActor* Actor);
 
 	/**
+	 * Rio 07.10 ("buildings on planets of other star systems disappear when that system goes away"): the materializer
+	 * releases a foreign star system (FAPSSystemMaterializer::Finish, before its actors go). The fleet's ships at these
+	 * worlds move to the system's beacon (their orders end as for any lost target, a build's cost returned); its stations,
+	 * shipyards, HQs and outposts there and the worlds' records are held (saved, still counted) and stand again when the
+	 * system does. aps.Stars.HoldReleasedStructures 0: nothing. Rio 07.10 (review: a ship at the star itself went with the
+	 * tree): SystemRoot is the system's actor tree; every ship attached anywhere in it moves too, also when no world stood.
+	 */
+	void HoldOnRelease(const TArray<APlanetaryBody*>& ReleasedBodies, const FGuid& HostSystemId, FAPSStarSystems& Stars,
+		const AActor* SystemRoot);
+
+	/**
 	 * Divisions grow with their work (Rio, 01.10: "the divisions should change the game, and the menu should say how"):
 	 * exploration one level per three worlds surveyed, science one per two studied, industry (the construction ships)
 	 * one per three outposts and structures built, fleet command one per four ships launched from the slipways; at most
@@ -451,9 +473,17 @@ public:
 private:
 	void TickShipyard(float DeltaSeconds);
 	ASpaceship* LaunchShip(TSubclassOf<ASpaceship> ShipClass, const FTransform& Transform, ASpaceShipyard* Yard);
+	/** bCountCivilization false (Rio 07.10): one held while its world was away stands again; the civilization counted it. */
 	class ASpaceStation* SpawnStructure(APSFleet::EStructure Kind, APlanetaryBody* Body, const FTransform& Transform,
-		const FText& Name, const FString& ActorName);
+		const FText& Name, const FString& ActorName, bool bCountCivilization = true);
 	void RefreshStructures();
+	/**
+	 * Rio 07.10: once a second, while anything is held: world records taken up again by the world of their key, held
+	 * structures and outposts raised there (a few a time). A released system's only on its own bodies while it stands.
+	 */
+	void RaiseHeldWorlds();
+	/** Rio 07.10: a world record whose world was away belongs to this body of its key again. */
+	void RebindBody(FAPSFleetBodyRecord& Record, APlanetaryBody* Body);
 	/** Anomalies (APSFleetAnomalies.cpp): rolled once per world record, revealed with the survey level, investigated by
 	 * an expedition or the pilot on foot at the site. */
 	void RollAnomaly(FAPSFleetBodyRecord& Record, const APlanetaryBody* Body) const;
@@ -467,7 +497,7 @@ private:
 	void ApplyPendingRestore();
 	AActor* FindByKey(const FString& Key) const;
 	class AAutonomousOutpost* SpawnOutpost(APlanetaryBody* Body, const FVector& Location, const FQuat& Rotation,
-		const FText& Name);
+		const FText& Name, bool bCountCivilization = true);
 	FAPSFleetUnit* FindUnitMutable(const ASpaceship* Ship);
 	void RefreshUnits();
 	void TickUnit(FAPSFleetUnit& Unit, float DeltaSeconds);
@@ -504,6 +534,13 @@ private:
 	int32 LaunchedCount{0};
 	TMap<TWeakObjectPtr<ASpaceShipyard>, int32> LaunchedAt;
 	TArray<FAPSFleetStructure> Structures;
+	/**
+	 * Rio 07.10: the stations, shipyards, HQs and outposts the fleet built on worlds that are away, as a save writes them,
+	 * with the star system that released them (invalid: held at load). Saved with the standing ones; counted for the
+	 * divisions' levels and the HQs' speed.
+	 */
+	TArray<TPair<FGuid, FAPSFleetSaveData::FStructure>> HeldStructures;
+	TArray<TPair<FGuid, FAPSFleetSaveData::FOutpost>> HeldOutposts;
 	/** Numbers the fleet's structures' actor names, so a load gives them the same keys. */
 	int32 StructureSerial{0};
 	/** Earned levels last seen (exploration, science, industry, fleet command), for the journal's promotions; primed

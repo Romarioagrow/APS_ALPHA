@@ -21,6 +21,7 @@
 #include "APS_ALPHA/Gameplay/Expansion/APSInfrastructure.h"
 #include "APS_ALPHA/Gameplay/Expansion/APSMissions.h"
 #include "APS_ALPHA/Gameplay/Expansion/APSStarSystems.h"
+#include "APS_ALPHA/Gameplay/Expansion/APSSystemMaterializer.h"
 #include "APS_ALPHA/Gameplay/Megastructures/APSMegastructures.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
 #include "APS_ALPHA/Pawns/Spaceships/APSShipCatalog.h"
@@ -65,6 +66,11 @@ namespace APSFleetPrivate
 		TEXT("single frames mid-flight). 0 restores the launch on the very frame the job finishes."));
 	TAutoConsoleVariable<float> CVarHoldLaunchCalmSeconds(TEXT("aps.Fleet.HoldLaunchCalmSeconds"), 1.0f,
 		TEXT("Seconds without a world flow before a held slipway launch goes ahead (aps.Fleet.HoldLaunchInFlight)."));
+	/** Rio 06.10 (audit: galaxy-reach systems register ~1-3 s after the load, so their orders were cleared on the first tick). */
+	TAutoConsoleVariable<int32> CVarRestoreWaitForSystems(TEXT("aps.Save.RestoreWaitForSystems"), 1,
+		TEXT("1: the fleet restore waits (at most the existing 20 s) until the star registry is read and every SYSTEM: key in the ")
+		TEXT("saved units resolves, so orders to star systems and ships referenced to them are not cleared or skipped on the first ")
+		TEXT("tick after load; a save taken while it waits writes the loaded fleet data, not the half-restored fleet. 0: as before."));
 	/** Rio 06.10 (flight FPS): per fleet command, the shipyards whose finished job waits for a calm flight and since when
 	 * (world seconds), so the hold is logged once per job and the launch says how long it waited. */
 	TMap<const FAPSFleetCommand*, TMap<TWeakObjectPtr<ASpaceShipyard>, double>>& HeldLaunches()
@@ -126,6 +132,69 @@ namespace APSFleetPrivate
 		// Ground vehicles (rover, hover, drone; Rio 02.10) are the colony's, never fleet units or orders.
 		return IsValid(Ship) && !Ship->IsGroundVehicle() && (Ship->ActorHasTag(HomeShipTag) || Ship->ActorHasTag(EscortTag)
 			|| Ship->ActorHasTag(MaterializedTag) || Ship->ActorHasTag(UnitTag));
+	}
+
+	/** Rio 07.10: held structures and outposts raised per second once their world stands again (a station is a blueprint). */
+	constexpr int32 HeldStructureRaisesPerSecond = 2;
+	constexpr int32 HeldOutpostRaisesPerSecond = 4;
+
+	/**
+	 * Rio 07.10: the foreign star system the materializer stands up now (invalid when none) and, when OutBodies is given,
+	 * its own planets and moons by fleet key: what that system held when it was released stands again only on these, never
+	 * on a body of the same name elsewhere (names are syllable words; a home world may share one).
+	 */
+	FGuid FleetHostBodies(const UWorld* World, TMap<FString, APlanetaryBody*>* OutBodies)
+	{
+		const FAPSStarSystems* Stars = APSStarSystemsFind(World);
+		const FAPSSystemMaterializer* Materializer = Stars ? Stars->GetMaterializer() : nullptr;
+		const FAPSStarSystemInfo* Info = Materializer ? Stars->Get(Materializer->GetActiveIndex()) : nullptr;
+		if (!Info || Info->bHome)
+		{
+			return FGuid();
+		}
+		if (OutBodies)
+		{
+			TArray<APlanet*> Planets;
+			Materializer->GetPlanets(Planets);
+			for (APlanet* Planet : Planets)
+			{
+				const FString PlanetKey = FAPSFleetCommand::KeyOf(Planet);
+				if (!OutBodies->Contains(PlanetKey))
+				{
+					OutBodies->Add(PlanetKey, Planet);
+				}
+				for (AMoon* Moon : Planet->Moons)
+				{
+					const FString MoonKey = IsValid(Moon) ? FAPSFleetCommand::KeyOf(Moon) : FString();
+					if (!MoonKey.IsEmpty() && !OutBodies->Contains(MoonKey))
+					{
+						OutBodies->Add(MoonKey, Moon);
+					}
+				}
+			}
+		}
+		return Info->Id;
+	}
+
+	/**
+	 * Rio 07.10 (review: a ship saved by the beacon of a galaxy system without a saved state was lost at load, that system not
+	 * being registered again, and held the fleet restore for its whole wait): a load registers this star system again by
+	 * itself (a cluster system with the generated world, a galaxy system by its saved state).
+	 */
+	bool SystemReturnsAtLoad(const UWorld* World, const FGuid& Id)
+	{
+		const FAPSStarSystems* Stars = APSStarSystemsFind(World);
+		const FAPSStarSystemInfo* Info = Stars ? Stars->Find(Id) : nullptr;
+		if (!Info)
+		{
+			return false;
+		}
+		if (Info->GalaxyIndex == INDEX_NONE)
+		{
+			return true;
+		}
+		const FAPSStarSystemState State = Stars->GetState(Id);
+		return State.Knowledge != APSStars::EKnowledge::Catalogued || State.bClaimed || !State.Structures.IsEmpty();
 	}
 
 	/** Planets and moons by their WorldScape radius, stars by their catalogue radius (cm); 0 for anything else. */
@@ -615,8 +684,10 @@ FAPSFleetCommand::FWorkTally FAPSFleetCommand::GetWorkTally() const
 		Tally.Surveyed += Record.Survey >= APSFleet::ESurvey::Surveyed ? 1 : 0;
 		Tally.Studied += Record.Survey == APSFleet::ESurvey::Studied ? 1 : 0;
 		Tally.Built += CountOutposts(Record.Body.Get());
+		// Rio 07.10 (review): a record kept from a save for a world away at load has not rolled its anomaly yet; its saved
+		// investigation counts until it does (RebindBody applies it and clears HeldInvestigation, 0 for every other record).
 		Tally.Investigated += Record.bHasAnomaly && Record.Anomaly == APSFleet::EAnomalyState::Investigated
-			? (Record.bAnomalyInPerson ? 2 : 1) : 0;
+			? (Record.bAnomalyInPerson ? 2 : 1) : Record.HeldInvestigation;
 	}
 	// The home world is known from the start: nobody surveyed it.
 	if (bHomeKnown)
@@ -628,6 +699,9 @@ FAPSFleetCommand::FWorkTally FAPSFleetCommand::GetWorkTally() const
 	{
 		Tally.Built += Structure.bBuilt && Structure.Actor.IsValid() ? 1 : 0;
 	}
+	// Rio 07.10: what the fleet built on worlds that are away (a released star system) still counts: the levels it earned
+	// do not fall while the pilot is elsewhere (aps.Stars.HoldReleasedStructures).
+	Tally.Built += HeldStructures.Num() + HeldOutposts.Num();
 	for (const FAPSFleetUnit& Unit : Units)
 	{
 		Tally.Launched += Unit.Ship.IsValid() && Unit.Ship->ActorHasTag(APSFleetPrivate::BuiltTag) ? 1 : 0;
@@ -775,6 +849,26 @@ FAPSFleetBodyRecord& FAPSFleetCommand::BodyRecord(APlanetaryBody* Body)
 	{
 		return *Record;
 	}
+	// Rio 07.10 (aps.Stars.HoldReleasedStructures: a revisited world got a second record, Unknown again): the record kept
+	// while this world was away is its record again; one a released system kept, only for that system's own world.
+	if (Body && FAPSInfrastructure::HoldsReleased() && Bodies.ContainsByPredicate([](const FAPSFleetBodyRecord& Entry)
+		{
+			return !Entry.Body.IsValid() && !Entry.Key.IsEmpty();
+		}))
+	{
+		const FString Key = KeyOf(Body);
+		TMap<FString, APlanetaryBody*> HostBodies;
+		const FGuid ActiveHost = APSFleetPrivate::FleetHostBodies(World.Get(), &HostBodies);
+		const FGuid Host = HostBodies.FindRef(Key) == Body ? ActiveHost : FGuid();
+		if (FAPSFleetBodyRecord* Kept = Bodies.FindByPredicate([&Key, &Host](const FAPSFleetBodyRecord& Entry)
+			{
+				return !Entry.Body.IsValid() && Entry.Key == Key && (!Entry.HostSystemId.IsValid() || Entry.HostSystemId == Host);
+			}))
+		{
+			RebindBody(*Kept, Body);
+			return *Kept;
+		}
+	}
 	FAPSFleetBodyRecord& Record = Bodies.AddDefaulted_GetRef();
 	Record.Body = Body;
 	RollAnomaly(Record, Body);
@@ -875,6 +969,8 @@ void FAPSFleetCommand::RefreshUnits()
 	}
 	if (!PendingRestore.IsSet())
 	{
+		// Rio 07.10: what waited for its world to stand again (aps.Stars.HoldReleasedStructures; nothing when none waits).
+		RaiseHeldWorlds();
 		AnnouncePromotions();
 		TickAnomalies();
 	}
@@ -1932,7 +2028,10 @@ void FAPSFleetCommand::LogUnits() const
 	}
 	for (const FAPSFleetBodyRecord& Record : Bodies)
 	{
-		UE_LOG(LogTemp, Log, TEXT("[APS.Fleet] body %s %s outposts=%d"), *APSFleetPrivate::NameOf(Record.Body.Get()).ToString(),
+		// Rio 07.10: a world that is away (its star system released) by its key.
+		const FString Name = Record.Body.IsValid() || Record.Key.IsEmpty() ? APSFleetPrivate::NameOf(Record.Body.Get()).ToString()
+			: Record.Key + TEXT(" (away)");
+		UE_LOG(LogTemp, Log, TEXT("[APS.Fleet] body %s %s outposts=%d"), *Name,
 			*APSFleet::SurveyName(Record.Survey).ToString(), CountOutposts(Record.Body.Get()));
 	}
 	for (const FAPSFleetStructure& Structure : Structures)
@@ -1940,6 +2039,11 @@ void FAPSFleetCommand::LogUnits() const
 		UE_LOG(LogTemp, Log, TEXT("[APS.Fleet] structure %s %s at %s%s"), *GetNameSafe(Structure.Actor.Get()),
 			*APSFleet::StructureName(Structure.Kind).ToString(), *APSFleetPrivate::NameOf(Structure.Body.Get()).ToString(),
 			Structure.bBuilt ? TEXT(" (built by the fleet)") : TEXT(""));
+	}
+	if (!HeldStructures.IsEmpty() || !HeldOutposts.IsEmpty())
+	{
+		UE_LOG(LogTemp, Log, TEXT("[APS.Fleet] held while their worlds are away: %d structure(s), %d outpost(s)"),
+			HeldStructures.Num(), HeldOutposts.Num());
 	}
 }
 
@@ -2122,7 +2226,7 @@ AActor* FAPSFleetCommand::FindByKey(const FString& Key) const
 }
 
 AAutonomousOutpost* FAPSFleetCommand::SpawnOutpost(APlanetaryBody* Body, const FVector& Location, const FQuat& Rotation,
-	const FText& Name)
+	const FText& Name, const bool bCountCivilization)
 {
 	using namespace APSFleetPrivate;
 	UWorld* LiveWorld = World.Get();
@@ -2148,7 +2252,8 @@ AAutonomousOutpost* FAPSFleetCommand::SpawnOutpost(APlanetaryBody* Body, const F
 		NameProperty->SetPropertyValue_InContainer(Outpost, Name);
 	}
 	BodyRecord(Body).Outposts.Add(Outpost);
-	if (UCivilization* Civ = Civilization())
+	// Rio 07.10: one standing again after its world was away was counted when it was built.
+	if (UCivilization* Civ = bCountCivilization ? Civilization() : nullptr)
 	{
 		++Civ->Infrastructure.PlanetOutposts;
 	}
@@ -2160,6 +2265,14 @@ void FAPSFleetCommand::CaptureSave(FAPSFleetSaveData& OutData) const
 {
 	using namespace APSFleet;
 	OutData = FAPSFleetSaveData();
+	// Rio 06.10 (audit: a save taken before the fleet restore ran wrote the half-restored fleet: the generator's ships without
+	// their orders, no surveys, outposts, built structures or slipway jobs): while the loaded data still waits, it is what is
+	// saved (aps.Save.RestoreWaitForSystems, whose wait can hold it a little longer; 0 keeps the previous capture).
+	if (PendingRestore.IsSet() && APSFleetPrivate::CVarRestoreWaitForSystems.GetValueOnAnyThread() != 0)
+	{
+		OutData = PendingRestore.GetValue();
+		return;
+	}
 	for (const FAPSFleetUnit& Unit : Units)
 	{
 		const ASpaceship* Ship = Unit.Ship.Get();
@@ -2188,6 +2301,15 @@ void FAPSFleetCommand::CaptureSave(FAPSFleetSaveData& OutData) const
 		Record.SpawnClassPath = Ship->ActorHasTag(APSFleetPrivate::BuiltTag) ? Ship->GetClass()->GetPathName() : FString();
 		// Where it stands, relative to its target or the nearest body: the world origin moves between sessions.
 		const AActor* Reference = Unit.Target.Get();
+		// Rio 07.10 (aps.Stars.HoldReleasedStructures): a ship waiting at a star system's beacon (its world went with the
+		// system) is kept by that beacon, which a load finds again (a SYSTEM: key), not by whatever body is nearest. Only when
+		// the load registers that system again; else by the nearest body, as before.
+		if (FGuid AnchorId; !Reference && FAPSInfrastructure::HoldsReleased() && Ship->GetAttachParentActor()
+			&& FAPSStarSystems::AnchorSystem(Ship->GetAttachParentActor(), AnchorId)
+			&& APSFleetPrivate::SystemReturnsAtLoad(World.Get(), AnchorId))
+		{
+			Reference = Ship->GetAttachParentActor();
+		}
 		if (!Reference)
 		{
 			double Surface = 0.0, Radius = 0.0;
@@ -2202,6 +2324,11 @@ void FAPSFleetCommand::CaptureSave(FAPSFleetSaveData& OutData) const
 		const APlanetaryBody* Planet = Body.Body.Get();
 		if (!Planet)
 		{
+			// Rio 07.10: a world that is away (its star system released, or not here at load) is saved by its key.
+			if (!Body.Key.IsEmpty() && Body.Survey != ESurvey::Unknown)
+			{
+				OutData.Surveys.Emplace(Body.Key, static_cast<uint8>(Body.Survey));
+			}
 			continue;
 		}
 		if (Body.Survey != ESurvey::Unknown)
@@ -2219,11 +2346,26 @@ void FAPSFleetCommand::CaptureSave(FAPSFleetSaveData& OutData) const
 			}
 		}
 	}
+	// Rio 07.10: and the outposts held while their worlds are away, as they were.
+	for (const TPair<FGuid, FAPSFleetSaveData::FOutpost>& Held : HeldOutposts)
+	{
+		OutData.Outposts.Add(Held.Value);
+	}
 	for (const FAPSFleetBodyRecord& Body : Bodies)
 	{
 		if (Body.Body.IsValid() && Body.bHasAnomaly && Body.Anomaly == EAnomalyState::Investigated)
 		{
 			OutData.Investigations.Emplace(KeyOf(Body.Body.Get()), Body.bAnomalyInPerson ? 2 : 1);
+		}
+		else if (!Body.Body.IsValid() && !Body.Key.IsEmpty())
+		{
+			// Rio 07.10: a world that is away, by its key (one kept from a save has not rolled its anomaly yet).
+			const uint8 Investigated = Body.bHasAnomaly && Body.Anomaly == EAnomalyState::Investigated
+				? static_cast<uint8>(Body.bAnomalyInPerson ? 2 : 1) : Body.HeldInvestigation;
+			if (Investigated > 0)
+			{
+				OutData.Investigations.Emplace(Body.Key, Investigated);
+			}
 		}
 	}
 	// Only what the fleet built: the generator raises the home complex again by itself.
@@ -2241,6 +2383,11 @@ void FAPSFleetCommand::CaptureSave(FAPSFleetSaveData& OutData) const
 		Record.RelativeTransform = Actor->GetActorTransform().GetRelativeTransform(Body->GetActorTransform());
 		Record.Name = IItemInfoInterface::Execute_GetInGameName(Actor).ToString();
 		Record.ActorName = Actor->GetName();
+	}
+	// Rio 07.10: and those held while their worlds are away, as they were (a load holds them again until the world stands).
+	for (const TPair<FGuid, FAPSFleetSaveData::FStructure>& Held : HeldStructures)
+	{
+		OutData.Structures.Add(Held.Value);
 	}
 	for (const FAPSShipyardJob& Job : ShipyardQueue)
 	{
@@ -2280,7 +2427,56 @@ void FAPSFleetCommand::ApplyPendingRestore()
 	{
 		return;
 	}
+	// Rio 06.10 (audit: galaxy-reach systems register ~1-3 s after the load; FindByKey of their SYSTEM: keys was null on the
+	// first tick, so orders to them were cleared and ships referenced to them stayed where the generator put them): within
+	// the same 20 s, wait for the star registry and for every saved SYSTEM: key. A save without such keys does not wait
+	// (worlds whose registry never reads, as the authored route may be, restore as before).
+	if (CVarRestoreWaitForSystems.GetValueOnGameThread() != 0 && LiveWorld->GetTimeSeconds() - PendingRestoreSince < 20.0)
+	{
+		const auto IsSystemKey = [](const FString& Key) { return Key.StartsWith(TEXT("SYSTEM:")); };
+		const bool bAnySystemKey = Data.Units.ContainsByPredicate([&IsSystemKey](const FAPSFleetUnitRecord& Saved)
+		{
+			return IsSystemKey(Saved.TargetKey) || IsSystemKey(Saved.ReferenceKey) || IsSystemKey(Saved.BerthKey);
+		});
+		if (bAnySystemKey)
+		{
+			const FAPSStarSystems* Stars = APSStarSystemsFind(LiveWorld);
+			if (!Stars || !Stars->IsReady())
+			{
+				return;
+			}
+			for (const FAPSFleetUnitRecord& Saved : Data.Units)
+			{
+				for (const FString* Key : {&Saved.TargetKey, &Saved.ReferenceKey, &Saved.BerthKey})
+				{
+					if (IsSystemKey(*Key) && !FindByKey(*Key))
+					{
+						return;
+					}
+				}
+			}
+		}
+	}
 	PendingRestore.Reset();
+	// Rio 07.10 (aps.Stars.HoldReleasedStructures): what the fleet has on a world that is not here at load (another star
+	// system's, which stands only while the pilot is there) is kept until that world stands, not dropped: its survey and
+	// investigation as a record by its key, its structures and outposts held (raised by the world's name, RaiseHeldWorlds).
+	const bool bHoldReleased = FAPSInfrastructure::HoldsReleased();
+	const auto IsBodyKey = [](const FString& Key) { return Key.StartsWith(TEXT("BODY:")); };
+	const auto KeptRecord = [this](const FString& Key) -> FAPSFleetBodyRecord&
+	{
+		if (FAPSFleetBodyRecord* Kept = Bodies.FindByPredicate([&Key](const FAPSFleetBodyRecord& Record)
+			{
+				return !Record.Body.IsValid() && Record.Key == Key;
+			}))
+		{
+			return *Kept;
+		}
+		FAPSFleetBodyRecord& Record = Bodies.AddDefaulted_GetRef();
+		Record.Key = Key;
+		return Record;
+	};
+	int32 KeptWorlds = 0;
 	for (const TPair<FString, uint8>& Survey : Data.Surveys)
 	{
 		if (APlanetaryBody* Body = Cast<APlanetaryBody>(FindByKey(Survey.Key)))
@@ -2294,12 +2490,33 @@ void FAPSFleetCommand::ApplyPendingRestore()
 			}
 			RevealAnomaly(Record, Record.Survey, FText::GetEmpty(), false);
 		}
+		else if (bHoldReleased && IsBodyKey(Survey.Key))
+		{
+			FAPSFleetBodyRecord& Record = KeptRecord(Survey.Key);
+			const ESurvey Level = static_cast<ESurvey>(FMath::Min<uint8>(Survey.Value, static_cast<uint8>(ESurvey::Studied)));
+			if (Level > Record.Survey)
+			{
+				Record.Survey = Level;
+			}
+			++KeptWorlds;
+		}
 	}
 	// The fleet's stations, shipyards and HQs first, under their saved names: units and slipway jobs refer to them.
 	int32 StructuresBack = 0;
 	for (const FAPSFleetSaveData::FStructure& Saved : Data.Structures)
 	{
 		APlanetaryBody* Body = Cast<APlanetaryBody>(FindByKey(Saved.BodyKey));
+		// Rio 07.10: one on a world not here is held (its name kept from a new build's) until a world of that name stands.
+		if (!Body && bHoldReleased && IsBodyKey(Saved.BodyKey) && Saved.Kind < static_cast<uint8>(EStructure::Count))
+		{
+			FString Digits;
+			if (Saved.ActorName.Split(TEXT("_"), nullptr, &Digits, ESearchCase::IgnoreCase, ESearchDir::FromEnd))
+			{
+				StructureSerial = FMath::Max(StructureSerial, FCString::Atoi(*Digits));
+			}
+			HeldStructures.Emplace(FGuid(), Saved);
+			continue;
+		}
 		if (!Body || Saved.Kind >= static_cast<uint8>(EStructure::Count)
 			|| (!Saved.ActorName.IsEmpty() && FindByKey(TEXT("ACTOR:") + Saved.ActorName)))
 		{
@@ -2320,6 +2537,11 @@ void FAPSFleetCommand::ApplyPendingRestore()
 		{
 			const FTransform Transform = Saved.RelativeTransform * Body->GetActorTransform();
 			Outposts += SpawnOutpost(Body, Transform.GetLocation(), Transform.GetRotation(), FText::FromString(Saved.Name)) ? 1 : 0;
+		}
+		else if (bHoldReleased && IsBodyKey(Saved.BodyKey))
+		{
+			// Rio 07.10: held until a world of that name stands.
+			HeldOutposts.Emplace(FGuid(), Saved);
 		}
 	}
 	// Ships the shipyard built come back first: the generator only respawns its own fleet.
@@ -2400,6 +2622,17 @@ void FAPSFleetCommand::ApplyPendingRestore()
 		Unit->Heading = FVector::ZeroVector;
 		if (Unit->Order != EOrder::None && Unit->Order != EOrder::Return && !Unit->Target.IsValid())
 		{
+			// Rio 07.10 (aps.Stars.HoldReleasedStructures): a build at a world not here gives back the cost taken when it was
+			// ordered, as a lost target does in play (CancelOrder); before, the stocks were simply gone.
+			if (bHoldReleased && Unit->Order == EOrder::BuildStructure && Unit->Phase != EPhase::Holding)
+			{
+				if (FAPSInfrastructure* Infrastructure = APSInfrastructureFind(LiveWorld))
+				{
+					Infrastructure->Refund(Unit->StructureType);
+					UE_LOG(LogTemp, Log, TEXT("[APS.Fleet] %s: its build of %s at %s ended at load (the world is not here); cost returned"),
+						*Unit->CallSign, *Unit->StructureType.ToString(), *Saved.TargetKey);
+				}
+			}
 			Unit->Order = EOrder::None;
 			Unit->Phase = EPhase::Idle;
 		}
@@ -2418,6 +2651,11 @@ void FAPSFleetCommand::ApplyPendingRestore()
 		if (APlanetaryBody* Body = Cast<APlanetaryBody>(FindByKey(Saved.Key)))
 		{
 			InvestigateAnomaly(BodyRecord(Body), FText::GetEmpty(), Saved.Value == 2, false);
+		}
+		else if (bHoldReleased && IsBodyKey(Saved.Key))
+		{
+			// Rio 07.10: kept with its world's record until the world stands (its anomaly is rolled then).
+			KeptRecord(Saved.Key).HeldInvestigation = static_cast<uint8>(Saved.Value == 2 ? 2 : 1);
 		}
 	}
 	// The slipways: a job whose shipyard did not come back moves to the home one (TickShipyard).
@@ -2438,6 +2676,11 @@ void FAPSFleetCommand::ApplyPendingRestore()
 	}
 	UE_LOG(LogTemp, Log, TEXT("[APS.Fleet] restored %d of %d units, %d surveys, %d outposts, %d of %d structures, %d slipway jobs"),
 		Restored, Data.Units.Num(), Data.Surveys.Num(), Outposts, StructuresBack, Data.Structures.Num(), Data.ShipyardJobs.Num());
+	if (KeptWorlds + HeldStructures.Num() + HeldOutposts.Num() > 0)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[APS.Fleet] held until their worlds stand: %d world record(s), %d structure(s), %d outpost(s)"),
+			KeptWorlds, HeldStructures.Num(), HeldOutposts.Num());
+	}
 	// The levels the restored work earned were announced in the saved journal already.
 	bEarnedPrimed = false;
 	++Revision;
@@ -2749,7 +2992,7 @@ ASpaceship* FAPSFleetCommand::LaunchShip(const TSubclassOf<ASpaceship> ShipClass
 // Structures
 
 ASpaceStation* FAPSFleetCommand::SpawnStructure(const APSFleet::EStructure Kind, APlanetaryBody* Body,
-	const FTransform& Transform, const FText& Name, const FString& ActorName)
+	const FTransform& Transform, const FText& Name, const FString& ActorName, const bool bCountCivilization)
 {
 	using namespace APSFleet;
 	using namespace APSFleetPrivate;
@@ -2802,7 +3045,8 @@ ASpaceStation* FAPSFleetCommand::SpawnStructure(const APSFleet::EStructure Kind,
 	{
 		NameProperty->SetPropertyValue_InContainer(Station, Name);
 	}
-	if (UCivilization* Civ = Civilization())
+	// Rio 07.10: one standing again after its world was away was counted when it was built.
+	if (UCivilization* Civ = bCountCivilization ? Civilization() : nullptr)
 	{
 		++Civ->Infrastructure.OrbitalStations;
 	}
@@ -2875,6 +3119,11 @@ int32 FAPSFleetCommand::CountBuiltHeadquarters() const
 	{
 		Count += Structure.bBuilt && Structure.Kind == APSFleet::EStructure::Headquarters && Structure.Actor.IsValid() ? 1 : 0;
 	}
+	// Rio 07.10: an HQ on a world that is away (its star system released) still speeds the fleet up.
+	for (const TPair<FGuid, FAPSFleetSaveData::FStructure>& Held : HeldStructures)
+	{
+		Count += Held.Value.Kind == static_cast<uint8>(APSFleet::EStructure::Headquarters) ? 1 : 0;
+	}
 	return Count;
 }
 
@@ -2888,6 +3137,258 @@ APlanetaryBody* FAPSFleetCommand::OrbitedBody(const AActor* Actor)
 		}
 	}
 	return nullptr;
+}
+
+void FAPSFleetCommand::HoldOnRelease(const TArray<APlanetaryBody*>& ReleasedBodies, const FGuid& HostSystemId,
+	FAPSStarSystems& Stars, const AActor* SystemRoot)
+{
+	using namespace APSFleet;
+	using namespace APSFleetPrivate;
+	if (!FAPSInfrastructure::HoldsReleased() || (ReleasedBodies.IsEmpty() && !SystemRoot) || !HostSystemId.IsValid())
+	{
+		return;
+	}
+	TSet<const AActor*> Released;
+	for (const APlanetaryBody* Body : ReleasedBodies)
+	{
+		if (Body)
+		{
+			Released.Add(Body);
+		}
+	}
+	const FAPSStarSystemInfo* Info = Stars.Find(HostSystemId);
+	const FString SystemName = Info ? Info->Name : HostSystemId.ToString(EGuidFormats::Digits);
+	int32 Changed = 0;
+	// The ships there (attached to the world through their target, a station or the shipyard that launched them): to the
+	// system's beacon where they are, before the tree goes. Their order then ends next tick as for any lost target
+	// (CancelOrder: a build's cost is returned). The beacon is spawned only when a ship needs it (navigation charts it).
+	// Rio 07.10 (review: a ship holding or working at the star itself, or at an orbit of the tree, has no world in its attach
+	// chain and was destroyed with the tree, its order never cancelled, its build's cost gone): any ship in the tree too.
+	AActor* Anchor = nullptr;
+	for (FAPSFleetUnit& Unit : Units)
+	{
+		ASpaceship* Ship = Unit.Ship.Get();
+		const APlanetaryBody* AtWorld = Ship ? OrbitedBody(Ship) : nullptr;
+		if (!Ship || (!Released.Contains(AtWorld) && !(SystemRoot && Ship->IsAttachedTo(SystemRoot))))
+		{
+			continue;
+		}
+		Anchor = Anchor ? Anchor : Stars.GetAnchor(HostSystemId);
+		if (!Anchor)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[APS.Fleet] %s has no beacon: %s goes with its world"), *SystemName, *Unit.CallSign);
+			continue;
+		}
+		Ship->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+		Ship->AttachToActor(Anchor, FAttachmentTransformRules::KeepWorldTransform);
+		++Changed;
+		UE_LOG(LogTemp, Log, TEXT("[APS.Fleet] %s held: its %s went with %s; it waits at the system's beacon"), *Unit.CallSign,
+			AtWorld ? TEXT("world") : TEXT("star"), *SystemName);
+	}
+	// The stations, shipyards and HQs the fleet built there, as a save writes them.
+	for (const FAPSFleetStructure& Structure : Structures)
+	{
+		const AActor* Actor = Structure.Actor.Get();
+		const APlanetaryBody* Body = Structure.Body.Get();
+		if (!Structure.bBuilt || !Actor || !Body || !Released.Contains(Body))
+		{
+			continue;
+		}
+		FAPSFleetSaveData::FStructure Saved;
+		Saved.Kind = static_cast<uint8>(Structure.Kind);
+		Saved.BodyKey = KeyOf(Body);
+		Saved.RelativeTransform = Actor->GetActorTransform().GetRelativeTransform(Body->GetActorTransform());
+		Saved.Name = IItemInfoInterface::Execute_GetInGameName(Actor).ToString();
+		Saved.ActorName = Actor->GetName();
+		UE_LOG(LogTemp, Log, TEXT("[APS.Fleet] %s held: its world went with %s (%s)"), *Saved.ActorName, *SystemName, *Saved.BodyKey);
+		HeldStructures.Emplace(HostSystemId, MoveTemp(Saved));
+		++Changed;
+	}
+	// The worlds' records (surveys, anomalies) stay, by key and system, with their outposts held.
+	int32 Records = 0;
+	for (FAPSFleetBodyRecord& Record : Bodies)
+	{
+		const APlanetaryBody* Body = Record.Body.Get();
+		if (!Body || !Released.Contains(Body))
+		{
+			continue;
+		}
+		for (const TWeakObjectPtr<AActor>& Outpost : Record.Outposts)
+		{
+			if (const AActor* Standing = Outpost.Get())
+			{
+				FAPSFleetSaveData::FOutpost Saved;
+				Saved.BodyKey = KeyOf(Body);
+				Saved.RelativeTransform = Standing->GetActorTransform().GetRelativeTransform(Body->GetActorTransform());
+				Saved.Name = NameOf(Standing).ToString();
+				UE_LOG(LogTemp, Log, TEXT("[APS.Fleet] outpost %s held: its world went with %s (%s)"), *Saved.Name, *SystemName,
+					*Saved.BodyKey);
+				HeldOutposts.Emplace(HostSystemId, MoveTemp(Saved));
+			}
+		}
+		Record.Outposts.Reset();
+		Record.Key = KeyOf(Body);
+		Record.HostSystemId = HostSystemId;
+		++Records;
+	}
+	if (Records > 0)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[APS.Fleet] %d world record(s) held: their worlds went with %s"), Records, *SystemName);
+	}
+	if (Changed + Records > 0)
+	{
+		++Revision;
+	}
+}
+
+void FAPSFleetCommand::RaiseHeldWorlds()
+{
+	using namespace APSFleet;
+	using namespace APSFleetPrivate;
+	UWorld* LiveWorld = World.Get();
+	const auto IsKept = [](const FAPSFleetBodyRecord& Record) { return !Record.Body.IsValid() && !Record.Key.IsEmpty(); };
+	if (!LiveWorld || !FAPSInfrastructure::HoldsReleased()
+		|| (HeldStructures.IsEmpty() && HeldOutposts.IsEmpty() && !Bodies.ContainsByPredicate(IsKept)))
+	{
+		return;
+	}
+	// A released system's: only on its own bodies while it stands. Held at load (no system): by the world's name, the first
+	// body of a key, as the restore takes it.
+	TMap<FString, APlanetaryBody*> HostBodies;
+	const FGuid ActiveHost = FleetHostBodies(LiveWorld, &HostBodies);
+	const bool bAnyUnscoped = Bodies.ContainsByPredicate([&IsKept](const FAPSFleetBodyRecord& Record)
+		{
+			return IsKept(Record) && !Record.HostSystemId.IsValid();
+		})
+		|| HeldStructures.ContainsByPredicate([](const TPair<FGuid, FAPSFleetSaveData::FStructure>& Held) { return !Held.Key.IsValid(); })
+		|| HeldOutposts.ContainsByPredicate([](const TPair<FGuid, FAPSFleetSaveData::FOutpost>& Held) { return !Held.Key.IsValid(); });
+	TMap<FString, APlanetaryBody*> AllBodies;
+	if (bAnyUnscoped)
+	{
+		for (TActorIterator<APlanetaryBody> It(LiveWorld); It; ++It)
+		{
+			const FString Key = IsValid(*It) ? KeyOf(*It) : FString();
+			if (!Key.IsEmpty() && !AllBodies.Contains(Key))
+			{
+				AllBodies.Add(Key, *It);
+			}
+		}
+	}
+	const auto Resolve = [&HostBodies, &AllBodies, &ActiveHost](const FGuid& Host, const FString& Key) -> APlanetaryBody*
+	{
+		if (Host.IsValid())
+		{
+			return ActiveHost.IsValid() && Host == ActiveHost ? HostBodies.FindRef(Key) : nullptr;
+		}
+		return AllBodies.FindRef(Key);
+	};
+	// The worlds' records first: the outposts below go into them.
+	for (FAPSFleetBodyRecord& Record : Bodies)
+	{
+		if (!IsKept(Record))
+		{
+			continue;
+		}
+		APlanetaryBody* Body = Resolve(Record.HostSystemId, Record.Key);
+		if (Body && !FindBody(Body))
+		{
+			RebindBody(Record, Body);
+		}
+	}
+	int32 StructuresRaised = 0;
+	for (int32 Index = 0; Index < HeldStructures.Num() && StructuresRaised < HeldStructureRaisesPerSecond; ++Index)
+	{
+		APlanetaryBody* Body = Resolve(HeldStructures[Index].Key, HeldStructures[Index].Value.BodyKey);
+		if (!Body)
+		{
+			continue;
+		}
+		const FAPSFleetSaveData::FStructure Saved = HeldStructures[Index].Value;
+		// Rio 07.10 (review): the civilization counted one held in this session when it was built; one held at load (no
+		// system) was not (its counters are not saved: the restore counts what it raises), so it is counted now.
+		const bool bCount = !HeldStructures[Index].Key.IsValid();
+		HeldStructures.RemoveAt(Index--);
+		++StructuresRaised;
+		const ASpaceStation* Station = Saved.Kind < static_cast<uint8>(EStructure::Count)
+			? SpawnStructure(static_cast<EStructure>(Saved.Kind), Body, Saved.RelativeTransform * Body->GetActorTransform(),
+				FText::FromString(Saved.Name), Saved.ActorName, bCount)
+			: nullptr;
+		if (Station)
+		{
+			UE_LOG(LogTemp, Log, TEXT("[APS.Fleet] held structure %s raised at %s"), *Station->GetName(), *Saved.BodyKey);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[APS.Fleet] held structure %s could not be raised at %s"), *Saved.ActorName, *Saved.BodyKey);
+		}
+	}
+	int32 OutpostsRaised = 0;
+	for (int32 Index = 0; Index < HeldOutposts.Num() && OutpostsRaised < HeldOutpostRaisesPerSecond; ++Index)
+	{
+		APlanetaryBody* Body = Resolve(HeldOutposts[Index].Key, HeldOutposts[Index].Value.BodyKey);
+		if (!Body)
+		{
+			continue;
+		}
+		const FAPSFleetSaveData::FOutpost Saved = HeldOutposts[Index].Value;
+		const bool bCount = !HeldOutposts[Index].Key.IsValid();
+		HeldOutposts.RemoveAt(Index--);
+		++OutpostsRaised;
+		const FTransform Transform = Saved.RelativeTransform * Body->GetActorTransform();
+		if (const AActor* Outpost = SpawnOutpost(Body, Transform.GetLocation(), Transform.GetRotation(), FText::FromString(Saved.Name), bCount))
+		{
+			UE_LOG(LogTemp, Log, TEXT("[APS.Fleet] held outpost %s raised at %s"), *Outpost->GetName(), *Saved.BodyKey);
+		}
+		else
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[APS.Fleet] held outpost %s could not be raised at %s"), *Saved.Name, *Saved.BodyKey);
+		}
+	}
+}
+
+void FAPSFleetCommand::RebindBody(FAPSFleetBodyRecord& Record, APlanetaryBody* Body)
+{
+	using namespace APSFleet;
+	using namespace APSFleetPrivate;
+	if (!Body)
+	{
+		return;
+	}
+	Record.Body = Body;
+	if (!Record.HostSystemId.IsValid())
+	{
+		// Kept from a save while its world was away: the restore's steps now (its findings, its anomaly rolled and revealed
+		// to the saved level, its investigation); from now on an ordinary record.
+		Record.Findings.Reset();
+		if (Record.Survey > ESurvey::Unknown)
+		{
+			AddFindings(Body, ESurvey::Unknown, Record.Survey, Record.Findings);
+		}
+		RollAnomaly(Record, Body);
+		RevealAnomaly(Record, Record.Survey, FText::GetEmpty(), false);
+		if (Record.HeldInvestigation > 0)
+		{
+			InvestigateAnomaly(Record, FText::GetEmpty(), Record.HeldInvestigation == 2, false);
+		}
+		Record.HeldInvestigation = 0;
+		Record.Key.Reset();
+	}
+	else if (Record.bHasAnomaly && Record.Anomaly >= EAnomalyState::Located)
+	{
+		// Its beacon went with the world: at the site again, named as it was.
+		SpawnAnomalyBeacon(Record);
+		AActor* Beacon = Record.AnomalyBeacon.Get();
+		FTextProperty* NameProperty = Beacon && Record.Anomaly == EAnomalyState::Investigated
+			? FindFProperty<FTextProperty>(Beacon->GetClass(), TEXT("InGameName")) : nullptr;
+		if (NameProperty)
+		{
+			NameProperty->SetPropertyValue_InContainer(Beacon, FText::Format(LOCTEXT("BeaconInvestigated", "INVESTIGATED: {0}"),
+				AnomalyName(Record.AnomalyKind)));
+		}
+	}
+	++Revision;
+	UE_LOG(LogTemp, Log, TEXT("[APS.Fleet] world %s raised: its record is back (%s)"), *KeyOf(Body),
+		*SurveyName(Record.Survey).ToString());
 }
 
 FText FAPSFleetCommand::DisplayName(const AActor* Actor)

@@ -38,13 +38,14 @@ namespace
 	};
 	TMap<TWeakObjectPtr<const UWorld>, FNearState> GStates;
 
-	double ResolvePixels()
+	// Unity-safe names: APSGameplayNativeStars.cpp has its own ResolvePixels() in an anonymous namespace.
+	double NearResolvePixels()
 	{
 		static IConsoleVariable* Variable = IConsoleManager::Get().FindConsoleVariable(TEXT("aps.Stars.ResolvePixels"));
 		return Variable ? FMath::Max(static_cast<double>(Variable->GetFloat()), 1.0) : 1.0;
 	}
 
-	double DayResolvePixels()
+	double NearDayResolvePixels()
 	{
 		static IConsoleVariable* Variable = IConsoleManager::Get().FindConsoleVariable(TEXT("aps.Stars.DayResolvePixels"));
 		return Variable ? FMath::Max(static_cast<double>(Variable->GetFloat()), 0.0) : 0.0;
@@ -176,7 +177,7 @@ namespace APSGalaxyNearStars
 			State.Galaxy = Galaxy;
 		}
 		// Rio 04.10: a day sky keeps the largest photospheres (aps.Stars.DayResolvePixels, as the catalogue's resolved stars).
-		const double DayResolve = DayResolvePixels();
+		const double DayResolve = NearDayResolvePixels();
 		if (CVarNearStars.GetValueOnGameThread() == 0 || !Galaxy || (bDaylightHidden && !(DayResolve > 0.0))
 			|| !(PixelTangent > 0.0))
 		{
@@ -213,7 +214,7 @@ namespace APSGalaxyNearStars
 			}
 		}
 		const int32 Prefix = IsValid(Galaxy->StarMeshInstances) ? Galaxy->StarMeshInstances->GetInstanceCount() : 0;
-		const double Resolve = bDaylightHidden ? FMath::Max(DayResolve, ResolvePixels()) : ResolvePixels();
+		const double Resolve = bDaylightHidden ? FMath::Max(DayResolve, NearResolvePixels()) : NearResolvePixels();
 		TSet<int64> Wanted;
 		for (const APSGalaxyGpuStars::FNearStar& Star : Stars)
 		{

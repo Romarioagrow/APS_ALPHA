@@ -14,6 +14,9 @@ namespace
 {
     TAutoConsoleVariable<int32> CVarM5SpatialSweep(TEXT("aps.M5.SpatialSweep"), 1,
         TEXT("Exact conservative hull sweep for opt-in M5 components; 0 uses engine sweep."));
+    // Rio 06.10 (perf R2): A/B switch for the deduped ignore list in TryMoveHull; 0 = old per-shape add.
+    TAutoConsoleVariable<int32> CVarM5SweepUniqueIgnore(TEXT("aps.M5.SweepUniqueIgnore"), 1,
+        TEXT("1 adds each shape query-filter actor id to the M5 hull sweep ignore list once; 0 adds one entry per shape (old)."));
 
     struct FNode
     {
@@ -120,8 +123,20 @@ bool UAPSM5HullSweepComponent::TryMoveHull(UStaticMeshComponent* Hull, const FVe
     Params.AddIgnoredComponents(Hull->GetMoveIgnoreComponents());
     Params.bIgnoreTouches = true;
     // Match engine exclusion of all actor IDs carried by welded shape query filters.
+    // Rio 06.10 (perf R2): on a non-welded hull every shape carries the ship's own id, so the
+    // per-shape add pushed ~13.5k duplicates and the scene-query PreFilter scanned that list
+    // linearly for every foreign candidate shape (terrain, HQ, pads). Add each id once; the
+    // filter only tests membership, so hits are identical. aps.M5.SweepUniqueIgnore 0 = old loop.
+    const bool bUniqueIgnore = CVarM5SweepUniqueIgnore.GetValueOnGameThread() != 0;
+    uint32 LastIgnoredId = Ship->GetUniqueID(); // Already in the list via Params(..., Ship).
     for (Chaos::FShapeInstanceProxy* Shape : Shapes)
-        Params.AddIgnoredActor(ChaosInterface::GetQueryFilterData(*Shape).Word0);
+    {
+        const uint32 Id = ChaosInterface::GetQueryFilterData(*Shape).Word0;
+        if (!bUniqueIgnore) { Params.AddIgnoredActor(Id); continue; }
+        if (Id == LastIgnoredId) continue;
+        LastIgnoredId = Id;
+        if (!Params.GetIgnoredActors().Contains(Id)) Params.AddIgnoredActor(Id);
+    }
     const ECollisionChannel Channel = Hull->GetCollisionObjectType();
     const FCollisionResponseParams Responses(Hull->GetCollisionResponseToChannels());
     TArray<int32, TInlineAllocator<64>> Stack;
