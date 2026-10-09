@@ -94,6 +94,17 @@ public:
 	/** Object actions (APSObjectActions provider): what the site is, and the science and expedition orders. */
 	void GatherActions(const FSite& Site, AActor* Object, TArray<FAPSObjectAction>& OutActions) const;
 
+	/**
+	 * Rio 09.10 (the quest chains read as one story): the site's one name, as its marker, the navigation list, the HUD
+	 * chip and the JOURNAL's chain page show it: "UNKNOWN STRUCTURE · RESO" until it is identified, then
+	 * "THE SPIRE FOREST · RESO" (aps.Quests.SiteNames; 0: the former names).
+	 */
+	FText DisplayName(const FSite& Site) const;
+	/** The texts' arguments for a step of the site's chain as the chain fills them (Step < 0: the chain's signal). */
+	FFormatNamedArguments TextArgs(const FSite& Site, int32 Step) const;
+	/** The site and its step (from 0) whose mission template this is; null for any other template. */
+	const FSite* FindByTemplate(FName Template, int32& OutStep) const;
+
 	/** Console. */
 	void LogSites() const;
 	bool Teleport(int32 Index);
@@ -133,6 +144,8 @@ private:
 	void PutStep(FSite& Site, FAPSMissionBoard& Board, APSMissions::EState State);
 	FFormatNamedArguments ArgsFor(const FSite& Site, const APSAncientsQuests::FStep* Step) const;
 	FText SubjectNameFor(const FSite& Site, int32 Step) const;
+	/** Whether the site is identified while Step is its current step (the chains name a site from its first survey). */
+	bool IsKnownAt(const FSite& Site, int32 Step) const;
 	void Post(const FText& Text) const;
 	bool QuestsAllowed() const;
 	double Now() const;

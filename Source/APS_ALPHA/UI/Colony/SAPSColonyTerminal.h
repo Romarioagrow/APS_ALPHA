@@ -89,6 +89,14 @@ private:
 	void RebuildJournal();
 	void HandleJournalEntry(const FAPSCivilizationJournalEntry& Entry);
 	FReply SetJournalFilter(FName Category);
+	/**
+	 * Rio 09.10 (the quest chains read as one story; aps.Quests.ChainPage): one Builders' chain on its own JOURNAL page:
+	 * the signal, every step so far with its brief, status and reward (later ones as ???), the chain's journal lines in
+	 * order, and SET COURSE / SHOW ON MAP / OPEN for its site. Built from the runtime (chains, board, journal): no save.
+	 */
+	FReply OpenChainPage(FString SiteId);
+	FReply CloseChainPage();
+	void BuildChainPage();
 	/** The colony actors (base, pad, home ship), found once when the terminal opens. */
 	void CacheColonyActors();
 	FText DescribeColonyActor(int32 RoleIndex) const;
@@ -197,6 +205,10 @@ private:
 	FDelegateHandle JournalHandle;
 	/** None: every category. */
 	FName JournalFilter;
+	/** The ancient site whose chain the JOURNAL shows on its own page; empty: the journal itself. */
+	FString ChainPageSite;
+	FText ChainPageMessage;
+	bool bChainPageError{false};
 	TWeakObjectPtr<AActor> ColonyActors[3];
 	ETab ActiveTab{ETab::Overview};
 	TSharedPtr<SVerticalBox> FleetList;

@@ -193,6 +193,59 @@ namespace APSShipFlightModelLocal
 		}
 		return FromCm * FMath::Pow(ToCm / FromCm, FMath::Clamp(Elapsed / Seconds, 0.0, 1.0));
 	}
+	/**
+	 * Rio 09.10 playtest ("the speeds are fine, the transitions are abrupt": by the HQ with big ships parked in a row AUTO
+	 * changed band and the ship shot forward; S braked at once; at high speed the controls were far too sensitive).
+	 */
+	TAutoConsoleVariable<int32> CVarFlightEaseBands(TEXT("aps.Flight.EaseBands"), 1,
+		TEXT("Rio 09.10: eased transitions in band flight (master switch for aps.Flight.EaseSeconds, AutoBandDwellSeconds, ")
+		TEXT("ThrottleEaseSeconds and HighSpeedSteer). 0: every transition as before (instant)."));
+	TAutoConsoleVariable<float> CVarFlightEaseSeconds(TEXT("aps.Flight.EaseSeconds"), 1.5f,
+		TEXT("Rio 09.10: after an AUTO band change the speed limit moves from the old band's to the new band's along an ")
+		TEXT("ease-in/ease-out curve over this many seconds, up and down (log space; not into or out of STELLAR, not under the ")
+		TEXT("autopilot); a ground limit jumping up (off a parked ship's roof) eases up over the same time. 0: at once."));
+	TAutoConsoleVariable<float> CVarFlightAutoBandDwellSeconds(TEXT("aps.Flight.AutoBandDwellSeconds"), 1.5f,
+		TEXT("Rio 09.10: how long the surroundings (a station's gravity ending, the low-flight ceiling) must keep asking for a ")
+		TEXT("higher band before AUTO shifts up for them. 0: at once, as before."));
+	TAutoConsoleVariable<float> CVarFlightThrottleEaseSeconds(TEXT("aps.Flight.ThrottleEaseSeconds"), 0.4f,
+		TEXT("Rio 09.10: W/S and Left Ctrl build up along a critically damped curve (ease in and out) with this smoothing time, ")
+		TEXT("seconds; letting go still ends them at once. Not under the autopilot. 0: at once, as before."));
+	TAutoConsoleVariable<float> CVarFlightHighSpeedSteer(TEXT("aps.Flight.HighSpeedSteer"), 0.35f,
+		TEXT("Rio 09.10: above 1 km/s the turn rate is divided by 1 + this x log10(speed / 1 km/s), down to 0.35 of it ")
+		TEXT("(10 km/s: 0.74, 340 km/s: 0.53). 0: the same turn rate at every speed, as before."));
+	bool FlightEaseEnabled()
+	{
+		return CVarFlightEaseBands.GetValueOnGameThread() != 0;
+	}
+	float FlightEaseSeconds()
+	{
+		return FlightEaseEnabled() ? FMath::Max(CVarFlightEaseSeconds.GetValueOnGameThread(), 0.0f) : 0.0f;
+	}
+	/** Rio 09.10: a band limit eased from From to To (Alpha 0..1 already on the ease curve), in log space. */
+	double EaseLimitCm(const double FromCm, const double ToCm, const double Alpha)
+	{
+		if (FromCm > 1.0 && ToCm > 1.0)
+		{
+			return FMath::Exp(FMath::Lerp(FMath::Loge(FromCm), FMath::Loge(ToCm), Alpha));
+		}
+		return FMath::Lerp(FromCm, ToCm, Alpha);
+	}
+	/** Rio 09.10: a critically damped follow of Target (ease in, ease out, no overshoot), exact for any frame length. */
+	void SmoothDamp(double& Value, double& Rate, const double Target, const double SmoothSeconds, const double DeltaTime)
+	{
+		if (SmoothSeconds <= 0.0 || DeltaTime <= 0.0)
+		{
+			Value = Target;
+			Rate = 0.0;
+			return;
+		}
+		const double Omega = 2.0 / SmoothSeconds;
+		const double Decay = FMath::Exp(-Omega * DeltaTime);
+		const double Offset = Value - Target;
+		const double Temp = (Rate + Omega * Offset) * DeltaTime;
+		Rate = (Rate - Omega * Temp) * Decay;
+		Value = Target + (Offset + Temp) * Decay;
+	}
 	TAutoConsoleVariable<float> CVarSpaceKeyTurnScale(TEXT("aps.Ship.SpaceKeyTurnScale"), 0.45f,
 		TEXT("Rio 04.10: space band flight with the mouse on the camera: the share of the full turn rate A/D reach (1 = full)."));
 	TAutoConsoleVariable<float> CVarSpaceKeyTurnEase(TEXT("aps.Ship.SpaceKeyTurnEase"), 0.25f,
@@ -966,6 +1019,8 @@ void UAPSShipFlightModel::ApplyBand(EAPSFlightBand NewBand, const TCHAR* Reason)
 	// Rio 07.10 (aps.Ship.ShiftRampSeconds): manual picks and the star drive's hand-over keep the instant switch; only
 	// UpdateAutoBand starts a ramp, right after this.
 	ShiftRampElapsed = -1.0f;
+	// Rio 09.10 (aps.Flight.EaseSeconds): likewise the eased speed limit hand-over.
+	BandEaseElapsed = -1.0f;
 	BodyRefreshElapsed = TNumericLimits<float>::Max();
 	CatalogueScanElapsed = TNumericLimits<float>::Max();
 	UE_LOG(LogTemp, Log, TEXT("[APS.Flight] %s band %s -> %s at %s (%s)"), *GetNameSafe(Ship),
@@ -2658,18 +2713,63 @@ void UAPSShipFlightModel::UpdateNearestSurface(float DeltaTime)
 	NearestSystemGapCm = bSystemGapKnown ? SystemGap : 0.0;
 	// Terrain above the base sphere is only known from the ground probe.
 	GroundLimitClearanceCm = -1.0;
-	if (GroundClearanceCm >= 0.0)
+	const FVector GroundUp = Ship ? -Ship->ActiveGravityDirection.GetSafeNormal() : FVector::ZeroVector;
+	double GroundLimitCm = GroundClearanceCm >= 0.0 ? GroundClearanceCm * DepartureScale(GroundUp) : -1.0;
 	{
-		Nearest = Nearest < 0.0 ? GroundClearanceCm : FMath::Min(Nearest, GroundClearanceCm);
-		const FVector Up = Ship ? -Ship->ActiveGravityDirection.GetSafeNormal() : FVector::ZeroVector;
-		GroundLimitClearanceCm = GroundClearanceCm * DepartureScale(Up);
+		// Rio 09.10 (aps.Flight.EaseSeconds; by the HQ over a row of parked ships): the probe hits a roof, then the deck or
+		// nothing, and every band's limit jumped up in one frame (AUTO shifted up and the ship shot forward). A jump up the
+		// ship's own motion does not explain eases up now; a drop is taken at once and a steady climb is followed as before.
+		const double EaseSeconds = APSShipFlightModelLocal::FlightEaseSeconds();
+		if (EaseSeconds <= 0.0 || DeltaTime <= 0.0f || !Ship)
+		{
+			GroundLimitOffsetCm = 0.0;
+			GroundLimitRawCm = GroundLimitCm;
+		}
+		else
+		{
+			// The ground lost from under the probe is a jump up to the probe's reach.
+			const double Raw = GroundLimitCm < 0.0 && GroundLimitRawCm >= 0.0
+				? FMath::Max(GroundLimitRawCm, GroundProbeLength) : GroundLimitCm;
+			const double PreviousEased = GroundLimitRawCm >= 0.0 ? GroundLimitRawCm + GroundLimitOffsetCm : -1.0;
+			if (Raw >= 0.0 && GroundLimitRawCm >= 0.0)
+			{
+				const double Explained = Ship->KinematicVelocity.Size() * DeltaTime * FMath::Max(DepartureSpeedFactor, 1.0);
+				const double Rise = Raw - GroundLimitRawCm;
+				if (Rise > FMath::Max(Explained, FMath::Max(0.2 * GroundLimitRawCm, 2000.0)))
+				{
+					GroundLimitOffsetCm -= Rise - Explained;
+				}
+			}
+			GroundLimitOffsetCm = Raw >= 0.0
+				? FMath::Clamp(GroundLimitOffsetCm * FMath::Exp(-3.0 * DeltaTime / EaseSeconds), -Raw, 0.0) : 0.0;
+			if (Raw >= 0.0 && PreviousEased >= 0.0)
+			{
+				// A drop below an easing limit leaves the limit where it was (or at the new ground, if that is lower).
+				GroundLimitOffsetCm = FMath::Max(GroundLimitOffsetCm, FMath::Min(PreviousEased - Raw, 0.0));
+			}
+			if (GroundLimitOffsetCm > -100.0)
+			{
+				GroundLimitOffsetCm = 0.0;
+			}
+			GroundLimitRawCm = GroundLimitCm < 0.0 && GroundLimitOffsetCm >= 0.0 ? -1.0 : Raw;
+			GroundLimitCm = GroundLimitRawCm >= 0.0 ? GroundLimitRawCm + GroundLimitOffsetCm : -1.0;
+		}
+	}
+	if (GroundLimitCm >= 0.0)
+	{
+		GroundLimitClearanceCm = GroundLimitCm;
 		LimitDistance = LimitDistance < 0.0 ? GroundLimitClearanceCm : FMath::Min(LimitDistance, GroundLimitClearanceCm);
 		if (LimitLocal < 0.0 || GroundLimitClearanceCm < LimitLocal)
 		{
 			LocalKey = this;
-			LocalOutward = Up;
+			LocalOutward = GroundUp;
 		}
 		LimitLocal = LimitLocal < 0.0 ? GroundLimitClearanceCm : FMath::Min(LimitLocal, GroundLimitClearanceCm);
+	}
+	if (GroundClearanceCm >= 0.0)
+	{
+		Nearest = Nearest < 0.0 ? GroundClearanceCm : FMath::Min(Nearest, GroundClearanceCm);
+		const FVector& Up = GroundUp;
 		if (!Up.IsNearlyZero() && (Solid < 0.0 || GroundClearanceCm < Solid))
 		{
 			Solid = GroundClearanceCm;
@@ -2788,6 +2888,7 @@ void UAPSShipFlightModel::UpdateAutoBand(double SpeedCm, double Throttle, float 
 
 	EAPSFlightBand Wanted = FlightBand;
 	const TCHAR* Reason = TEXT("auto");
+	bool bSurroundUpAsked = false;
 	if (Wanted > Highest)
 	{
 		// Out of interstellar space, into a gravity well or an atmosphere: drop at once and shed the speed.
@@ -2805,8 +2906,18 @@ void UAPSShipFlightModel::UpdateAutoBand(double SpeedCm, double Throttle, float 
 	}
 	else if (Wanted < Lowest)
 	{
-		Wanted = Lowest;
-		Reason = TEXT("auto: surroundings");
+		// Rio 09.10 (aps.Flight.AutoBandDwellSeconds; the 0.6.4 log by the HQ: FLIGHT -> ORBITAL "surroundings" 0.4 s after
+		// a "closing in" shift down): the station's gravity source and the low-flight ceiling flick on and off along a row
+		// of parked ships, and this shift up skipped every hold. Now the surroundings must ask for a while first.
+		const float Dwell = APSShipFlightModelLocal::FlightEaseEnabled()
+			? FMath::Max(APSShipFlightModelLocal::CVarFlightAutoBandDwellSeconds.GetValueOnGameThread(), 0.0f) : 0.0f;
+		SurroundUpHold += DeltaTime;
+		bSurroundUpAsked = true;
+		if (SurroundUpHold >= Dwell)
+		{
+			Wanted = Lowest;
+			Reason = TEXT("auto: surroundings");
+		}
 	}
 	else
 	{
@@ -2861,9 +2972,26 @@ void UAPSShipFlightModel::UpdateAutoBand(double SpeedCm, double Throttle, float 
 			AutoShiftHold = 0.0f;
 		}
 	}
+	if (!bSurroundUpAsked)
+	{
+		SurroundUpHold = 0.0f;
+	}
 	if (Wanted != FlightBand && IsBandAvailable(Wanted))
 	{
-		ApplyBand(Wanted, Reason);
+		// Rio 09.10 (aps.Flight.EaseSeconds): the speed limit eases from the old band's to the new one's, up and down.
+		// STELLAR keeps its own log-rate climb and its at-once drop at a system; the autopilot keeps its tempo law.
+		const EAPSFlightBand FromBand = FlightBand;
+		const float EaseSeconds = APSShipFlightModelLocal::FlightEaseSeconds();
+		const bool bEase = EaseSeconds > 0.0f && !IsAutopilotEngaged()
+			&& FromBand != EAPSFlightBand::Stellar && Wanted != EAPSFlightBand::Stellar;
+		const FString ReasonText = bEase
+			? FString::Printf(TEXT("%s; eased over %.2f s from a %s limit to %s"), Reason, EaseSeconds,
+				*APSShipFlightModelLocal::FormatSpeed(CurrentSpeedLimitCm),
+				*APSShipFlightModelLocal::FormatSpeed(BandLimitCm(Wanted, BoostAlpha)))
+			: FString(Reason);
+		ApplyBand(Wanted, *ReasonText);
+		EaseFromBand = FromBand;
+		BandEaseElapsed = bEase ? 0.0f : -1.0f;
 		// Rio 07.10 (aps.Ship.ShiftRampSeconds): the thrust grows from what the old band used (a shift down needs no ramp:
 		// ApplyTranslation ends it at once when the new band's thrust is not higher).
 		ShiftRampFromThrustCm = LastThrustCm;
@@ -2972,10 +3100,35 @@ bool UAPSShipFlightModel::ApplyTranslation(float DeltaTime)
 	const bool bBoostHeld = Ship->bIsAccelerating || (bDebugDrive && bDebugBoost);
 	BoostAlpha = FMath::FInterpConstantTo(BoostAlpha, bBoostHeld ? 1.0 : 0.0, static_cast<double>(DeltaTime), 2.5);
 	// With the mouse on the camera (C) A/D turn the hull (ASpaceship::ApplyRotationInput) instead of strafing.
-	const FVector LocalInput = FVector(bDebugDrive ? DebugForwardInput : Ship->ForwardInput,
+	const FVector RawLocalInput = FVector(bDebugDrive ? DebugForwardInput : Ship->ForwardInput,
 		Ship->IsMouseLookActive() ? 0.0f : Ship->SideInput,
 		bDebugDrive && bAutopilotDeparting ? DebugVerticalInput : Ship->VerticalInput).GetClampedToMaxSize(1.0);
-	if (bStarDrive && ApplyStarDrive(LocalInput, DeltaTime))
+	// Rio 09.10 (aps.Flight.ThrottleEaseSeconds; "S brakes and reverses at once"): W/S and Left Ctrl build up along a
+	// critically damped curve; letting go ends them at once, so a released Assist band keeps its speed as before. The
+	// autopilot's own throttle and the star drive keep the raw input.
+	const double ThrottleEase = !bDebugDrive && !IsAutopilotEngaged() && APSShipFlightModelLocal::FlightEaseEnabled()
+		? FMath::Max(static_cast<double>(APSShipFlightModelLocal::CVarFlightThrottleEaseSeconds.GetValueOnGameThread()), 0.0) : 0.0;
+	if (ThrottleEase <= 0.0 || FMath::IsNearlyZero(RawLocalInput.X))
+	{
+		EasedThrottle = RawLocalInput.X;
+		EasedThrottleRate = 0.0;
+	}
+	else
+	{
+		APSShipFlightModelLocal::SmoothDamp(EasedThrottle, EasedThrottleRate, RawLocalInput.X, ThrottleEase, DeltaTime);
+	}
+	const double RawBrake = Ship->bIsDecelerating ? 1.0 : 0.0;
+	if (ThrottleEase <= 0.0 || RawBrake <= 0.0)
+	{
+		EasedBrake = RawBrake;
+		EasedBrakeRate = 0.0;
+	}
+	else
+	{
+		APSShipFlightModelLocal::SmoothDamp(EasedBrake, EasedBrakeRate, RawBrake, ThrottleEase, DeltaTime);
+	}
+	const FVector LocalInput(FMath::Clamp(EasedThrottle, -1.0, 1.0), RawLocalInput.Y, RawLocalInput.Z);
+	if (bStarDrive && ApplyStarDrive(RawLocalInput, DeltaTime))
 	{
 		return true;
 	}
@@ -3001,7 +3154,29 @@ bool UAPSShipFlightModel::ApplyTranslation(float DeltaTime)
 	const double Boost = BandBoost(FlightBand, BoostAlpha);
 	// What held W reaches now (boost included), crept up while W stays held at it (Rio 02.10: no ceiling, the ship
 	// keeps accelerating slowly). Releasing W or braking lets the creep fall back; a band change starts over.
-	const double BaseLimit = BandLimitCm(FlightBand, BoostAlpha);
+	// Rio 09.10 (aps.Flight.EaseSeconds): after an AUTO shift the limit runs from the old band's live limit to the new
+	// band's along an ease-in/ease-out curve (both read this frame, so a body or the ground closing in still lowers both).
+	double BandEase = -1.0;
+	if (BandEaseElapsed >= 0.0f)
+	{
+		const float EaseSeconds = APSShipFlightModelLocal::FlightEaseSeconds();
+		if (EaseSeconds > 0.0f && BandEaseElapsed < EaseSeconds && EaseFromBand != FlightBand && !IsAutopilotEngaged()
+			&& IsBandAvailable(EaseFromBand))
+		{
+			BandEase = FMath::InterpEaseInOut(0.0, 1.0, FMath::Clamp(BandEaseElapsed / EaseSeconds, 0.0f, 1.0f), 2.0f);
+			BandEaseElapsed += DeltaTime;
+		}
+		else
+		{
+			BandEaseElapsed = -1.0f;
+		}
+	}
+	const auto EasedBandLimitCm = [this, BandEase](const double Alpha)
+	{
+		const double NewCm = BandLimitCm(FlightBand, Alpha);
+		return BandEase < 0.0 ? NewCm : APSShipFlightModelLocal::EaseLimitCm(BandLimitCm(EaseFromBand, Alpha), NewCm, BandEase);
+	};
+	const double BaseLimit = EasedBandLimitCm(BoostAlpha);
 	if (CreepBand != FlightBand)
 	{
 		CreepBand = FlightBand;
@@ -3032,7 +3207,7 @@ bool UAPSShipFlightModel::ApplyTranslation(float DeltaTime)
 	// (30.09: it came in at four times that and braked hard), and a speed back under the limit forgets the boost.
 	KeptBoostAlpha = Ship->KinematicVelocity.Size() <= Limit ? BoostAlpha : FMath::Max(KeptBoostAlpha, BoostAlpha);
 	const double KeptBoost = bKeepsSpeed ? BandBoost(FlightBand, KeptBoostAlpha) : Boost;
-	const double BandKeptCm = (bKeepsSpeed ? BandLimitCm(FlightBand, KeptBoostAlpha) : BaseLimit) * LimitCreep;
+	const double BandKeptCm = (bKeepsSpeed ? EasedBandLimitCm(KeptBoostAlpha) : BaseLimit) * LimitCreep;
 	const double KeptLimit = FMath::Min(BandKeptCm, AutopilotCap);
 
 	const double Drag = IsInAtmosphere() ? Ship->GetEnvironmentDrag() : 0.0;
@@ -3089,8 +3264,10 @@ bool UAPSShipFlightModel::ApplyTranslation(float DeltaTime)
 		const double Scale = APSShipFlightModelLocal::RealBrakeScale(GetWorld(), Velocity.Size());
 		const double Rate = Scale > 1.0 && DeltaTime > 0.0f
 			? (1.0 - FMath::Exp(-BrakeRate * Scale * DeltaTime)) / DeltaTime : BrakeRate;
-		Velocity = APSFlightBandModel::BrakeStep(Velocity, Band.Acceleration * 100.0 * Boost * BrakeAccelerationScale,
-			Rate, DeltaTime);
+		// Rio 09.10 (aps.Flight.ThrottleEaseSeconds): the brake builds up along the same ease curve (1 when off).
+		const double BrakeEase = FMath::Clamp(EasedBrake, 0.0, 1.0);
+		Velocity = APSFlightBandModel::BrakeStep(Velocity, Band.Acceleration * 100.0 * Boost * BrakeAccelerationScale * BrakeEase,
+			Rate * BrakeEase, DeltaTime);
 	}
 	double Speed = Velocity.Size();
 	// Rio 08.10 (aps.Autopilot.Tempo): the plan's cap rules while it is below the band's (kept) limit. On the plan the
@@ -3709,6 +3886,17 @@ void UAPSShipFlightModel::GetSteeringFeel(double& OutRateScale, double& OutRespo
 		// In space too the turn stops soon after the mouse does (it drifted on for seconds).
 		OutResponseScale = 0.85;
 		OutDampingScale = FMath::Max(APSShipFlightModelLocal::CVarSpaceSteerDamping.GetValueOnGameThread(), 1.0f);
+	}
+	// Rio 09.10 (aps.Flight.HighSpeedSteer; "at high speed the controls are far too sensitive"): above 1 km/s the same mouse
+	// move turns the nose (and the course with it) less, falling with the log of the speed to a floor. The star drive
+	// keeps its yoke.
+	const ASpaceship* Ship = GetShip();
+	const double SteerFall = APSShipFlightModelLocal::FlightEaseEnabled()
+		? FMath::Max(static_cast<double>(APSShipFlightModelLocal::CVarFlightHighSpeedSteer.GetValueOnGameThread()), 0.0) : 0.0;
+	if (!bStarDrive && Ship && SteerFall > 0.0)
+	{
+		const double Decades = FMath::Max(FMath::LogX(10.0, FMath::Max(Ship->KinematicVelocity.Size(), 1.0) / 100000.0), 0.0);
+		OutRateScale *= FMath::Max(1.0 / (1.0 + SteerFall * Decades), 0.35);
 	}
 }
 

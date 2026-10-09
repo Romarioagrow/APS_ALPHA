@@ -435,6 +435,21 @@ private:
 	float ShiftRampElapsed{-1.0f};
 	/** After AUTO shifted down closing in on a body, no shift up for a while (Rio 04.10: ORBITAL <-> CRUISE every 3-5 s). */
 	float UpShiftBlockSeconds{0.0f};
+	/** Rio 09.10 (aps.Flight.EaseBands): the band an AUTO shift left and how far into the eased hand-over of the speed
+	 * limit from that band's (live) limit to the new band's the ship is (< 0: no hand-over). */
+	EAPSFlightBand EaseFromBand{EAPSFlightBand::Maneuver};
+	float BandEaseElapsed{-1.0f};
+	/** Rio 09.10 (aps.Flight.AutoBandDwellSeconds): how long the surroundings have kept asking for a higher lowest band. */
+	float SurroundUpHold{0.0f};
+	/** Rio 09.10 (aps.Flight.EaseSeconds): the ground limit's last raw value and the eased offset still held below it
+	 * after the probe jumped up (off a parked ship's roof, over a gap); <= 0, decays to 0. */
+	double GroundLimitRawCm{-1.0};
+	double GroundLimitOffsetCm{0.0};
+	/** Rio 09.10 (aps.Flight.ThrottleEaseSeconds): the eased W/S throttle and Left Ctrl brake, with their rates. */
+	double EasedThrottle{0.0};
+	double EasedThrottleRate{0.0};
+	double EasedBrake{0.0};
+	double EasedBrakeRate{0.0};
 	/** Nearest star (actor or catalogue point), cm to its surface; -1 unknown. */
 	double NearestStarDistanceCm{-1.0};
 	/** Smallest distance outside a star system's sphere, cm (negative inside a system); unknown without stars. */

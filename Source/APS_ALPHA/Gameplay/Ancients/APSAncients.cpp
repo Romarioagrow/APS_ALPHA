@@ -28,6 +28,7 @@
 #include "Engine/GameInstance.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
+#include "HAL/IConsoleManager.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "HAL/IConsoleManager.h"
@@ -1032,20 +1033,113 @@ void FAPSAncients::DestroyActor(FSite& Site)
 	Site.Actor.Reset();
 }
 
-void FAPSAncients::NameSite(const FSite& Site) const
+namespace APSAncientsNames
 {
-	AActor* Actor = Site.Actor.Get();
-	if (!Actor)
+	TAutoConsoleVariable<int32> CVarSiteNames(TEXT("aps.Quests.SiteNames"), 1,
+		TEXT("1: one name per ancient site everywhere (marker, navigation, HUD chip, chain page): UNKNOWN STRUCTURE · <world> ")
+		TEXT("until it is identified, then <site> · <world>. 0: the former names (marker ANCIENT SITE: <site>, chip <site> / <world>)."));
+
+	bool IsOn()
 	{
-		return;
+		return CVarSiteNames.GetValueOnGameThread() != 0;
 	}
+
+	/** The name and its world in capitals, as the navigation list writes the other objects. */
+	FText Label(const FText& Name, const FText& Where)
+	{
+		return Where.IsEmpty() ? Name : FText::Format(LOCTEXT("SiteLabel", "{0} · {1}"), Name, Where.ToUpper());
+	}
+}
+
+bool FAPSAncients::IsKnownAt(const FSite& Site, const int32 Step) const
+{
 	// While the chains run a site is unknown until its first survey (a chart for a nearby one; the circle as its chain
 	// starts); without the chains it is named at once.
 	const int32 KnownFrom = Site.Spec.Chain == APSAncients::EChain::Road ? 2 : Site.Spec.Chain == APSAncients::EChain::Circle ? 0 : 1;
-	const bool bKnown = !bQuestsOpen || (Site.bStarted && Site.Step >= KnownFrom);
-	APSAncientsLocal::SetInGameName(Actor, bKnown
-		? FText::Format(LOCTEXT("SiteName", "ANCIENT SITE: {0}"), APSAncients::KindName(Site.Spec.Kind))
-		: LOCTEXT("UnknownSite", "UNKNOWN STRUCTURE"));
+	return !bQuestsOpen || Step >= KnownFrom;
+}
+
+FText FAPSAncients::DisplayName(const FSite& Site) const
+{
+	const bool bKnown = IsKnownAt(Site, Site.bStarted ? Site.Step : -1);
+	const FText Name = bKnown ? APSAncients::KindName(Site.Spec.Kind) : LOCTEXT("UnknownSite", "UNKNOWN STRUCTURE");
+	return APSAncientsNames::Label(Name, !Site.BodyName.IsEmpty() ? Site.BodyName : Site.SystemName);
+}
+
+FFormatNamedArguments FAPSAncients::TextArgs(const FSite& Site, const int32 Step) const
+{
+	const APSAncientsQuests::FChain& Chain = APSAncientsQuests::ChainOf(Site.Spec.Chain);
+	return ArgsFor(Site, Chain.Steps.IsValidIndex(Step) ? &Chain.Steps[Step] : nullptr);
+}
+
+const FAPSAncients::FSite* FAPSAncients::FindByTemplate(const FName Template, int32& OutStep) const
+{
+	OutStep = INDEX_NONE;
+	if (!APSAncientsQuests::IsAncientTemplate(Template))
+	{
+		return nullptr;
+	}
+	for (const FSite& Site : Sites)
+	{
+		const int32 Steps = APSAncientsQuests::ChainOf(Site.Spec.Chain).Steps.Num();
+		for (int32 Step = 0; Step < Steps; ++Step)
+		{
+			if (APSAncientsQuests::TemplateOf(Site.Spec, Step) == Template)
+			{
+				OutStep = Step;
+				return &Site;
+			}
+		}
+	}
+	return nullptr;
+}
+
+void FAPSAncients::NameSite(const FSite& Site) const
+{
+	const bool bKnown = IsKnownAt(Site, Site.bStarted ? Site.Step : -1);
+	if (!APSAncientsNames::IsOn())
+	{
+		if (AActor* Actor = Site.Actor.Get())
+		{
+			APSAncientsLocal::SetInGameName(Actor, bKnown
+				? FText::Format(LOCTEXT("SiteName", "ANCIENT SITE: {0}"), APSAncients::KindName(Site.Spec.Kind))
+				: LOCTEXT("UnknownSite", "UNKNOWN STRUCTURE"));
+		}
+		return;
+	}
+	// Rio 09.10: the marker and the navigation list say what the HUD chip says (the list adds ANCIENT SITE as the type).
+	if (AActor* Actor = Site.Actor.Get())
+	{
+		APSAncientsLocal::SetInGameName(Actor, DisplayName(Site));
+	}
+	// The site's open steps on the board carry the name of their time (and the saves the former names): renamed with it.
+	FAPSMissionBoard* Board = bQuestsOpen ? APSMissionsFind(World.Get()) : nullptr;
+	if (!Board)
+	{
+		return;
+	}
+	const int32 Steps = APSAncientsQuests::ChainOf(Site.Spec.Chain).Steps.Num();
+	APSAncientsQuests::Edit(*Board, [this, &Site, Steps](FAPSMission& Mission)
+	{
+		if (Mission.State != APSMissions::EState::Offered && Mission.State != APSMissions::EState::Active)
+		{
+			return false;
+		}
+		for (int32 Step = 0; Step < Steps; ++Step)
+		{
+			if (Mission.Template == APSAncientsQuests::TemplateOf(Site.Spec, Step))
+			{
+				const FText Wanted = SubjectNameFor(Site, Step);
+				if (Wanted.ToString().Equals(Mission.SubjectName.ToString(), ESearchCase::CaseSensitive))
+				{
+					return false;
+				}
+				Mission.SubjectName = Wanted;
+				return true;
+			}
+		}
+		return false;
+	});
 }
 
 const FAPSAncients::FSite* FAPSAncients::FindByActor(const AActor* Actor) const
@@ -1531,6 +1625,12 @@ FText FAPSAncients::SubjectNameFor(const FSite& Site, const int32 Step) const
 		return Site.SystemName;
 	}
 	const FText Where = !Site.BodyName.IsEmpty() ? Site.BodyName : Site.SystemName;
+	if (APSAncientsNames::IsOn())
+	{
+		// Rio 09.10: the marker's name while this step is the current one (UNKNOWN STRUCTURE until identified).
+		return APSAncientsNames::Label(IsKnownAt(Site, Step) ? APSAncients::KindName(Site.Spec.Kind)
+			: LOCTEXT("UnknownSite", "UNKNOWN STRUCTURE"), Where);
+	}
 	return Where.IsEmpty() ? APSAncients::KindName(Site.Spec.Kind)
 		: FText::Format(LOCTEXT("SubjectName", "{0}  /  {1}"), APSAncients::KindName(Site.Spec.Kind), Where);
 }

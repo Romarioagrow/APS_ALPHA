@@ -162,6 +162,33 @@ private:
 	void UpdateTurnRate(float DeltaTime);
 	void UpdateCameraLag(float DeltaTime);
 	void UpdateLocomotionAnimation(float DeltaTime);
+	// Rio 09.10 (playtest: "cardboard" walker): eased start/stop/turn, zero-G paces on 1-3, C first-person view.
+	// CVars aps.Character.Weight*, aps.Character.ZeroGPace, aps.Character.FirstPerson; 0 = before 09.10.
+	void CacheBaseMovementValues();
+	void UpdateMovementWeight(float DeltaTime);
+	void ToggleFirstPersonView();
+	void UpdateFirstPersonCamera(float DeltaTime);
+	void SetFirstPersonBodyHidden(bool bHide);
+
+	bool bBaseMovementCached = false;
+	bool bZeroGPaceApplied = false;
+	bool bZeroGAccelerationWritten = false;
+	bool bGroundWeightApplied = false;
+	float BaseGroundFriction = 8.f;
+	float BaseZeroGMaxSpeed = 0.f;
+	float BaseZeroGAcceleration = 0.f;
+	float BaseZeroGSprintSpeed = 0.f;
+	float BaseZeroGSprintMaxSpeed = 0.f;
+	float BaseZeroGSprintGrowthRate = 0.f;
+	float DriveSeconds = 0.f;
+	float IdleSeconds = 0.f;
+	FVector LastInputDirection = FVector::ZeroVector;
+	bool bFirstPersonRequested = false;
+	bool bFirstPersonBodyHidden = false;
+	float FirstPersonAlpha = 0.f;
+	FVector ThirdPersonBoomLocation = FVector::ZeroVector;
+	/** Parts hidden for the first-person view with their own OwnerNoSee (bit 0) and CastHiddenShadow (bit 1). */
+	TArray<TPair<TWeakObjectPtr<UPrimitiveComponent>, uint8>> FirstPersonHiddenParts;
 
 	EAPSSpeedMode SpeedMode = EAPSSpeedMode::Indoor;
 	float TurnRateDegrees = 0.f;

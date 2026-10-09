@@ -31,7 +31,10 @@
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationJournalSubsystem.h"
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationMaterializationSubsystem.h"
 #include "APS_ALPHA/Gameplay/Civilizations/Civilization.h"
+#include "APS_ALPHA/Gameplay/Ancients/APSAncients.h"
 #include "APS_ALPHA/Gameplay/Expansion/APSInfrastructure.h"
+#include "APS_ALPHA/Gameplay/Expansion/APSInfrastructureCatalog.h"
+#include "APS_ALPHA/Gameplay/Expansion/APSMissions.h"
 #include "APS_ALPHA/Gameplay/Expansion/APSObjectActions.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
 #include "APS_ALPHA/Pawns/Spaceships/APSShipFlightModel.h"
@@ -315,6 +318,116 @@ namespace APSColonyUI
 			}
 		}
 		return static_cast<int32>(UE_ARRAY_COUNT(Ordered));
+	}
+
+	TAutoConsoleVariable<int32> CVarChainPage(TEXT("aps.Quests.ChainPage"), 1,
+		TEXT("1: the JOURNAL lists the Builders' quest chains and opens each on its own page (also from its journal lines). ")
+		TEXT("0: the journal alone, as before."));
+
+	/** What tells a journal line apart as one of a chain's: its step titles, its site's name and its signal's start. */
+	struct FChainKey
+	{
+		const FAPSAncients::FSite* Site{nullptr};
+		TArray<FString> Titles;
+		FString Kind;
+		FString SignalHead;
+		FString Body;
+		FString System;
+	};
+
+	TArray<FChainKey> ChainKeys(const FAPSAncients* Ancients)
+	{
+		TArray<FChainKey> Keys;
+		if (!Ancients)
+		{
+			return Keys;
+		}
+		for (const FAPSAncients::FSite& Site : Ancients->GetSites())
+		{
+			if (!Site.bStarted)
+			{
+				continue;
+			}
+			const APSAncientsQuests::FChain& Chain = APSAncientsQuests::ChainOf(Site.Spec.Chain);
+			FChainKey& Key = Keys.AddDefaulted_GetRef();
+			Key.Site = &Site;
+			for (const APSAncientsQuests::FStep& Step : Chain.Steps)
+			{
+				Key.Titles.Add(Step.Title.ToString());
+			}
+			Key.Kind = APSAncients::KindName(Site.Spec.Kind).ToString();
+			Key.SignalHead = FText::Format(Chain.Signal, Ancients->TextArgs(Site, INDEX_NONE)).ToString().Left(28);
+			Key.Body = Site.BodyName.ToString();
+			Key.System = Site.SystemName.ToString();
+		}
+		return Keys;
+	}
+
+	/** The chain a journal line belongs to (the Ancients' and the missions' lines), or null. */
+	const FAPSAncients::FSite* ChainSiteOf(const TArray<FChainKey>& Keys, const FAPSCivilizationJournalEntry& Entry)
+	{
+		static const FName AncientsCategory(TEXT("Ancients"));
+		static const FName MissionsCategory(TEXT("Missions"));
+		if (Keys.IsEmpty() || (Entry.Category != AncientsCategory && Entry.Category != MissionsCategory))
+		{
+			return nullptr;
+		}
+		const FString Text = Entry.Text.ToString();
+		const FAPSAncients::FSite* Best = nullptr;
+		int32 BestScore = 0;
+		for (const FChainKey& Key : Keys)
+		{
+			int32 Strong = 0;
+			for (const FString& Title : Key.Titles)
+			{
+				if (Title.Len() > 3 && Text.Contains(Title, ESearchCase::CaseSensitive))
+				{
+					Strong += 3;
+					break;
+				}
+			}
+			Strong += Key.SignalHead.Len() >= 12 && Text.StartsWith(Key.SignalHead, ESearchCase::CaseSensitive) ? 3 : 0;
+			Strong += Entry.Category == AncientsCategory && !Key.Kind.IsEmpty() && Text.Contains(Key.Kind, ESearchCase::CaseSensitive) ? 2 : 0;
+			if (Strong == 0)
+			{
+				continue;
+			}
+			// Two sites of one chain (the charts' road) are told apart by their worlds.
+			const int32 Score = Strong + (!Key.Body.IsEmpty() && Text.Contains(Key.Body) ? 1 : 0)
+				+ (!Key.System.IsEmpty() && Text.Contains(Key.System) ? 1 : 0);
+			if (Score > BestScore)
+			{
+				BestScore = Score;
+				Best = Key.Site;
+			}
+		}
+		return Best;
+	}
+
+	/** A step's reward as the tracker writes a mission's: stocks, earned levels and an unlocked type. */
+	FText StepReward(const APSAncientsQuests::FStep& Step)
+	{
+		FString Text = Step.Reward.IsEmpty() ? FString() : APSInfrastructure::DescribeAmounts(Step.Reward).ToString();
+		const auto Append = [&Text](const FString& Part)
+		{
+			Text += Text.IsEmpty() ? Part : TEXT("   /   ") + Part;
+		};
+		if (Step.Levels > 0)
+		{
+			Append(FString::Printf(TEXT("+%d LEVEL%s"), Step.Levels, Step.Levels > 1 ? TEXT("S") : TEXT("")));
+		}
+		if (Step.Unlocks)
+		{
+			const APSInfrastructure::FType* Type = APSInfrastructure::Find(FName(Step.Unlocks));
+			Append(TEXT("UNLOCKS ") + (Type ? Type->Name.ToString() : FString(Step.Unlocks)).ToUpper());
+		}
+		return Text.IsEmpty() ? LOCTEXT("ChainNoReward", "None") : FText::FromString(Text);
+	}
+
+	FText JournalTime(const double WorldSeconds)
+	{
+		const int32 Seconds = FMath::FloorToInt(WorldSeconds);
+		return FText::FromString(FString::Printf(TEXT("T+%02d:%02d:%02d"), Seconds / 3600, (Seconds / 60) % 60, Seconds % 60));
 	}
 }
 
@@ -2613,6 +2726,13 @@ void SAPSColonyTerminal::RebuildJournal()
 		return;
 	}
 	JournalList->ClearChildren();
+	const bool bChains = CVarChainPage.GetValueOnGameThread() != 0;
+	if (bChains && !ChainPageSite.IsEmpty())
+	{
+		BuildChainPage();
+		return;
+	}
+	ChainPageSite.Empty();
 	JournalList->AddSlot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 10.0f)
 	[
 		IconSectionHeading(EAPSChromeGlyph::Recent, LOCTEXT("JournalSection", "CIVILIZATION JOURNAL"),
@@ -2667,6 +2787,49 @@ void SAPSColonyTerminal::RebuildJournal()
 	}
 	JournalList->AddSlot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 12.0f)[Filters];
 
+	// Rio 09.10: the Builders' chains that started, each a button to its own page (the story in one place).
+	const FAPSAncients* Ancients = bChains && World.IsValid() ? APSAncientsFind(World.Get()) : nullptr;
+	const TArray<FChainKey> Keys = ChainKeys(Ancients);
+	if (!Keys.IsEmpty())
+	{
+		const TSharedRef<SVerticalBox> Chains = SNew(SVerticalBox);
+		Chains->AddSlot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)
+		[
+			SNew(STextBlock).Text(LOCTEXT("JournalChains", "QUEST CHAINS")).Font(Font("Bold", 10)).ColorAndOpacity(Muted())
+		];
+		for (const FChainKey& Key : Keys)
+		{
+			const FAPSAncients::FSite& Site = *Key.Site;
+			const APSAncientsQuests::FChain& Chain = APSAncientsQuests::ChainOf(Site.Spec.Chain);
+			const int32 Done = FMath::Clamp(Site.Step, 0, Chain.Steps.Num());
+			const FLinearColor Accent = APSInfrastructure::DepartmentColour(Chain.Department);
+			const FText State = Done >= Chain.Steps.Num() ? LOCTEXT("JournalChainDone", "COMPLETE")
+				: FText::Format(LOCTEXT("JournalChainStep", "STEP {0} / {1}"), FText::AsNumber(Done + 1), FText::AsNumber(Chain.Steps.Num()));
+			Chains->AddSlot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)
+			[
+				ChromeButton(
+					SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.0f, 0.0f, 10.0f, 0.0f)
+					[
+						IconBadge(EAPSChromeGlyph::Compass, Accent, 24.0f)
+					]
+					+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
+					[
+						SNew(STextBlock).Font(Font("Bold", 11)).ColorAndOpacity(White())
+						.Text(FText::Format(LOCTEXT("JournalChainRow", "{0}  ·  {1}"), APSAncients::ChainName(Site.Spec.Chain).ToUpper(),
+							Ancients->DisplayName(Site)))
+					]
+					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(12.0f, 0.0f, 0.0f, 0.0f)
+					[
+						SNew(STextBlock).Font(Font("Bold", 10)).ColorAndOpacity(Accent).Text(State)
+					],
+					FOnClicked::CreateSP(this, &SAPSColonyTerminal::OpenChainPage, Site.Spec.Id),
+					TAttribute<bool>(false), Accent)
+			];
+		}
+		JournalList->AddSlot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 12.0f)[Chains];
+	}
+
 	// Newest first, like a ship's log; the last minute's entries stand out.
 	constexpr int32 MaxShown = 200;
 	const double Now = World.IsValid() ? World->GetTimeSeconds() : 0.0;
@@ -2684,8 +2847,9 @@ void SAPSColonyTerminal::RebuildJournal()
 		const FText Time = FText::FromString(FString::Printf(TEXT("T+%02d:%02d:%02d"),
 			Seconds / 3600, (Seconds / 60) % 60, Seconds % 60));
 		const bool bRecent = Entry.WorldSeconds <= Now && Now - Entry.WorldSeconds < 60.0;
-		JournalList->AddSlot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)
-		[
+		// Rio 09.10: a chain's line opens the chain's page.
+		const FAPSAncients::FSite* EntrySite = ChainSiteOf(Keys, Entry);
+		const TSharedRef<SWidget> Row =
 			SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).Padding(0.0f)
 			// One background for every row: the lighter rows of the last minute read as a selection (Rio 02.10);
 			// fresh entries carry a NEW tag beside their time instead.
@@ -2727,6 +2891,13 @@ void SAPSColonyTerminal::RebuildJournal()
 							.RenderTransform(CapsCenterShift(APSUITheme::BodyFont("Bold", 10)))
 							.ColorAndOpacity(Success()).Visibility(bRecent ? EVisibility::Visible : EVisibility::Collapsed)
 						]
+						+ SHorizontalBox::Slot().FillWidth(1.0f)
+						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+						[
+							SNew(STextBlock).Text(LOCTEXT("JournalOpenChain", "CHAIN PAGE  >")).Font(Font("Bold", 10))
+							.RenderTransform(CapsCenterShift(Font("Bold", 10)))
+							.ColorAndOpacity(Cyan()).Visibility(EntrySite ? EVisibility::Visible : EVisibility::Collapsed)
+						]
 					]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 4.0f, 0.0f, 0.0f)
 					[
@@ -2734,7 +2905,20 @@ void SAPSColonyTerminal::RebuildJournal()
 						.LineHeightPercentage(1.12f).ColorAndOpacity(White())
 					]
 				]
-			]
+			];
+		JournalList->AddSlot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)
+		[
+			!EntrySite ? Row
+				: StaticCastSharedRef<SWidget>(SNew(SButton)
+					.ButtonStyle(FAppStyle::Get(), "NoBorder")
+					.ContentPadding(0.0f)
+					.Cursor(EMouseCursor::Hand)
+					.IsFocusable(false)
+					.ToolTipText(LOCTEXT("JournalOpenChainTip", "Open this quest chain's page"))
+					.OnClicked(FOnClicked::CreateSP(this, &SAPSColonyTerminal::OpenChainPage, EntrySite->Spec.Id))
+					[
+						Row
+					])
 		];
 	}
 	if (Shown >= MaxShown)
@@ -2761,6 +2945,246 @@ FReply SAPSColonyTerminal::SetJournalFilter(const FName Category)
 	JournalFilter = Category;
 	RebuildJournal();
 	return FReply::Handled();
+}
+
+FReply SAPSColonyTerminal::OpenChainPage(const FString SiteId)
+{
+	if (ActiveTab != ETab::Journal)
+	{
+		SelectTab(ETab::Journal);
+	}
+	ChainPageSite = SiteId;
+	ChainPageMessage = FText::GetEmpty();
+	bChainPageError = false;
+	RebuildJournal();
+	return FReply::Handled();
+}
+
+FReply SAPSColonyTerminal::CloseChainPage()
+{
+	ChainPageSite.Empty();
+	RebuildJournal();
+	return FReply::Handled();
+}
+
+void SAPSColonyTerminal::BuildChainPage()
+{
+	using namespace APSColonyUI;
+	const FAPSAncients* Ancients = World.IsValid() ? APSAncientsFind(World.Get()) : nullptr;
+	const FAPSAncients::FSite* Site = nullptr;
+	static const TArray<FAPSAncients::FSite> NoSites;
+	for (const FAPSAncients::FSite& Each : Ancients ? Ancients->GetSites() : NoSites)
+	{
+		if (Each.Spec.Id == ChainPageSite)
+		{
+			Site = &Each;
+			break;
+		}
+	}
+	if (!Ancients || !Site)
+	{
+		ChainPageSite.Empty();
+		RebuildJournal();
+		return;
+	}
+	const APSAncientsQuests::FChain& Chain = APSAncientsQuests::ChainOf(Site->Spec.Chain);
+	const int32 StepCount = Chain.Steps.Num();
+	const int32 Done = Site->bStarted ? FMath::Clamp(Site->Step, 0, StepCount) : 0;
+	const bool bComplete = Site->bStarted && Done >= StepCount;
+	const FLinearColor Accent = APSInfrastructure::DepartmentColour(Chain.Department);
+	const FAPSMissionBoard* Board = APSMissionsFind(World.Get());
+	const FText SiteName = Ancients->DisplayName(*Site);
+	const auto Panel = [](const TSharedRef<SWidget>& Content)
+	{
+		return SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).Padding(FMargin(14.0f, 10.0f))
+			.BorderBackgroundColor(APSUITheme::Retint(FLinearColor(0.02f, 0.06f, 0.08f, 0.82f)))[Content];
+	};
+	const auto Caption = [](const FText& Text, const FLinearColor& Colour)
+	{
+		return SNew(STextBlock).Text(Text).Font(Font("Bold", 10)).ColorAndOpacity(Colour);
+	};
+	const auto Body = [](const FText& Text, const FLinearColor& Colour)
+	{
+		return SNew(STextBlock).Text(Text).AutoWrapText(true).Font(Font("Regular", 13)).LineHeightPercentage(1.12f)
+			.ColorAndOpacity(Colour);
+	};
+
+	// Back to the journal, then the chain: its name, its site as the marker names it, and where it stands.
+	JournalList->AddSlot().AutoHeight().HAlign(HAlign_Left).Padding(0.0f, 0.0f, 0.0f, 10.0f)
+	[
+		SNew(SBox).MinDesiredWidth(150.0f)
+		[
+			ChromeButton(SNew(STextBlock).Text(LOCTEXT("ChainBack", "<  JOURNAL")).Font(Font("Bold", 10)).ColorAndOpacity(Cyan()),
+				FOnClicked::CreateSP(this, &SAPSColonyTerminal::CloseChainPage), TAttribute<bool>(false), Cyan())
+		]
+	];
+	JournalList->AddSlot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 10.0f)
+	[
+		IconSectionHeading(EAPSChromeGlyph::Compass,
+			FText::Format(LOCTEXT("ChainHeading", "{0}  ·  QUEST CHAIN"), APSAncients::ChainName(Site->Spec.Chain).ToUpper()),
+			FText::Format(LOCTEXT("ChainSubtitle", "{0}  ·  {1}  ·  {2}"), APSInfrastructure::DepartmentName(Chain.Department), SiteName,
+				!Site->bStarted ? LOCTEXT("ChainNotStarted", "NOT STARTED") : bComplete ? LOCTEXT("ChainComplete", "COMPLETE")
+				: FText::Format(LOCTEXT("ChainAt", "STEP {0} OF {1}"), FText::AsNumber(Done + 1), FText::AsNumber(StepCount))))
+	];
+
+	// What to do from here: course, map and the site's own page.
+	const TWeakObjectPtr<AActor> SiteActor = Site->Actor;
+	const TWeakObjectPtr<AActor> SiteBody = Site->Body;
+	const bool bOrbital = Site->Spec.IsOrbital();
+	const TSharedRef<SWrapBox> Actions = SNew(SWrapBox).UseAllottedSize(true).InnerSlotPadding(FVector2D(8.0f, 8.0f));
+	const auto Action = [&Actions](const FText& Label, FOnClicked OnClicked, const bool bCan)
+	{
+		Actions->AddSlot()[SNew(SBox).MinDesiredWidth(150.0f)[PrimaryButton(Label, OnClicked, TAttribute<bool>(bCan))]];
+	};
+	Action(LOCTEXT("ChainCourse", "SET COURSE"), FOnClicked::CreateLambda([this, SiteActor, SiteName]()
+	{
+		AActor* Target = SiteActor.Get();
+		ASpaceship* CourseShip = GetCourseShip();
+		bChainPageError = !(Target && CourseShip && CourseShip->ShipNavigation && CourseShip->ShipNavigation->SetCourse(Target->GetPathName()));
+		ChainPageMessage = bChainPageError ? LOCTEXT("ChainCourseRefused", "The site is not charted for navigation yet: reach its system first.")
+			: FText::Format(LOCTEXT("ChainCourseSet", "COURSE SET: {0}"), SiteName);
+		RebuildJournal();
+		return FReply::Handled();
+	}), SiteActor.IsValid() && GetCourseShip() != nullptr);
+	Action(LOCTEXT("ChainMap", "SHOW ON MAP"), FOnClicked::CreateLambda([this, SiteActor, SiteBody, bOrbital]()
+	{
+		APlanetaryBody* SurfaceBody = Cast<APlanetaryBody>(SiteBody.Get());
+		if (SurfaceBody && !bOrbital && SurfaceMap.IsValid())
+		{
+			SurfaceMap->SetBody(SurfaceBody);
+			SelectTab(ETab::Surface);
+			return FReply::Handled();
+		}
+		FleetTarget = SiteBody.IsValid() ? SiteBody : SiteActor;
+		FleetMessage = FText::GetEmpty();
+		SelectTab(ETab::Fleet);
+		if (FleetMap.IsValid() && FleetTarget.IsValid())
+		{
+			FleetMap->SelectById(FleetTarget->GetPathName());
+		}
+		UpdateBodyPreview();
+		return FReply::Handled();
+	}), SiteBody.IsValid() || SiteActor.IsValid());
+	Action(LOCTEXT("ChainOpenSite", "OPEN SITE"), FOnClicked::CreateLambda([this, SiteActor]()
+	{
+		OpenObjectWindow(SiteActor.Get());
+		return FReply::Handled();
+	}), SiteActor.IsValid());
+	JournalList->AddSlot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)[Actions];
+	if (!ChainPageMessage.IsEmpty())
+	{
+		JournalList->AddSlot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)
+		[
+			Caption(ChainPageMessage, bChainPageError ? Amber() : Success())
+		];
+	}
+
+	// The signal that started it.
+	if (Site->bStarted)
+	{
+		JournalList->AddSlot().AutoHeight().Padding(0.0f, 6.0f, 0.0f, 8.0f)
+		[
+			Panel(SNew(SVerticalBox)
+				+ SVerticalBox::Slot().AutoHeight()[Caption(LOCTEXT("ChainSignal", "SIGNAL"), Accent)]
+				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 4.0f, 0.0f, 0.0f)
+				[
+					Body(FText::Format(Chain.Signal, Ancients->TextArgs(*Site, INDEX_NONE)), White())
+				])
+		];
+	}
+
+	// Every step: done and current ones in full with their briefs and rewards; the ones after as ???.
+	const FText Unknown = LOCTEXT("ChainUnknown", "???");
+	for (int32 Index = 0; Index < StepCount; ++Index)
+	{
+		const APSAncientsQuests::FStep& Step = Chain.Steps[Index];
+		const FName Template = APSAncientsQuests::TemplateOf(Site->Spec, Index);
+		const FAPSMission* Mission = nullptr;
+		static const TArray<FAPSMission> NoMissions;
+		for (const FAPSMission& Each : Board ? Board->GetMissions() : NoMissions)
+		{
+			if (Each.Template == Template && (!Mission || Each.State == APSMissions::EState::Active || Each.State == APSMissions::EState::Offered))
+			{
+				Mission = &Each;
+			}
+		}
+		const bool bDone = Site->bStarted && Index < Done;
+		const bool bCurrent = Site->bStarted && Index == Done && !bComplete;
+		const bool bShown = bDone || bCurrent;
+		const FText State = bDone ? LOCTEXT("ChainStepDone", "DONE")
+			: !bCurrent ? LOCTEXT("ChainStepLocked", "LOCKED")
+			: Mission && Mission->State == APSMissions::EState::Offered ? LOCTEXT("ChainStepOffered", "OFFERED: ACCEPT IN DIVISIONS")
+			: Mission && Mission->State == APSMissions::EState::Active ? LOCTEXT("ChainStepActive", "ACTIVE")
+			: LOCTEXT("ChainStepWaiting", "COMING TO THE BOARD");
+		const FLinearColor StateColour = bDone ? Success() : bCurrent ? Amber() : Muted();
+		const FFormatNamedArguments Args = Ancients->TextArgs(*Site, Index);
+		const FText Title = !bShown ? Unknown : Mission ? Mission->Title : FText::Format(Step.Title, Args);
+		const FText Brief = !bShown ? Unknown : Mission && !Mission->Brief.IsEmpty() ? Mission->Brief : FText::Format(Step.Brief, Args);
+		JournalList->AddSlot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)
+		[
+			Panel(SNew(SVerticalBox)
+				+ SVerticalBox::Slot().AutoHeight()
+				[
+					SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+					[
+						Caption(FText::Format(LOCTEXT("ChainStepNumber", "STEP {0}"), FText::AsNumber(Index + 1)), Muted())
+					]
+					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(12.0f, 0.0f, 0.0f, 0.0f)
+					[
+						Caption(State, StateColour)
+					]
+				]
+				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 4.0f, 0.0f, 0.0f)
+				[
+					SNew(STextBlock).Text(Title).Font(Font("Bold", 14)).ColorAndOpacity(bShown ? White() : Muted())
+				]
+				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 3.0f, 0.0f, 0.0f)
+				[
+					Body(Brief, bShown ? White() : Muted())
+				]
+				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 5.0f, 0.0f, 0.0f)
+				[
+					Caption(FText::Format(LOCTEXT("ChainReward", "REWARD  {0}"), bShown ? StepReward(Step) : Unknown), Muted())
+				])
+		];
+	}
+
+	// The chain's journal lines, oldest first: its story in order.
+	const UAPSCivilizationJournalSubsystem* Journal = World->GetSubsystem<UAPSCivilizationJournalSubsystem>();
+	const TArray<FChainKey> Keys = ChainKeys(Ancients);
+	const TSharedRef<SVerticalBox> Lines = SNew(SVerticalBox);
+	int32 LineCount = 0;
+	static const TArray<FAPSCivilizationJournalEntry> NoEntries;
+	for (const FAPSCivilizationJournalEntry& Entry : Journal ? Journal->GetEntries() : NoEntries)
+	{
+		if (ChainSiteOf(Keys, Entry) != Site)
+		{
+			continue;
+		}
+		++LineCount;
+		Lines->AddSlot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Top).Padding(0.0f, 2.0f, 12.0f, 0.0f)
+			[
+				SNew(STextBlock).Text(JournalTime(Entry.WorldSeconds)).Font(Font("Regular", 10)).ColorAndOpacity(Muted())
+			]
+			+ SHorizontalBox::Slot().FillWidth(1.0f)
+			[
+				Body(Entry.Text, White())
+			]
+		];
+	}
+	if (LineCount > 0)
+	{
+		JournalList->AddSlot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)
+		[
+			Panel(SNew(SVerticalBox)
+				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)[Caption(LOCTEXT("ChainLines", "IN THE JOURNAL"), Accent)]
+				+ SVerticalBox::Slot().AutoHeight()[Lines])
+		];
+	}
 }
 
 void SAPSColonyTerminal::CacheColonyActors()
@@ -2826,6 +3250,8 @@ FReply SAPSColonyTerminal::SelectTab(const ETab Tab)
 	}
 	if (Tab == ETab::Journal)
 	{
+		// The JOURNAL tab opens on the journal; a chain's page is opened from it.
+		ChainPageSite.Empty();
 		RebuildJournal();
 	}
 	if (Tab == ETab::Colony)

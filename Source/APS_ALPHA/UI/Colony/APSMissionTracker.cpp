@@ -3,6 +3,8 @@
 #include "APS_ALPHA/UI/Hud/APSHudKit.h"
 
 #include "APSColonyTerminalSubsystem.h"
+#include "APS_ALPHA/Gameplay/Ancients/APSAncients.h"
+#include "APS_ALPHA/Gameplay/Ancients/APSAncientsQuests.h"
 #include "APS_ALPHA/Core/Controllers/GravityPlayerController.h"
 #include "APS_ALPHA/Gameplay/Expansion/APSInfrastructureCatalog.h"
 #include "APS_ALPHA/Gameplay/Expansion/APSMissions.h"
@@ -192,6 +194,15 @@ namespace APSMissionTrackerPrivate
 		return Text.IsEmpty() ? EVisibility::Collapsed : EVisibility::HitTestInvisible;
 	}
 
+	TAutoConsoleVariable<int32> CVarTrackerBrief(TEXT("aps.Quests.TrackerBrief"), 1,
+		TEXT("1: the TASKS card shows how to do the tracked step (its brief) under the objective. 0: the objective alone."));
+
+	FText TrackedBrief(const TWeakObjectPtr<UWorld>& World)
+	{
+		const FAPSMission* Mission = CVarTrackerBrief.GetValueOnGameThread() != 0 ? Tracked(World) : nullptr;
+		return Mission ? Mission->Brief : FText::GetEmpty();
+	}
+
 	TSharedRef<SWidget> Box(const float Size, const TAttribute<FSlateColor>& Colour)
 	{
 		return SNew(SBox).WidthOverride(Size).HeightOverride(Size)
@@ -291,12 +302,24 @@ namespace APSMissionTrackerPrivate
 				]
 				+ SHorizontalBox::Slot().FillWidth(1.0f)
 				[
-					SNew(STextBlock).Font(BodyFont()).ColorAndOpacity(Themed([]() { return P().TextSoft; })).AutoWrapText(true)
-					.Text_Lambda([World]()
-					{
-						const FAPSMission* Mission = Tracked(World);
-						return Mission ? SentenceCase(APSMissions::ObjectiveName(Mission->Objective)) : FText::GetEmpty();
-					})
+					SNew(SVerticalBox)
+					+ SVerticalBox::Slot().AutoHeight()
+					[
+						SNew(STextBlock).Font(BodyFont()).ColorAndOpacity(Themed([]() { return P().TextSoft; })).AutoWrapText(true)
+						.Text_Lambda([World]()
+						{
+							const FAPSMission* Mission = Tracked(World);
+							return Mission ? SentenceCase(APSMissions::ObjectiveName(Mission->Objective)) : FText::GetEmpty();
+						})
+					]
+					// Rio 09.10 ("the player does not understand the chains"): how to do the step, the department's brief.
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 3.0f, 0.0f, 0.0f)
+					[
+						SNew(STextBlock).Font(APSHud::TextFont(10)).ColorAndOpacity(Themed([]() { return P().TextQuiet; }))
+						.AutoWrapText(true)
+						.Text_Lambda([World]() { return TrackedBrief(World); })
+						.Visibility_Lambda([World]() { return CollapsedIfEmpty(TrackedBrief(World)); })
+					]
 				]
 			]
 			// Where: the site and its world, as the catalogue writes them, on a chip.
@@ -396,6 +419,460 @@ namespace APSMissionTrackerPrivate
 	}
 }
 
+/**
+ * Rio 09.10 ("the quest chains work, but the player does not understand them"): a notice at the top of the game view as
+ * a step or mission starts or completes and as a chain starts or ends: what happened and the one line of what to do next.
+ * It watches the board (no event of its own: the board, the ancients and their saves stay as they are), pairs a step's
+ * end with the next step's start (the ancients put that a moment later), and moves the tracking to the chain that moved.
+ */
+namespace APSMissionTrackerPrivate
+{
+	TAutoConsoleVariable<int32> CVarToasts(TEXT("aps.Quests.Toasts"), 1,
+		TEXT("1: a notice at the top of the game view when a quest step or mission starts or completes and when a chain ")
+		TEXT("starts or ends, with what to do next. 0: none."));
+	TAutoConsoleVariable<float> CVarToastSeconds(TEXT("aps.Quests.ToastSeconds"), 5.5f,
+		TEXT("Seconds each quest notice stays in view (its clock waits under the terminal and the maps)."));
+	TAutoConsoleVariable<int32> CVarAutoTrack(TEXT("aps.Quests.AutoTrack"), 1,
+		TEXT("1: a chain whose step starts or moves becomes the tracked one, so the TASKS card shows what changed. ")
+		TEXT("0: the tracking stays as chosen."));
+
+	/** Over the HUDs and the tracker card (880), under the terminal (890), the F10 map (900) and the menu (1000). */
+	constexpr int32 ToastZOrder = 885;
+	constexpr float ToastWidth = 440.0f;
+	/** A step's end and the next step's start (the ancients put it on their next look) are paired within this. */
+	constexpr double SettleSeconds = 0.8;
+	constexpr int32 MaxQueued = 4;
+	/** After the board is first seen: the save (if any) lands then, and nothing is announced. */
+	constexpr double QuietSeconds = 6.0;
+
+	struct FToast
+	{
+		FText Kicker;
+		FText Title;
+		FText Body;
+		FText Next;
+		FLinearColor Accent{FLinearColor::White};
+		double Age{0.0};
+	};
+
+	struct FSeen
+	{
+		APSMissions::EState State{APSMissions::EState::Offered};
+		int32 Progress{0};
+	};
+
+	struct FToasts
+	{
+		TSharedPtr<SWidget> Widget;
+		TWeakObjectPtr<UGameViewportClient> Viewport;
+		TMap<FGuid, FSeen> Seen;
+		bool bPrimed{false};
+		double PrimedAt{0.0};
+		uint32 Revision{0};
+		TArray<FAPSMission> Completed;
+		TArray<FAPSMission> Started;
+		double FirstEventAt{0.0};
+		TArray<FToast> Queue;
+		double LastTick{0.0};
+	};
+	TMap<TWeakObjectPtr<UWorld>, FToasts> GToasts;
+
+	/** Where a mission stands in a chain: an ancients step (its chain, step and length) or a department mission. */
+	struct FChainStep
+	{
+		bool bAncient{false};
+		FText Chain;
+		int32 Step{INDEX_NONE};
+		int32 Steps{0};
+		FString SiteId;
+	};
+
+	FChainStep ChainStepOf(const UWorld* World, const FAPSMission& Mission)
+	{
+		FChainStep Out;
+		Out.Chain = APSInfrastructure::DepartmentName(Mission.Department);
+		const FAPSAncients* Ancients = APSAncientsQuests::IsAncientTemplate(Mission.Template) ? APSAncientsFind(World) : nullptr;
+		int32 Step = INDEX_NONE;
+		if (const FAPSAncients::FSite* Site = Ancients ? Ancients->FindByTemplate(Mission.Template, Step) : nullptr)
+		{
+			Out.bAncient = true;
+			Out.Chain = APSAncients::ChainName(Site->Spec.Chain).ToUpper();
+			Out.Step = Step;
+			Out.Steps = APSAncientsQuests::ChainOf(Site->Spec.Chain).Steps.Num();
+			Out.SiteId = Site->Spec.Id;
+		}
+		return Out;
+	}
+
+	bool IsFollowUp(const FAPSMission& Done, const FChainStep& DoneStep, const FAPSMission& New, const FChainStep& NewStep)
+	{
+		return (!Done.Next.IsNone() && New.Template == Done.Next)
+			|| (DoneStep.bAncient && NewStep.bAncient && DoneStep.SiteId == NewStep.SiteId && NewStep.Step == DoneStep.Step + 1);
+	}
+
+	/** What to do next: an offer is accepted in the terminal; an active step says how (its brief). */
+	FText NextLine(const FAPSMission& Mission)
+	{
+		if (Mission.State == APSMissions::EState::Offered)
+		{
+			return FText::Format(LOCTEXT("ToastAccept", "{0}. Accept it in the colony terminal: DIVISIONS, {1}."),
+				SentenceCase(Mission.Title), APSInfrastructure::DepartmentName(Mission.Department));
+		}
+		const FText How = Mission.Brief.IsEmpty() ? SentenceCase(APSMissions::ObjectiveName(Mission.Objective)) : Mission.Brief;
+		return FText::Format(LOCTEXT("ToastNext", "{0}. {1}"), SentenceCase(Mission.Title), How);
+	}
+
+	FText StepOf(const FChainStep& Step)
+	{
+		return FText::Format(LOCTEXT("ToastStepOf", "STEP {0} OF {1}"), FText::AsNumber(Step.Step + 1), FText::AsNumber(Step.Steps));
+	}
+
+	void Push(FToasts& Toasts, FToast&& Toast)
+	{
+		// The one in view finishes; the oldest waiting gives way.
+		if (Toasts.Queue.Num() >= MaxQueued)
+		{
+			Toasts.Queue.RemoveAt(1);
+		}
+		Toasts.Queue.Add(MoveTemp(Toast));
+	}
+
+	/** The settled events as notices: each end with its follow-up, then the starts nobody's end explained. */
+	void Settle(const UWorld* World, FToasts& Toasts)
+	{
+		TArray<bool> Used;
+		Used.Init(false, Toasts.Started.Num());
+		for (const FAPSMission& Done : Toasts.Completed)
+		{
+			const FChainStep DoneStep = ChainStepOf(World, Done);
+			const FAPSMission* Follow = nullptr;
+			for (int32 Index = 0; Index < Toasts.Started.Num() && !Follow; ++Index)
+			{
+				if (!Used[Index] && IsFollowUp(Done, DoneStep, Toasts.Started[Index], ChainStepOf(World, Toasts.Started[Index])))
+				{
+					Used[Index] = true;
+					Follow = &Toasts.Started[Index];
+				}
+			}
+			const bool bChainDone = DoneStep.bAncient && DoneStep.Step + 1 >= DoneStep.Steps;
+			FToast Toast;
+			Toast.Accent = APSInfrastructure::DepartmentColour(Done.Department);
+			Toast.Kicker = bChainDone ? FText::Format(LOCTEXT("ToastChainDone", "QUEST CHAIN COMPLETE  ·  {0}"), DoneStep.Chain)
+				: DoneStep.bAncient ? FText::Format(LOCTEXT("ToastStepDone", "{0} COMPLETE  ·  {1}"), StepOf(DoneStep), DoneStep.Chain)
+				: Follow ? FText::Format(LOCTEXT("ToastChainStepDone", "CHAIN STEP COMPLETE  ·  {0}"), DoneStep.Chain)
+				: FText::Format(LOCTEXT("ToastMissionDone", "MISSION COMPLETE  ·  {0}"), DoneStep.Chain);
+			Toast.Title = SentenceCase(Done.Title);
+			const FText Reward = RewardText(Done);
+			Toast.Body = Reward.IsEmpty() ? LOCTEXT("ToastDone", "Done.")
+				: FText::Format(LOCTEXT("ToastDoneReward", "Done. Reward: {0}"), Reward);
+			Toast.Next = Follow ? NextLine(*Follow)
+				: bChainDone ? LOCTEXT("ToastReadChain", "The whole chain and its story: colony terminal, JOURNAL.")
+				: DoneStep.bAncient ? LOCTEXT("ToastNextSoon", "The next step comes to the DIVISIONS board shortly.")
+				: FText::GetEmpty();
+			Push(Toasts, MoveTemp(Toast));
+		}
+		for (int32 Index = 0; Index < Toasts.Started.Num(); ++Index)
+		{
+			if (Used[Index])
+			{
+				continue;
+			}
+			const FAPSMission& New = Toasts.Started[Index];
+			const FChainStep NewStep = ChainStepOf(World, New);
+			const bool bOffer = New.State == APSMissions::EState::Offered;
+			FToast Toast;
+			Toast.Accent = APSInfrastructure::DepartmentColour(New.Department);
+			Toast.Kicker = !NewStep.bAncient ? FText::Format(LOCTEXT("ToastMissionActive", "MISSION ACTIVE  ·  {0}"), NewStep.Chain)
+				: bOffer ? FText::Format(LOCTEXT("ToastStepOffer", "{0} OFFERED  ·  {1}"), StepOf(NewStep), NewStep.Chain)
+				: NewStep.Step == 0 ? FText::Format(LOCTEXT("ToastChainStart", "QUEST CHAIN STARTED  ·  {0}"), NewStep.Chain)
+				: FText::Format(LOCTEXT("ToastStepNew", "NEW {0}  ·  {1}"), StepOf(NewStep), NewStep.Chain);
+			Toast.Title = SentenceCase(New.Title);
+			Toast.Body = New.SubjectName;
+			Toast.Next = NextLine(New);
+			Push(Toasts, MoveTemp(Toast));
+		}
+		Toasts.Completed.Reset();
+		Toasts.Started.Reset();
+	}
+
+	/** Reads the board when its revision moved: what started, completed and moved since the last look. */
+	void Watch(FToasts& Toasts, FAPSMissionBoard& Board, const double Now)
+	{
+		if (Toasts.bPrimed && Board.GetRevision() == Toasts.Revision)
+		{
+			return;
+		}
+		Toasts.Revision = Board.GetRevision();
+		TArray<FAPSMission> Completed;
+		TArray<FAPSMission> Started;
+		FGuid TrackTo;
+		bool bRestored = false;
+		TMap<FGuid, FSeen> Seen;
+		for (const FAPSMission& Mission : Board.GetMissions())
+		{
+			Seen.Add(Mission.Id, FSeen{Mission.State, Mission.Progress});
+			const FSeen* Old = Toasts.Seen.Find(Mission.Id);
+			const bool bAncient = APSAncientsQuests::IsAncientTemplate(Mission.Template);
+			if (Mission.State == APSMissions::EState::Completed)
+			{
+				if (Old && Old->State == APSMissions::EState::Active)
+				{
+					Completed.Add(Mission);
+				}
+				// Only a load brings a mission that was never seen already completed.
+				bRestored |= !Old;
+			}
+			else if (Mission.State == APSMissions::EState::Active && (!Old || Old->State != APSMissions::EState::Active))
+			{
+				Started.Add(Mission);
+				// The department's own follow-ups and accepts are tracked by the board; a Builders' step only when free.
+				if (bAncient)
+				{
+					TrackTo = Mission.Id;
+				}
+			}
+			else if (Mission.State == APSMissions::EState::Offered && !Old && bAncient)
+			{
+				Started.Add(Mission);
+			}
+			else if (Mission.State == APSMissions::EState::Active && Old && Mission.Progress > Old->Progress
+				&& (bAncient || !Mission.Next.IsNone()))
+			{
+				TrackTo = Mission.Id;
+			}
+		}
+		if (!Toasts.bPrimed)
+		{
+			Toasts.PrimedAt = Now;
+		}
+		Toasts.Seen = MoveTemp(Seen);
+		Toasts.bPrimed = true;
+		// The first look, the first seconds (a save is applied then) and a load bring many at once: nothing happened in play.
+		if (Now - Toasts.PrimedAt < QuietSeconds || bRestored || (Completed.IsEmpty() && Started.Num() >= 3))
+		{
+			return;
+		}
+		if (CVarAutoTrack.GetValueOnGameThread() != 0 && TrackTo.IsValid())
+		{
+			const FAPSMission* Current = Board.GetTracked();
+			if (!Current || Current->Id != TrackTo)
+			{
+				Board.SetTracked(TrackTo);
+				Toasts.Revision = Board.GetRevision();
+			}
+		}
+		if (CVarToasts.GetValueOnGameThread() == 0 || (Completed.IsEmpty() && Started.IsEmpty()))
+		{
+			return;
+		}
+		if (Toasts.Completed.IsEmpty() && Toasts.Started.IsEmpty())
+		{
+			Toasts.FirstEventAt = Now;
+		}
+		Toasts.Completed.Append(MoveTemp(Completed));
+		Toasts.Started.Append(MoveTemp(Started));
+	}
+
+	const FToast* CurrentToast(const TWeakObjectPtr<UWorld>& World)
+	{
+		const FToasts* Toasts = GToasts.Find(World);
+		return Toasts && !Toasts->Queue.IsEmpty() ? &Toasts->Queue[0] : nullptr;
+	}
+
+	/** Out of the terminal and the maps, as the card is; its clock waits there, so a notice is never missed. */
+	bool IsToastRoomFree(const TWeakObjectPtr<UWorld>& World)
+	{
+		return !IsMapOpen(World) && !IsTerminalOpen(World);
+	}
+
+	bool IsToastShown(const TWeakObjectPtr<UWorld>& World)
+	{
+		return CVarToasts.GetValueOnGameThread() != 0 && CurrentToast(World) && IsToastRoomFree(World);
+	}
+
+	float ToastOpacity(const TWeakObjectPtr<UWorld>& World)
+	{
+		const FToast* Toast = CurrentToast(World);
+		if (!Toast)
+		{
+			return 0.0f;
+		}
+		const double Duration = FMath::Max(1.0, double(CVarToastSeconds.GetValueOnGameThread()));
+		return float(FMath::Clamp(FMath::Min(Toast->Age / 0.2, (Duration - Toast->Age) / 0.45), 0.0, 1.0));
+	}
+
+	/** The tracker card's family (APSHud): a dot and the kicker in the department's colour, the title, what happened,
+	 * and under a rule NEXT with an action-coloured box and the line of what to do. */
+	TSharedRef<SWidget> BuildToast(const TWeakObjectPtr<UWorld> World)
+	{
+		const auto Read = [World](FText FToast::* Field)
+		{
+			const FToast* Toast = CurrentToast(World);
+			return Toast ? Toast->*Field : FText::GetEmpty();
+		};
+		const TAttribute<FSlateColor> Accent = TAttribute<FSlateColor>::CreateLambda([World]()
+		{
+			const FToast* Toast = CurrentToast(World);
+			return FSlateColor(Toast ? Toast->Accent : APSChrome::Cyan());
+		});
+		return SNew(SBox)
+			.HAlign(HAlign_Center)
+			.VAlign(VAlign_Top)
+			.Padding(FMargin(0.0f, 92.0f, 0.0f, 0.0f))
+			.Visibility_Lambda([World]() { return VisibleIf(IsToastShown(World)); })
+			[
+				SNew(SBorder)
+				.BorderImage(FCoreStyle::Get().GetBrush("NoBorder"))
+				.Padding(0.0f)
+				.ColorAndOpacity_Lambda([World]() { return FLinearColor(1.0f, 1.0f, 1.0f, ToastOpacity(World)); })
+				[
+					SNew(SBox)
+					.WidthOverride(ToastWidth)
+					[
+						APSHud::Card(
+							SNew(SVerticalBox)
+							+ SVerticalBox::Slot().AutoHeight()
+							[
+								SNew(SHorizontalBox)
+								+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.0f, 0.0f, 7.0f, 0.0f)
+								[
+									SNew(SBox).WidthOverride(6.0f).HeightOverride(6.0f)[SNew(SImage).Image(Dot()).ColorAndOpacity(Accent)]
+								]
+								+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
+								[
+									SNew(STextBlock).Font(APSHud::LabelFont()).ColorAndOpacity(Accent)
+									.Text_Lambda([Read]() { return Read(&FToast::Kicker); })
+								]
+							]
+							+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 5.0f, 0.0f, 0.0f)
+							[
+								SNew(STextBlock).Font(APSHud::TextFont(15, TEXT("Bold"))).ColorAndOpacity(Themed([]() { return P().Text; }))
+								.AutoWrapText(true)
+								.Text_Lambda([Read]() { return Read(&FToast::Title); })
+							]
+							+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 3.0f, 0.0f, 0.0f)
+							[
+								SNew(STextBlock).Font(BodyFont()).ColorAndOpacity(Themed([]() { return P().TextSoft; })).AutoWrapText(true)
+								.Text_Lambda([Read]() { return Read(&FToast::Body); })
+								.Visibility_Lambda([Read]() { return CollapsedIfEmpty(Read(&FToast::Body)); })
+							]
+							+ SVerticalBox::Slot().AutoHeight()
+							[
+								SNew(SVerticalBox)
+								.Visibility_Lambda([Read]() { return CollapsedIfEmpty(Read(&FToast::Next)); })
+								+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 9.0f)[APSHud::Rule()]
+								+ SVerticalBox::Slot().AutoHeight()
+								[
+									SNew(SHorizontalBox)
+									+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Top).Padding(0.0f, 3.0f, 9.0f, 0.0f)
+									[
+										Box(8.0f, Themed([]() { return P().Action; }))
+									]
+									+ SHorizontalBox::Slot().FillWidth(1.0f)
+									[
+										SNew(SVerticalBox)
+										+ SVerticalBox::Slot().AutoHeight()
+										[
+											APSHud::Label(LOCTEXT("ToastNextLabel", "NEXT"), Themed([]() { return P().TextQuiet; }))
+										]
+										+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f, 0.0f, 0.0f)
+										[
+											SNew(STextBlock).Font(APSHud::TextFont(12)).ColorAndOpacity(Themed([]() { return P().Text; }))
+											.AutoWrapText(true)
+											.Text_Lambda([Read]() { return Read(&FToast::Next); })
+										]
+									]
+								]
+							],
+							APSHud::EEdge::Centre)
+					]
+				]
+			];
+	}
+
+	void TickToasts(UWorld* World)
+	{
+		FAPSMissionBoard* Board = APSMissionsFind(World);
+		if (!Board)
+		{
+			return;
+		}
+		const double Now = FPlatformTime::Seconds();
+		FToasts* Found = GToasts.Find(World);
+		if (!Found)
+		{
+			for (auto It = GToasts.CreateIterator(); It; ++It)
+			{
+				if (!It.Key().IsValid()) It.RemoveCurrent();
+			}
+			Found = &GToasts.Add(World);
+		}
+		FToasts& Toasts = *Found;
+		const double Delta = Toasts.LastTick > 0.0 ? FMath::Clamp(Now - Toasts.LastTick, 0.0, 0.25) : 0.0;
+		Toasts.LastTick = Now;
+		Watch(Toasts, *Board, Now);
+		if (CVarToasts.GetValueOnGameThread() == 0)
+		{
+			Toasts.Queue.Reset();
+			Toasts.Completed.Reset();
+			Toasts.Started.Reset();
+		}
+		if ((!Toasts.Completed.IsEmpty() || !Toasts.Started.IsEmpty()) && Now - Toasts.FirstEventAt >= SettleSeconds)
+		{
+			Settle(World, Toasts);
+		}
+		if (!Toasts.Queue.IsEmpty() && IsToastRoomFree(World))
+		{
+			Toasts.Queue[0].Age += Delta;
+			if (Toasts.Queue[0].Age >= FMath::Max(1.0, double(CVarToastSeconds.GetValueOnGameThread())))
+			{
+				Toasts.Queue.RemoveAt(0);
+			}
+		}
+		// The widget joins the view with the first notice (never in worlds without one) and follows a new viewport.
+		UGameViewportClient* Viewport = World->GetGameViewport();
+		if (!Viewport || (Toasts.Widget.IsValid() && Toasts.Viewport.Get() == Viewport) || (!Toasts.Widget.IsValid() && Toasts.Queue.IsEmpty()))
+		{
+			return;
+		}
+		if (Toasts.Widget.IsValid() && Toasts.Viewport.IsValid())
+		{
+			Toasts.Viewport->RemoveViewportWidgetContent(Toasts.Widget.ToSharedRef());
+		}
+		Toasts.Widget = BuildToast(World);
+		Toasts.Viewport = Viewport;
+		Viewport->AddViewportWidgetContent(Toasts.Widget.ToSharedRef(), ToastZOrder);
+	}
+
+	void RemoveToasts(UWorld* World)
+	{
+		FToasts Toasts;
+		if (GToasts.RemoveAndCopyValue(World, Toasts) && Toasts.Widget.IsValid() && Toasts.Viewport.IsValid())
+		{
+			Toasts.Viewport->RemoveViewportWidgetContent(Toasts.Widget.ToSharedRef());
+		}
+	}
+
+	FAutoConsoleCommandWithWorld ToastTestCommand(TEXT("aps.Quests.ToastTest"),
+		TEXT("Shows a sample quest notice (the tracked mission's, when one is tracked)."),
+		FConsoleCommandWithWorldDelegate::CreateLambda([](UWorld* InWorld)
+		{
+			if (!InWorld || !APSMissionsFind(InWorld))
+			{
+				return;
+			}
+			FToasts& Toasts = GToasts.FindOrAdd(InWorld);
+			const FAPSMission* Mission = Tracked(InWorld);
+			FToast Toast;
+			Toast.Accent = Mission ? APSInfrastructure::DepartmentColour(Mission->Department) : APSChrome::Cyan();
+			Toast.Kicker = LOCTEXT("ToastTestKicker", "QUEST NOTICE  ·  TEST");
+			Toast.Title = Mission ? SentenceCase(Mission->Title) : LOCTEXT("ToastTestTitle", "A shape on the horizon");
+			Toast.Body = Mission ? Mission->SubjectName : LOCTEXT("ToastTestBody", "UNKNOWN STRUCTURE · RESO");
+			Toast.Next = Mission ? NextLine(*Mission) : LOCTEXT("ToastTestNext", "Fly within 25 km of the marked site, or send any ship there.");
+			Push(Toasts, MoveTemp(Toast));
+		}));
+}
+
 void APSMissionTracker::Tick(UWorld* World)
 {
 	using namespace APSMissionTrackerPrivate;
@@ -403,6 +880,7 @@ void APSMissionTracker::Tick(UWorld* World)
 	{
 		return;
 	}
+	TickToasts(World);
 	UGameViewportClient* Viewport = World->GetGameViewport();
 	const FEntry* Existing = GEntries.Find(World);
 	if (!Viewport || (Existing && Existing->Widget.IsValid() && Existing->Viewport.Get() == Viewport)
@@ -429,6 +907,7 @@ void APSMissionTracker::Tick(UWorld* World)
 void APSMissionTracker::Remove(UWorld* World)
 {
 	using namespace APSMissionTrackerPrivate;
+	RemoveToasts(World);
 	FEntry Entry;
 	if (!GEntries.RemoveAndCopyValue(World, Entry))
 	{

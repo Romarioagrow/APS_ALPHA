@@ -30,17 +30,19 @@
 
 namespace APSShipLightBudget
 {
+	// Rio 09.10 evening ("these lamp shadows eat performance: delete or hide them, sacrifice them for stable flights"):
+	// default 0 with KeepNearest 0 = no ship-light shadows while the ship moves; they come back at rest.
 	TAutoConsoleVariable<int32> CVarLightShadowsWhileMoving(
-		TEXT("aps.Ship.LightShadowsWhileMoving"), 1,
+		TEXT("aps.Ship.LightShadowsWhileMoving"), 0,
 		TEXT("Rio 09.10 (4K: the L flagship's 12 shadowed interior lights cost ~21 ms of virtual shadow map raster while it flies ")
-		TEXT("with the walker aboard; a moving shadowed local light redraws all its shadow pages every frame). 1 (default): ship ")
+		TEXT("with the walker aboard; a moving shadowed local light redraws all its shadow pages every frame). 1: ship ")
 		TEXT("lights keep their authored shadows, as before. 0: while a ship moves (the hull collision's notion: faster than ")
 		TEXT("aps.Ship.HullRestoreMaxSpeedCm, its autopilot, a world flow, owed travel or a fleet order) its own movable local lights ")
 		TEXT("(point/spot/rect components of the ship and of the actors attached to it; never a walker's, another ship's, a ")
 		TEXT("directional or a sky light) stop casting shadows, except the aps.Ship.LightShadowsKeepNearest nearest to the player's ")
 		TEXT("camera; each gets its authored shadows back once the ship has rested aps.Ship.HullRestoreRestSeconds."));
 	TAutoConsoleVariable<int32> CVarLightShadowsKeepNearest(
-		TEXT("aps.Ship.LightShadowsKeepNearest"), 2,
+		TEXT("aps.Ship.LightShadowsKeepNearest"), 0,
 		TEXT("Rio 09.10 (aps.Ship.LightShadowsWhileMoving 0): this many of a moving ship's authored-shadowed, visible lights nearest ")
 		TEXT("to the player's camera keep their shadows (ranked again every 0.25 s; a kept light gives way only to one ~16 % nearer)."));
 	TAutoConsoleVariable<float> CVarLightCullDistanceM(
