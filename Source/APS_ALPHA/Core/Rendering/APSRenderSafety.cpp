@@ -4,6 +4,7 @@
 #include "APS_ALPHA/Core/Controllers/GravityPlayerController.h"
 #include "Camera/PlayerCameraManager.h"
 #include "Engine/Engine.h"
+#include "Engine/GameViewportClient.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "HAL/IConsoleManager.h"
@@ -514,11 +515,93 @@ namespace APSRenderSafetyLocal
 		bool bStoodAside{false};
 	};
 
+	/**
+	 * Rio 09.10 (0.6.4.2, 4K TV at RENDER SCALE AUTO = 1080p + TSR): stars blink while the camera turns, a still camera is
+	 * perfect. The catalogue ISM stars and far glyphs are translucent and reach the screen through TSR (UE 5.4 composites
+	 * the separate translucency inside TSRUpdateHistory at input-pixel spacing); below native resolution a 1-2 px star is
+	 * hit only in some jitter phases. Still, TSR averages 32 frames (r.TSR.History.SampleCount); once output pixels move
+	 * over r.TSR.Velocity.WeightClampingPixelSpeed (1 px a frame) it keeps only r.TSR.Velocity.WeightClampingSampleCount
+	 * (engine 4), so each frame's hit or miss shows. Until 09.10 EPIC/CINEMATIC forced native 4K (one sample per pixel).
+	 * Below native resolution that count is raised to aps.Render.TsrMotionSamples; at native, or 0, the engine value stays.
+	 * A still camera is unchanged (no velocity, no clamp). The GPU points (APS.Stars) are drawn after TSR: not affected.
+	 */
+	TAutoConsoleVariable<float> CVarTsrMotionSamples(TEXT("aps.Render.TsrMotionSamples"), 16.0f,
+		TEXT("Rio 09.10: TSR history samples kept on camera motion while the scene renders below the shown resolution ")
+		TEXT("(r.TSR.Velocity.WeightClampingSampleCount, engine 4): sub-pixel stars stop blinking while the camera turns. ")
+		TEXT("32 = as still (no clamp), 0 = off (engine value). At native resolution nothing changes."));
+
+	class FTsrMotionSamples final : public FTickableGameObject
+	{
+	public:
+		virtual TStatId GetStatId() const override
+		{
+			RETURN_QUICK_DECLARE_CYCLE_STAT(FAPSTsrMotionSamples, STATGROUP_Tickables);
+		}
+		virtual ETickableTickType GetTickableTickType() const override { return ETickableTickType::Always; }
+		virtual bool IsTickableWhenPaused() const override { return true; }
+		virtual bool IsTickableInEditor() const override { return true; }
+
+		virtual void Tick(float) override
+		{
+			const double Now = FPlatformTime::Seconds();
+			if (bStoodAside || Now - LastCheck < 0.5 || !GEngine)
+			{
+				return;
+			}
+			LastCheck = Now;
+			static IConsoleVariable* const Clamp =
+				IConsoleManager::Get().FindConsoleVariable(TEXT("r.TSR.Velocity.WeightClampingSampleCount"));
+			if (!Clamp)
+			{
+				return;
+			}
+			// A console A/B (r.TSR.Velocity.WeightClampingSampleCount 4) outranks code: stand aside for the session.
+			const uint32 SetBy = static_cast<uint32>(Clamp->GetFlags()) & static_cast<uint32>(ECVF_SetByMask);
+			if (SetBy > static_cast<uint32>(ECVF_SetByCode))
+			{
+				bStoodAside = true;
+				UE_LOG(LogTemp, Log, TEXT("[APS.Render] TSR motion samples: set from the console, standing aside"));
+				return;
+			}
+			const float Current = Clamp->GetFloat();
+			if (!bHaveSaved)
+			{
+				Saved = Current;
+				bHaveSaved = true;
+			}
+			double Fraction = 1.0;
+			FVector2D Size(0.0, 0.0);
+			if (GEngine->GameViewport)
+			{
+				GEngine->GameViewport->GetViewportSize(Size);
+			}
+			if (Size.X >= 1.0 && Size.Y >= 1.0)
+			{
+				Fraction = ReachRenderFraction(ReachVariables(), Size.X, Size.Y);
+			}
+			const float Target = CVarTsrMotionSamples.GetValueOnGameThread();
+			const float Desired = (Target > 0.0f && Fraction < 0.99) ? FMath::Max(Target, Saved) : Saved;
+			if (!FMath::IsNearlyEqual(Current, Desired))
+			{
+				Clamp->Set(Desired, ECVF_SetByCode);
+				UE_LOG(LogTemp, Log, TEXT("[APS.Render] TSR motion samples %.1f (render %.0f%% of %.0fx%.0f)"),
+					Desired, Fraction * 100.0, Size.X, Size.Y);
+			}
+		}
+
+	private:
+		double LastCheck{-1000.0};
+		float Saved{4.0f};
+		bool bHaveSaved{false};
+		bool bStoodAside{false};
+	};
+
 	// Rio 06.10 (audit: static-destruction order): namespace-static FTickableGameObjects would unregister from
 	// FTickableStatics at exit after that singleton is gone in a monolithic exe; they live until the process ends instead
 	// (nothing is restored at exit, as before: neither had a destructor).
 	FGuard* GGuard = nullptr; // never freed: FTickableStatics' singleton dies before namespace statics in a monolithic exe
 	FShadowReach* GShadowReach = nullptr; // never freed, as GGuard
+	FTsrMotionSamples* GTsrMotionSamples = nullptr; // never freed, as GGuard
 
 	FDelayedAutoRegisterHelper GRegister(EDelayedRegisterRunPhase::EndOfEngineInit, []
 	{
@@ -529,6 +612,10 @@ namespace APSRenderSafetyLocal
 		if (!GShadowReach)
 		{
 			GShadowReach = new FShadowReach();
+		}
+		if (!GTsrMotionSamples)
+		{
+			GTsrMotionSamples = new FTsrMotionSamples();
 		}
 	});
 }

@@ -73,6 +73,9 @@ namespace APSColonyConstruction
 	TAutoConsoleVariable<int32> CVarModuleShots(TEXT("aps.Colony.ModuleShots"), 0,
 		TEXT("1: once the auto-built modules stand, photograph each from a temporary camera to ")
 		TEXT("Saved/Screenshots/ColonyModules, then capture the colony terminal (test runs)."));
+	TAutoConsoleVariable<int32> CVarAvoidMotorPool(TEXT("aps.Colony.AvoidMotorPool"), 1,
+		TEXT("1: a new surface module keeps clear of the motor pool (the vehicles' garage). 0: as before 0.6.4.2 ")
+		TEXT("(a module could stand in a bay and push its vehicle aside)."));
 
 	FText SiteName(const EAPSSpawnSite Site)
 	{
@@ -894,10 +897,21 @@ bool UAPSColonyConstructionSubsystem::MaterializeJob(const EAPSSpawnSite Kind, F
 	if (Kind == EAPSSpawnSite::Surface && World)
 	{
 		// The pad, and a ship parked on it, stand on the same body; the walk from the base to the pad stays free.
+		// Rio 09.10 (0.6.4.2: "the hover spawns elsewhere, a square cube stands in its garage place"): the COMMS MAST was
+		// built over the hover's bay (the pool was no obstacle) and the hover moved aside. The motor pool keeps its bays.
+		const bool bAvoidMotorPool = CVarAvoidMotorPool.GetValueOnGameThread() != 0;
 		for (TActorIterator<AActor> It(World); It; ++It)
 		{
-			if (!IsValid(*It) || *It == Request.Anchor || !It->ActorHasTag(TEXT("APS.Civilization.Materialized"))
-				|| It->GetAttachParentActor() != Request.Body)
+			if (!IsValid(*It) || *It == Request.Anchor || It->GetAttachParentActor() != Request.Body)
+			{
+				continue;
+			}
+			if (bAvoidMotorPool && It->ActorHasTag(TEXT("APS.Colony.MotorPool")))
+			{
+				Request.Obstacles.Add(*It);
+				continue;
+			}
+			if (!It->ActorHasTag(TEXT("APS.Civilization.Materialized")))
 			{
 				continue;
 			}

@@ -1179,6 +1179,8 @@ void UWorldGenerationViewModel::SetStartPlanetIndex(double Value)
 	if (IsValid(PanelBody) && PanelBody != NewHome) HydratePreviewBodyEditorBuffer(PanelBody);
 	UE_LOG(LogTemp, Log, TEXT("[APS.WorldGeneration] HOME START PLANET %d -> %d: home %s; %s stays an ordinary world"),
 		OldIndex, NewIndex, *NewHomeText, *OldHomeText);
+	// Rio 09.10: PLANET (and the commit) go to the new home at once, not the planet the preview built as home.
+	Generator->RefreshGeneratedHomePlanet();
 	RequestPreview();
 }
 

@@ -271,6 +271,8 @@ public:
 	bool GetPreviewSystemEditContext(FString& OutAddress, FStarSystemModel& OutModel) const;
 	int32 GetPreviewHomePlanetCount() const;
 	AStarSystem* GetPreviewHomeSystem() const { return GeneratedHomeStarSystem; }
+	/** Rio 09.10 (A23): HomePlanet follows the generated world's start planet index (the preview keeps its planets). */
+	void RefreshGeneratedHomePlanet();
 	/** Rio 05.10 (real scale experiment): REAL SCALE applies to this build (it needs the canonical full-scale frame). */
 	bool UsesRealScale() const;
 	/** Rio 05.10: the applied real-scale layout for the menu card, in cm: the galaxy's nominal radius, the radius holding

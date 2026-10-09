@@ -1,0 +1,59 @@
+diff --git a/F:/ChatGPT/APOSFERA/work/flight/backup_ws_engine_0910/WorldScapeRoot_Main.cpp b/C:/Program Files/Epic Games/UE/UE_5.4/Engine/Plugins/Marketplace/WorldScape_5.4/Source/WorldScapeCore/Private/WorldScapeRoot_Main.cpp
+index 9c342baef..836b0bae1 100644
+--- a/F:/ChatGPT/APOSFERA/work/flight/backup_ws_engine_0910/WorldScapeRoot_Main.cpp
++++ b/C:/Program Files/Epic Games/UE/UE_5.4/Engine/Plugins/Marketplace/WorldScape_5.4/Source/WorldScapeCore/Private/WorldScapeRoot_Main.cpp	
+@@ -1,6 +1,11 @@
+ // Copyright 2021 IOLACORP STUDIO. All Rights Reserved
+ #include "WorldScapeRoot.h"
+ #include "WorldScapePreparedMesh.h"
++#include "HAL/IConsoleManager.h"
++// APS planets v2 (P3): see CheckForLodGeneration.
++static TAutoConsoleVariable<int32> CVarAPSWorldScapePublishPerFrame(TEXT("worldscape.PublishPerFrame"), 0,
++	TEXT("APS planets v2: finished terrain rings published per frame (0 = the whole batch in one frame, stock); "
++	     "2-3 spreads the render-thread upload of a batch over frames."));
+ #include "DSP/Osc.h"
+ #include <Runtime/Engine/Classes/Kismet/GameplayStatics.h>
+ 
+@@ -1838,11 +1843,16 @@ void AWorldScapeRoot::CheckForLodGeneration()
+ 	}
+ 	if (DoneGenerating)
+ 	{
++		// APS planets v2 (P3): at most worldscape.PublishPerFrame rings per frame (0 = all at once, stock).
++		const int32 APS_Budget = CVarAPSWorldScapePublishPerFrame.GetValueOnGameThread();
+ 		bool updateMaterial = false;
+ 		int32 PreparedCount = 0;
++		int32 APS_PublishedNow = 0;
++		TArray<UWorldScapeLod*> APS_Published;
+ 
+ 		for (const TPair<UWorldScapeLod*, bool>& Pair : WorldScapeLodInGeneration)
+ 		{
++			if (APS_Budget > 0 && APS_PublishedNow >= APS_Budget) break;
+ 			if (IsValid(Pair.Key))
+ 			{
+ 				FWorldScapePreparedLod* Prepared = nullptr;
+@@ -1853,16 +1863,21 @@ void AWorldScapeRoot::CheckForLodGeneration()
+ 				else Pair.Key->UpdateMesh();
+ 				updateMaterial = true;
+ 			}
++			APS_Published.Add(Pair.Key);
++			++APS_PublishedNow;
+ 		}
+-		for (FAsyncTask<LodGenerationThread>* Task : LodGenerationThreadPool)
++		for (UWorldScapeLod* APS_Lod : APS_Published) WorldScapeLodInGeneration.Remove(APS_Lod);
++		if (WorldScapeLodInGeneration.Num() == 0)
+ 		{
+-			delete Task; // All tasks passed IsDone; do not leak one task per LOD update.
++			for (FAsyncTask<LodGenerationThread>* Task : LodGenerationThreadPool)
++			{
++				delete Task; // All tasks passed IsDone; do not leak one task per LOD update.
++			}
++			LodGenerationThreadPool.Empty();
+ 		}
+-		LodGenerationThreadPool.Empty();
+ 		if (PreparedCount > 0) WorldScapePreparedMesh::LogStats();
+ 
+ 		TransformKeeper->UpdateBounds();
+-		WorldScapeLodInGeneration.Empty();
+ 
+ 		if (updateMaterial)
+ 		{

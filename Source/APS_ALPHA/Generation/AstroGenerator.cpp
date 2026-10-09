@@ -1996,6 +1996,7 @@ bool AAstroGenerator::RegeneratePreview(
 			RestoredSelection = RestoredPlanet;
 		}
 	}
+	RefreshGeneratedHomePlanet();
 	AStar* FallbackStar = RestoredSelectionSystem != GeneratedHomeStarSystem && IsValid(RestoredSelectionSystem)
 		? RestoredSelectionSystem->MainStar : HomeStar;
 	APlanet* FallbackPlanet = RestoredSelectionSystem == GeneratedHomeStarSystem ? HomePlanet
@@ -4288,8 +4289,32 @@ void AAstroGenerator::StartPreviewCameraTransition(const FVector& Center, double
 	}
 }
 
+// Rio 09.10 (A23: "the start planet moves, but the PLANET button flies to the old planet"): a preview rebuild can keep the
+// system's planets across a HOME START PLANET INDEX change, so HomePlanet kept the old start planet. It is re-read from
+// the index wherever PLANET or a commit uses it. The authored SinglePlay integration owns its own HomePlanet.
+void AAstroGenerator::RefreshGeneratedHomePlanet()
+{
+	if ((bIntegrateStartPlanet && !bIsPreviewGeneration) || !GeneratedWorldModel || !IsValid(GeneratedHomeStarSystem)
+		|| !IsValid(GeneratedHomeStarSystem->MainStar) || !IsValid(GeneratedHomeStarSystem->MainStar->PlanetarySystem))
+	{
+		return;
+	}
+	const TArray<APlanet*>& Planets = GeneratedHomeStarSystem->MainStar->PlanetarySystem->PlanetsActorsList;
+	const int32 Index = FMath::Clamp(GeneratedWorldModel->StartPlanetIndex, 1, FMath::Max(1, Planets.Num())) - 1;
+	if (Planets.IsValidIndex(Index) && IsValid(Planets[Index]) && Planets[Index] != HomePlanet)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[APS.WorldGeneration] home planet follows HOME START PLANET %d: %s -> %s"),
+			Index + 1, *GetNameSafe(HomePlanet), *GetNameSafe(Planets[Index]));
+		HomePlanet = Planets[Index];
+	}
+}
+
 void AAstroGenerator::FocusPreviewTarget(EAstroPreviewFocus NewFocus, APlayerController* PlayerController)
 {
+	if (NewFocus == EAstroPreviewFocus::HomePlanet)
+	{
+		RefreshGeneratedHomePlanet();
+	}
 	if (UsesContinuousPreviewFrame())
 	{
 		FocusContinuousPreviewTarget(NewFocus, PlayerController);
