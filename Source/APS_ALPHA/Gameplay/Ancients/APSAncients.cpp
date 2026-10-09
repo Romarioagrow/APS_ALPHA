@@ -56,6 +56,16 @@ namespace APSAncientsLocal
 		TEXT("Brightness of the ancient sites' glyph seams and crowns; 0 builds them without glow. Applies to sites built afterwards."));
 	TAutoConsoleVariable<float> CVarSignalDelay(TEXT("aps.Ancients.SignalDelay"), 20.0f,
 		TEXT("Seconds after the quests open (a new game, or a load once applied) before the home monument's signal comes in."));
+	// Rio 09.10 (0.6.4 playtest: REZANOGRAD's stone circle hung ~1 km over the moon's real ground). A root's height function
+	// carries its body's seed and sphere radius only once the root built them (GenerateBaseMeshBatch: PlanetNoise.SetSeed,
+	// PlanetScaleCode). H_CIRCLE was placed 4 s before the moon's first build (log 23:12:14 vs Surface ready 23:12:18) and
+	// sampled the previous/default noise: centre -1571 m, and another place and -286 m on the next load of the same world.
+	TAutoConsoleVariable<int32> CVarWaitForSurface(TEXT("aps.Ancients.WaitForSurface"), 1,
+		TEXT("1: a surface site is chosen and built only once its body's WorldScape surface is ready, so the height function it ")
+		TEXT("samples is the one the terrain was built from. 0: as soon as the surface profile is applied (0.6.4 and before)."));
+	TAutoConsoleVariable<float> CVarReseatMetres(TEXT("aps.Ancients.ReseatMetres"), 25.0f,
+		TEXT("A built surface site whose centre stands more than this many metres off its body's current (ready) surface is ")
+		TEXT("rebuilt on it at the same place, logged with both heights. 0: never."));
 
 	const FName SiteTag(TEXT("APS.Ancient.Site"));
 	const FString SiteTagPrefix(TEXT("APS.Ancient.Site."));
@@ -87,13 +97,38 @@ namespace APSAncientsLocal
 		return *Map;
 	}
 
+	/** The root has built the body's surface: its height function now uses the seed and radius the terrain was built from. */
+	bool IsSurfaceBuilt(const APlanetaryBody& Body, const AWorldScapeRoot& Root)
+	{
+		return Body.bWorldScapeSurfaceReady && Root.init && Root.PlanetScaleCode == static_cast<double>(Root.PlanetScale);
+	}
+
 	/** The body's WorldScape root when it carries this body's current surface; null otherwise. */
 	AWorldScapeRoot* LoadedRoot(const APlanetaryBody* Body)
 	{
 		APlanetarySurfaceGenerator* Surface = IsValid(Body) ? Body->PlanetaryEnvironmentGenerator : nullptr;
 		AWorldScapeRoot* Root = IsValid(Surface) ? Surface->WorldScapeRootInstance : nullptr;
-		return IsValid(Root) && IsValid(Root->WorldScapeNoise) && Root->PlanetScale > 0.0f && Surface->IsSurfaceProfileCurrent(Body)
-			? Root : nullptr;
+		if (!IsValid(Root) || !IsValid(Root->WorldScapeNoise) || Root->PlanetScale <= 0.0f || !Surface->IsSurfaceProfileCurrent(Body))
+		{
+			return nullptr;
+		}
+		return CVarWaitForSurface.GetValueOnGameThread() == 0 || IsSurfaceBuilt(*Body, *Root) ? Root : nullptr;
+	}
+
+	/** How far (cm) a built surface site's centre stands above (+) or below (-) its body's built surface; 0 when unknown. */
+	double OffSurfaceCm(const APlanetaryBody* Body, const AActor& Actor, const double NavHeightCm, double& OutGroundCm)
+	{
+		AWorldScapeRoot* Root = LoadedRoot(Body);
+		if (!Root || !IsSurfaceBuilt(*Body, *Root))
+		{
+			return 0.0;
+		}
+		const FVector BodyCentre = Root->GetActorLocation();
+		const FVector SiteCentre = Actor.GetActorLocation() - Actor.GetActorUpVector() * NavHeightCm;
+		const FVector Direction = (SiteCentre - BodyCentre).GetSafeNormal();
+		const double Scale = Root->PlanetScale;
+		OutGroundCm = Root->GetGroundHeight(BodyCentre + Direction * Scale, false);
+		return FMath::IsFinite(OutGroundCm) ? FVector::Dist(SiteCentre, BodyCentre) - (Scale + OutGroundCm) : 0.0;
 	}
 
 	/** The sea's radius from the body's centre (cm), or -1 for a world without liquid. */
@@ -709,6 +744,21 @@ void FAPSAncients::UpdateSites()
 					Site.SeenPlanets = INDEX_NONE;
 				}
 				Site.Stage = Site.Body.IsValid() || Site.Spec.bHomeSystem ? FSite::EStage::Waiting : FSite::EStage::Unbound;
+			}
+			else if (bBudget && !Site.Spec.IsOrbital() && CVarReseatMetres.GetValueOnGameThread() > 0.0f)
+			{
+				// A site built from a height function that was not the body's built one (or a surface rebuilt since) stands
+				// off the ground the terrain and its collision have: it is rebuilt on that ground, at the same place.
+				const APlanetaryBody* Body = Cast<APlanetaryBody>(Site.Body.Get());
+				double GroundCm = 0.0;
+				const double OffCm = OffSurfaceCm(Body, *Site.Actor.Get(), Site.Metrics.NavHeightCm, GroundCm);
+				if (FMath::Abs(OffCm) > CVarReseatMetres.GetValueOnGameThread() * 100.0)
+				{
+					UE_LOG(LogTemp, Log, TEXT("[APS.Ancients] %s: re-seated on %s's built surface: centre %.0f m -> %.0f m from the base radius (was %.0f m off the ground)"),
+						*Site.Spec.Id, *Site.BodyName.ToString(), (GroundCm + OffCm) / 100.0, GroundCm / 100.0, OffCm / 100.0);
+					bBudget = false;
+					BuildSurface(Site);
+				}
 			}
 			break;
 		default:

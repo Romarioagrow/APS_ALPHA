@@ -155,6 +155,28 @@ namespace APSSurfacePolicyPrivate
 		TEXT("See aps.Surface.FastObserverKmPerS: the shortest time between two moves of a fast observer."),
 		ECVF_Default);
 
+	TAutoConsoleVariable<float> CVarFreezeLiftRadii(
+		TEXT("aps.Surface.FreezeLiftRadii"), 2.0f,
+		TEXT("Rio 09.10 (0.6.4, 4K: a moon left in cruise and a planet seen from ~4 radii drawn in part, the rest of the disc only ")
+		TEXT("the atmosphere shell): WorldScape lays its rings on a plane tangent to the sphere under its observer, so its terrain ")
+		TEXT("never reaches 90 deg from the observer's direction. While the leave freeze keeps an observer and the camera is farther ")
+		TEXT("than this many radii from the centre, the observer moves to the camera once the camera's visible cap reaches past ")
+		TEXT("aps.Surface.FreezeLiftCoverDeg from the kept observer (at least a 2 deg turn, not during a LOD wave); the freeze then ")
+		TEXT("holds it there. A frozen published sibling (FrozenVisible, its generation off) gets the same move plus one LOD wave, ")
+		TEXT("then stays frozen (one sibling at a time, aps.Surface.FreezeLiftMinSeconds apart per body). 0: off (0.6.4)."),
+		ECVF_Default);
+
+	TAutoConsoleVariable<float> CVarFreezeLiftMinSeconds(
+		TEXT("aps.Surface.FreezeLiftMinSeconds"), 3.0f,
+		TEXT("See aps.Surface.FreezeLiftRadii: the shortest time between two LOD waves of one frozen sibling."),
+		ECVF_Default);
+
+	TAutoConsoleVariable<float> CVarFreezeLiftCoverDeg(
+		TEXT("aps.Surface.FreezeLiftCoverDeg"), 85.0f,
+		TEXT("See aps.Surface.FreezeLiftRadii: the angle from a kept observer's direction its terrain is trusted to cover ")
+		TEXT("(WorldScape's saturated coarsest ring reaches about 89 deg, less the grid snap of its plane)."),
+		ECVF_Default);
+
 	TAutoConsoleVariable<int32> CVarMapKeepObserverOnPass(
 		TEXT("aps.Map.KeepObserverOnPass"), 1,
 		TEXT("Rio 06.10 review: while the F10 map camera is the WorldScape observer (aps.Map.WorldScapeObserver/Radii), the ")
@@ -212,6 +234,13 @@ namespace APSSurfacePolicyPrivate
 		int32 FastKeptFrames{0};
 		int32 FastMoves{0};
 		double FastLogSeconds{0.0};
+		// Rio 09.10 freeze lift (aps.Surface.FreezeLiftRadii): lifts not yet logged, and the last line's time.
+		int32 LiftsUnlogged{0};
+		double LiftLogSeconds{0.0};
+		// Frozen sibling lift: the root whose one LOD wave is in flight, its start, and each root's last lift.
+		TWeakObjectPtr<AWorldScapeRoot> FrozenLiftRoot;
+		double FrozenLiftStartSeconds{0.0};
+		TMap<TWeakObjectPtr<AWorldScapeRoot>, double> FrozenLiftSeconds;
 	};
 	TMap<const void*, FPolicyState> GPolicyStates;
 
@@ -416,6 +445,134 @@ namespace APSSurfacePolicyPrivate
 		return bHold;
 	}
 
+	/**
+	 * Freeze lift (aps.Surface.FreezeLiftRadii): WorldScape (WorldScapeLod.cpp Init, WorldScapeRoot_Thread.cpp) projects a
+	 * planar grid tangent to the sphere under its observer onto the sphere, so its terrain stays within ~89 deg of the
+	 * observer's direction. A kept observer the far camera has turned away from leaves the rest of the visible disc empty
+	 * (only the atmosphere/ocean shells). Moves it to the camera; true when it moved.
+	 */
+	bool NeedsFreezeLift(const AWorldScapeRoot* Root, const FVector& Camera, double& OutTurnDeg, double& OutAllowedDeg,
+		double& OutRadii)
+	{
+		const double LiftRadii = CVarFreezeLiftRadii.GetValueOnGameThread();
+		const double Radius = Root->PlanetScale;
+		if (!(LiftRadii > 0.0) || !(Radius > 0.0) || Camera.ContainsNaN() || Root->OverridedPlayerPosition.ContainsNaN())
+		{
+			return false;
+		}
+		const FVector Center = Root->GetActorLocation();
+		const FVector CameraFromCenter = Camera - Center;
+		const double CameraDistance = CameraFromCenter.Size();
+		if (!(CameraDistance > LiftRadii * Radius))
+		{
+			return false;
+		}
+		const FVector KeptFromCenter = Root->OverridedPlayerPosition - Center;
+		OutTurnDeg = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(
+			FVector::DotProduct(CameraFromCenter.GetSafeNormal(), KeptFromCenter.GetSafeNormal()), -1.0, 1.0)));
+		const double VisibleDeg = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(Radius / CameraDistance, 0.0, 1.0)));
+		OutAllowedDeg = FMath::Max(2.0, CVarFreezeLiftCoverDeg.GetValueOnGameThread() - VisibleDeg);
+		OutRadii = CameraDistance / Radius;
+		return OutTurnDeg > OutAllowedDeg;
+	}
+
+	bool LiftFrozenObserver(FPolicyState& State, AWorldScapeRoot* Root, const FVector& Camera)
+	{
+		double TurnDeg = 0.0, AllowedDeg = 0.0, Radii = 0.0;
+		if (Root->WorldScapeLodInGeneration.Num() > 0 || !NeedsFreezeLift(Root, Camera, TurnDeg, AllowedDeg, Radii))
+		{
+			return false;
+		}
+		// One line a second at most; the lifts in between are counted on it.
+		const double Now = FPlatformTime::Seconds();
+		if (Now - State.LiftLogSeconds >= 1.0)
+		{
+			UE_LOG(LogAPSWorldScapeStreaming, Log, TEXT("[APS.Surface] freeze lift: %s observer %.0f km above the ground moved to the camera %.1f radii out, view turned %.1f deg (allowed %.1f, %d earlier lifts unlogged)"),
+				*GetNameSafe(Root->GetOwner()), Root->PlayerDistanceToGround / 1.0e5, Radii, TurnDeg, AllowedDeg,
+				State.LiftsUnlogged);
+			State.LiftLogSeconds = Now;
+			State.LiftsUnlogged = 0;
+		}
+		else
+		{
+			++State.LiftsUnlogged;
+		}
+		Root->OverridedPlayerPosition = Camera;
+		return true;
+	}
+
+	/**
+	 * Rio 09.10 (0.6.4: RESO drawn in part while the player was at its moon): a frozen published sibling (FrozenVisible, tick
+	 * and generation off) keeps the observer it had when frozen. When the far camera has turned away from it (the same test),
+	 * the observer moves to the camera and UpdatePosition starts exactly one LOD wave; the root's tick and bFreezeGeneration stay
+	 * as they are, so no second wave follows, and PollFrozenLift publishes it through the same non-blocking fence as the standby
+	 * warmup. One sibling at a time, never beside a wave of the anchored root or live prepared-mesh reservations.
+	 */
+	void StartFrozenLift(FPolicyState& State, const TArray<APlanetaryBody*>& Bodies, const APlanetaryBody* ActiveBody,
+		const APlanetaryBody* WarmingBody, const APlanetarySurfaceGenerator* FlightReplacement, const AWorldScapeRoot* AnchoredRoot,
+		const FVector& Camera)
+	{
+		if (State.FrozenLiftRoot.IsValid() || !(CVarFreezeLiftRadii.GetValueOnGameThread() > 0.0) || Camera.ContainsNaN()
+			|| (IsValid(AnchoredRoot) && AnchoredRoot->WorldScapeLodInGeneration.Num() > 0)
+			|| WorldScapePreparedMesh::CurrentBytes() > 0)
+		{
+			return;
+		}
+		const double Now = FPlatformTime::Seconds();
+		const double MinSeconds = FMath::Max(0.0, static_cast<double>(CVarFreezeLiftMinSeconds.GetValueOnGameThread()));
+		for (const APlanetaryBody* Body : Bodies)
+		{
+			APlanetarySurfaceGenerator* Generator = IsValid(Body) ? Body->PlanetaryEnvironmentGenerator : nullptr;
+			AWorldScapeRoot* Root = IsValid(Generator) ? Generator->WorldScapeRootInstance : nullptr;
+			if (Body == ActiveBody || Body == WarmingBody || !IsValid(Root) || Root == AnchoredRoot || Generator == FlightReplacement
+				|| !Body->bWorldScapeSurfaceReady || Body->GetWorldScapeStreamingState() != EWorldScapeSurfaceState::FrozenVisible
+				|| Generator->IsSurfaceProfileApplyPending() || Generator->bPendingWorldScapeUnload || !Root->init
+				|| !Root->bGenerateWorldScape || !Root->bFreezeGeneration || Root->IsActorTickEnabled() || Root->IsHidden()
+				|| Root->WorldScapeLodInGeneration.Num() > 0)
+			{
+				continue;
+			}
+			if (const double* Last = State.FrozenLiftSeconds.Find(Root); Last && Now - *Last < MinSeconds)
+			{
+				continue;
+			}
+			double TurnDeg = 0.0, AllowedDeg = 0.0, Radii = 0.0;
+			if (!Root->bOverridePlayerPosition || !NeedsFreezeLift(Root, Camera, TurnDeg, AllowedDeg, Radii))
+			{
+				continue;
+			}
+			UE_LOG(LogAPSWorldScapeStreaming, Log, TEXT("[APS.Surface] frozen lift: %s observer %.0f km above the ground moved to the camera %.1f radii out, view turned %.1f deg (allowed %.1f), one LOD wave"),
+				*GetNameSafe(Body), Root->PlayerDistanceToGround / 1.0e5, Radii, TurnDeg, AllowedDeg);
+			Root->OverridedPlayerPosition = Camera;
+			Root->UpdatePosition();
+			State.FrozenLiftSeconds.Add(Root, Now);
+			State.FrozenLiftRoot = Root;
+			State.FrozenLiftStartSeconds = Now;
+			return;
+		}
+	}
+
+	/** Publishes the frozen sibling's one LOD wave once its workers are done (non-blocking, every frame). */
+	void PollFrozenLift(FPolicyState& State)
+	{
+		AWorldScapeRoot* Root = State.FrozenLiftRoot.Get();
+		if (!IsValid(Root))
+		{
+			State.FrozenLiftRoot.Reset();
+			return;
+		}
+		if (Root->WorldScapeLodInGeneration.Num() > 0)
+		{
+			Root->CheckForLodGeneration();
+		}
+		if (Root->WorldScapeLodInGeneration.Num() == 0)
+		{
+			UE_LOG(LogAPSWorldScapeStreaming, Log, TEXT("[APS.Surface] frozen lift published: %s, %.2f s after the move"),
+				*GetNameSafe(Root->GetOwner()), FPlatformTime::Seconds() - State.FrozenLiftStartSeconds);
+			State.FrozenLiftRoot.Reset();
+		}
+	}
+
 	/** True when the half-second pass or a rebind must leave Root's observer where the per-frame rules keep it. */
 	bool HoldsObserver(FPolicyState& State, AWorldScapeRoot* Root, const FVector& PawnLocation, const bool bAnchorChanged)
 	{
@@ -474,6 +631,8 @@ void UAPSPlanetEnvironmentStreamingSubsystem::Tick(float DeltaTime)
 	// on the half-second cadence lets a fast manual approach outrun the generated patch,
 	// while the visual chunk producer continues to target the pawn's previous location.
 	RefreshGameplayObserverPosition();
+	// Rio 09.10 (aps.Surface.FreezeLiftRadii): publishes a frozen sibling's one LOD wave once its workers are done.
+	APSSurfacePolicyPrivate::PollFrozenLift(APSSurfacePolicyPrivate::PolicyState(this));
 
 	UpdateElapsed += DeltaTime;
 	if (UpdateElapsed >= UpdateInterval)
@@ -667,6 +826,9 @@ void UAPSPlanetEnvironmentStreamingSubsystem::RefreshGameplayObserverPosition()
 		// Rio 06.10 (audit): not on the frame F10 closed, so the pawn replaces the map camera's position.
 		if (Policy.bLeaveFrozen && !bMapJustClosed && Policy.DeltaSeconds > 0.0f && Policy.MotionRoot.Get() == Root)
 		{
+			// Rio 09.10 (0.6.4: a moon left in cruise drawn in part): a kept observer the far camera has turned away from moves
+			// to the camera (aps.Surface.FreezeLiftRadii); the freeze then holds it there.
+			APSSurfacePolicyPrivate::LiftFrozenObserver(Policy, Root, VisualObserver);
 			return;
 		}
 		// Rio 06.10 (stutter on foot): near the ground the observer moves in aps.Surface.NearObserverStepCm steps, not every
@@ -1187,6 +1349,15 @@ void UAPSPlanetEnvironmentStreamingSubsystem::UpdateActiveEnvironment()
 		}
 	}
 	UpdateStandbyWarmup(WarmCandidate, Observer);
+	// Rio 09.10 (0.6.4: RESO drawn in part while the player was at its moon): a frozen published sibling the far camera has
+	// turned away from gets one LOD wave for the camera (aps.Surface.FreezeLiftRadii).
+	{
+		const APlayerController* LiftController = GetWorld() ? GetWorld()->GetFirstPlayerController() : nullptr;
+		const FVector LiftCamera = LiftController && IsValid(LiftController->PlayerCameraManager)
+			? LiftController->PlayerCameraManager->GetCameraLocation() : Observer->GetActorLocation();
+		APSSurfacePolicyPrivate::StartFrozenLift(APSSurfacePolicyPrivate::PolicyState(this), FamilyBodies, BestBody,
+			WarmingBody.Get(), FlightReplacement, AnchoredWorldScapeRoot.Get(), LiftCamera);
+	}
 	for (APlanetaryBody* Body : FamilyBodies)
 	{
 		if (Body->bWorldScapeSurfaceReady && IsValid(Body->PlanetaryEnvironmentGenerator)
