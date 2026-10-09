@@ -27,6 +27,7 @@
 #include "Framework/Application/SlateApplication.h"
 #include "GameFramework/PlayerController.h"
 #include "HAL/IConsoleManager.h"
+#include "HAL/PlatformTime.h"
 #include "Rendering/DrawElements.h"
 #include "Rendering/SlateRenderer.h"
 #include "Styling/AppStyle.h"
@@ -41,6 +42,19 @@
 namespace APSCivilizationMapPrivate
 {
 	using namespace APSChrome;
+
+	/** Rio 09.10 (playtest 0.6.4): the map opens the view of the planet or moon the pilot is this near to (altitude in its radii). */
+	TAutoConsoleVariable<float> CVarOpenAtPilotRadii(TEXT("aps.SystemMap.OpenAtPilotRadii"), 2.0f,
+		TEXT("The colony terminal's SYSTEM MAP opens the local view of the planet (a moon: its planet) the pilot is within this "
+			"many of its radii above. 0 = always open on the system view (before 09.10)."));
+
+	/** Rio 08.10 (playtest item 34): the wheel past the zoom limits switches the level both ways. */
+	TAutoConsoleVariable<int32> CVarWheelLevels(TEXT("aps.SystemMap.WheelLevels"), 1,
+		TEXT("1 = on the SYSTEM MAP the wheel past the closest zoom opens the picked (else hovered) planet's view and past the "
+			"widest zoom returns to the system; 0 = the wheel only zooms (before 09.10)."));
+
+	/** The wheel zoom's limits: 1 = the whole view. */
+	constexpr double MaxMapZoom = 80.0;
 
 	/**
 	 * Rio 06.10 ("the system map moves with the ship in flight; it is 2D, why?"): Refresh() keeps every object's place
@@ -213,9 +227,9 @@ namespace APSCivilizationMapPrivate
 	}
 
 	void Label(FSlateWindowElementList& Out, const int32 Layer, const FGeometry& Geometry, const FVector2D& Position,
-		const FText& Text, const FSlateFontInfo& FontInfo, const FLinearColor& Colour)
+		const FText& Text, const FSlateFontInfo& FontInfo, const FLinearColor& Colour, const float Width = 260.0f)
 	{
-		FSlateDrawElement::MakeText(Out, Layer, Geometry.ToPaintGeometry(FVector2f(260.0f, 18.0f),
+		FSlateDrawElement::MakeText(Out, Layer, Geometry.ToPaintGeometry(FVector2f(Width, 18.0f),
 			FSlateLayoutTransform(FVector2f(static_cast<float>(Position.X), static_cast<float>(Position.Y)))),
 			Text, FontInfo, ESlateDrawEffect::None, Colour);
 	}
@@ -546,6 +560,60 @@ void SAPSCivilizationMap::Focus(AActor* Planet)
 		RangeCm = Farthest * 1.08;
 		KneeCm = FMath::Max(Nearest * 0.35, 1.0e9);
 	}
+}
+
+void SAPSCivilizationMap::OpenAtPilot()
+{
+	using namespace APSCivilizationMapPrivate;
+	if (bOpenedAtPilot)
+	{
+		return;
+	}
+	bOpenedAtPilot = true;
+	Refresh();
+	// The planet or moon the pilot is nearest to, counted as his altitude in its radii (on the ground = 0).
+	const UWorld* LiveWorld = World.Get();
+	const APlayerController* Controller = LiveWorld ? LiveWorld->GetFirstPlayerController() : nullptr;
+	const APawn* Pilot = Controller ? Controller->GetPawn() : nullptr;
+	const double NearRadii = CVarOpenAtPilotRadii.GetValueOnGameThread();
+	const FObject* Near = nullptr;
+	double NearAltitudeCm = 0.0;
+	if (Pilot && NearRadii > 0.0)
+	{
+		const FVector At = Pilot->GetActorLocation();
+		double BestRatio = NearRadii;
+		for (const FObject& Object : Objects)
+		{
+			if ((Object.Kind != EKind::Planet && Object.Kind != EKind::Moon) || Object.RadiusCm <= 0.0)
+			{
+				continue;
+			}
+			const double AltitudeCm = FVector::Distance(At, LivePlace(Object)) - Object.RadiusCm;
+			const double Ratio = FMath::Max(AltitudeCm, 0.0) / Object.RadiusCm;
+			if (Ratio <= BestRatio)
+			{
+				BestRatio = Ratio;
+				Near = &Object;
+				NearAltitudeCm = AltitudeCm;
+			}
+		}
+	}
+	// A moon has no view of its own: its neighbourhood is drawn in its planet's.
+	AActor* Level = Near ? (Near->Kind == EKind::Planet ? Near->Actor.Get() : Near->Anchor.Get()) : nullptr;
+	if (Level)
+	{
+		Focus(Level);
+		// At a moon its neighbourhood is a few pixels of the planet's view: the moon is picked, so the wheel zooms toward
+		// it (unless something already is). At a planet nothing is picked: the wheel zooms about the cursor as before.
+		if (Near->Kind == EKind::Moon && SelectedId.IsEmpty())
+		{
+			SelectedId = Near->StableId;
+			OnSelectionChanged.ExecuteIfBound();
+		}
+	}
+	UE_LOG(LogTemp, Log, TEXT("[APS.SystemMap] open level=%s reason=%s near=%s altitude=%.1f km radii=%.2f"),
+		Level ? *ActorName(Level).ToString() : TEXT("system"), Level ? TEXT("near body") : TEXT("default"),
+		Near ? *Near->Name.ToString() : TEXT("none"), Near ? NearAltitudeCm / 100000.0 : 0.0, NearRadii);
 }
 
 const SAPSCivilizationMap::FObject* SAPSCivilizationMap::GetSelected() const
@@ -1004,10 +1072,17 @@ int32 SAPSCivilizationMap::OnPaint(const FPaintArgs& Args, const FGeometry& Allo
 				SmallFont, Muted());
 		}
 	}
-	Label(OutDrawElements, LayerId + 8, AllottedGeometry, FVector2D(Size.X - 250.0, Size.Y - 24.0),
-		Planet ? LOCTEXT("LocalScale", "Distances logarithmic  /  SYSTEM VIEW returns")
-			: LOCTEXT("SystemScale", "Distances logarithmic  /  double-click a planet"),
-		SmallFont, Muted());
+	// Rio 09.10: the note names the wheel's level switch too, measured and set from the right edge (the fixed 260 px box
+	// cut "SYSTEM VIEW returns" short).
+	const bool bWheelLevels = CVarWheelLevels.GetValueOnGameThread() != 0;
+	const FText ScaleNote = Planet
+		? (bWheelLevels ? LOCTEXT("LocalScaleWheel", "Distances logarithmic  /  wheel out or BACK TO THE SYSTEM returns")
+			: LOCTEXT("LocalScale", "Distances logarithmic  /  SYSTEM VIEW returns"))
+		: (bWheelLevels ? LOCTEXT("SystemScaleWheel", "Distances logarithmic  /  double-click or wheel into a planet")
+			: LOCTEXT("SystemScale", "Distances logarithmic  /  double-click a planet"));
+	const double ScaleNoteWidth = FontMeasure->Measure(ScaleNote, SmallFont).X + 4.0;
+	Label(OutDrawElements, LayerId + 8, AllottedGeometry, FVector2D(Size.X - ScaleNoteWidth - 12.0, Size.Y - 24.0),
+		ScaleNote, SmallFont, Muted(), static_cast<float>(ScaleNoteWidth));
 	return LayerId + 8;
 }
 
@@ -1170,7 +1245,40 @@ FReply SAPSCivilizationMap::OnMouseWheel(const FGeometry& MyGeometry, const FPoi
 		}
 	}
 	const double Previous = MapZoom;
-	MapZoom = FMath::Clamp(MapZoom * FMath::Pow(1.25, MouseEvent.GetWheelDelta()), 1.0, 80.0);
+	const double WheelDelta = MouseEvent.GetWheelDelta();
+	// Rio 08.10 (item 34): past a zoom limit the wheel changes the level. The notch that reaches the limit only zooms; one
+	// more notch the same way (smooth wheels: their parts summed) switches, and for a moment after a switch the wheel
+	// cannot switch again, so a fast spin does not flip the view back and forth.
+	const bool bInward = WheelDelta > 0.0;
+	const bool bAtLimit = WheelDelta != 0.0 && (bInward ? Previous >= APSCivilizationMapPrivate::MaxMapZoom - 1.0e-4
+		: Previous <= 1.0001);
+	if (APSCivilizationMapPrivate::CVarWheelLevels.GetValueOnGameThread() != 0 && bAtLimit)
+	{
+		if (bLimitPushInward != bInward)
+		{
+			LimitPush = 0.0;
+			bLimitPushInward = bInward;
+		}
+		const double Now = FPlatformTime::Seconds();
+		if (Now - LastLevelSwitchSeconds > 0.4)
+		{
+			LimitPush += FMath::Abs(WheelDelta);
+		}
+		if (LimitPush >= 0.999)
+		{
+			LimitPush = 0.0;
+			if (SwitchLevelByWheel(bInward, MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition()), Size))
+			{
+				LastLevelSwitchSeconds = Now;
+				return FReply::Handled();
+			}
+		}
+	}
+	else
+	{
+		LimitPush = 0.0;
+	}
+	MapZoom = FMath::Clamp(MapZoom * FMath::Pow(1.25, WheelDelta), 1.0, APSCivilizationMapPrivate::MaxMapZoom);
 	if (MapZoom <= 1.0001)
 	{
 		MapOffset = FVector2D::ZeroVector;
@@ -1185,6 +1293,75 @@ FReply SAPSCivilizationMap::OnMouseWheel(const FGeometry& MyGeometry, const FPoi
 	}
 	MapOffset = CentreNew - ScreenCentre;
 	return FReply::Handled();
+}
+
+bool SAPSCivilizationMap::SwitchLevelByWheel(const bool bInward, const FVector2D& CursorAt, const FVector2D& Size)
+{
+	using namespace APSCivilizationMapPrivate;
+	if (!bInward)
+	{
+		// Out of a planet's view: back to the system, as BACK TO THE SYSTEM does (the pick is kept: on the fleet map a new
+		// pick would also retarget the order).
+		const AActor* From = FocusPlanet.Get();
+		if (!From)
+		{
+			return false;
+		}
+		Focus(nullptr);
+		UE_LOG(LogTemp, Log, TEXT("[APS.SystemMap] wheel level=system from=%s"), *ActorName(From).ToString());
+		return true;
+	}
+	if (FocusPlanet.IsValid())
+	{
+		// A planet's view is the closest level (a moon's neighbourhood is drawn in its planet's view).
+		return false;
+	}
+	// The planet the zoom went to: the picked object's when it is drawn (the zoom follows it), else the one by the cursor.
+	AActor* Target = nullptr;
+	bool bSelectedDrawn = false;
+	for (int32 Index = 0; Index < Objects.Num(); ++Index)
+	{
+		// Drawn as the wheel's zoom takes it (OnMouseWheel): on the map or just off it.
+		if (!SelectedId.IsEmpty() && Objects[Index].StableId == SelectedId && PaintedPositions.IsValidIndex(Index)
+			&& PaintedPositions[Index].X > -1000.0 && PaintedPositions[Index].X < Size.X + 1000.0)
+		{
+			bSelectedDrawn = true;
+			// A planet's anchor is the planet itself; a moon's, station's or ship's the planet whose view holds it.
+			Target = Objects[Index].Anchor.Get();
+			break;
+		}
+	}
+	if (!bSelectedDrawn)
+	{
+		double Best = 48.0;
+		for (int32 Index = 0; Index < Objects.Num() && Index < PaintedPositions.Num(); ++Index)
+		{
+			if (Objects[Index].Kind == EKind::Planet && IsPainted(PaintedPositions[Index]))
+			{
+				const double Distance = FVector2D::Distance(PaintedPositions[Index], CursorAt);
+				if (Distance < Best)
+				{
+					Best = Distance;
+					Target = Objects[Index].Actor.Get();
+				}
+			}
+		}
+	}
+	if (!Target || !Target->IsA<APlanet>())
+	{
+		return false;
+	}
+	Focus(Target);
+	UE_LOG(LogTemp, Log, TEXT("[APS.SystemMap] wheel level=%s from=system"), *ActorName(Target).ToString());
+	// The picked object stays picked when the new view shows it (the pilot, a moon); otherwise the planet is picked, as
+	// the double click does.
+	const FObject* Selected = GetSelected();
+	if (!Selected || !IsShown(*Selected))
+	{
+		SelectedId = Target->GetPathName();
+		OnSelectionChanged.ExecuteIfBound();
+	}
+	return true;
 }
 
 FReply SAPSCivilizationMap::OnMouseButtonDoubleClick(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)

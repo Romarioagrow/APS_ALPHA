@@ -61,6 +61,12 @@ public:
 	void SelectById(const FString& StableId);
 	/** Opens the local view of this planet; nullptr returns to the system view. */
 	void Focus(AActor* Planet);
+	/**
+	 * Rio 09.10 (playtest 0.6.4): the system map opens where the player is: the local view of the planet he stands on or
+	 * orbits (a moon's planet for a moon, whose neighbourhood that view holds), else the system. Only the first call per
+	 * map decides (the terminal makes a new map each time it opens), so a view picked in the same session is kept.
+	 */
+	void OpenAtPilot();
 	bool IsLocalView() const { return FocusPlanet.IsValid(); }
 	FText GetViewTitle() const;
 	void SetCourseTargetId(const FString& StableId) { CourseTargetId = StableId; }
@@ -88,6 +94,11 @@ private:
 	FVector2D Project(const FVector& WorldLocation, const FVector2D& Centre, double PixelRadius) const;
 	double ProjectRadius(double DistanceCm, double PixelRadius) const;
 	int32 HitTest(const FVector2D& LocalPosition) const;
+	/**
+	 * Rio 08.10 (playtest item 34): the wheel past a zoom limit changes the level, as the buttons do: out of a planet's
+	 * view back to the system, into the picked (else the hovered) planet's view. Returns whether the view changed.
+	 */
+	bool SwitchLevelByWheel(bool bInward, const FVector2D& CursorAt, const FVector2D& Size);
 
 	TWeakObjectPtr<UWorld> World;
 	FSimpleDelegate OnSelectionChanged;
@@ -115,4 +126,10 @@ private:
 	bool bPanning{false};
 	FVector2D PressPosition{FVector2D::ZeroVector};
 	FVector2D PressOffset{FVector2D::ZeroVector};
+	/** OpenAtPilot ran for this map. */
+	bool bOpenedAtPilot{false};
+	/** Wheel turned past a zoom limit (notches, one way), and when the wheel last changed the level (hysteresis). */
+	double LimitPush{0.0};
+	bool bLimitPushInward{false};
+	double LastLevelSwitchSeconds{-1.0e9};
 };

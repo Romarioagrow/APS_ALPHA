@@ -2880,6 +2880,11 @@ FReply SAPSColonyTerminal::SelectTab(const ETab Tab)
 	if (Tab == ETab::Map)
 	{
 		MapListSignature.Reset();
+		// Rio 09.10: the first time in this terminal the map opens at the player's world (his planet's view near one).
+		if (Map.IsValid())
+		{
+			Map->OpenAtPilot();
+		}
 		RefreshMap();
 	}
 	if (Tab == ETab::Fleet)
