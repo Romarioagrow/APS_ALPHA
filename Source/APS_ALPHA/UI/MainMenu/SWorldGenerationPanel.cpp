@@ -781,9 +781,36 @@ namespace APSGenerationUI
 		}
 	}
 
+	/** Rio 09.10 (playtest 26): "3 / 8", where a `< >` selector's value stands in its list (INDEX_NONE: not in it). */
+	FText SelectorPosition(const int32 Index, const int32 Count)
+	{
+		if (Count <= 0)
+		{
+			return FText::GetEmpty();
+		}
+		return FText::FromString(Index == INDEX_NONE ? FString::Printf(TEXT("- / %d"), Count)
+			: FString::Printf(TEXT("%d / %d"), Index + 1, Count));
+	}
+
+	/** Rio 09.10 (playtest 26: "carefully and unobtrusively"): a selector's label with its position at the right end of the
+	 * same line, in the label's quiet colour and the hint size, so the control itself keeps its look. */
+	TSharedRef<SWidget> SelectorLabel(const FText& Label, TFunction<FText()> Position)
+	{
+		return SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Bottom)
+			[
+				SNew(STextBlock).Text(Label).Font(ReadableFont("Bold", 11)).ColorAndOpacity(SecondaryText)
+			]
+			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Bottom).Padding(8.0f, 0.0f, 3.0f, 0.0f)
+			[
+				SNew(STextBlock).Text_Lambda(MoveTemp(Position)).Font(ReadableFont("Regular", 9)).ColorAndOpacity(SecondaryText)
+			];
+	}
+
 	template <typename TTextGetter, typename TStepper>
 	TSharedRef<SWidget> ChoiceRow(const FText& Label, TWeakObjectPtr<UWorldGenerationViewModel> ViewModel,
-		TTextGetter TextGetter, TStepper Stepper)
+		TTextGetter TextGetter, TStepper Stepper,
+		TFunction<FIntPoint(const UWorldGenerationViewModel*)> PositionGetter = {})
 	{
 		const auto ValueText = [ViewModel, TextGetter]()
 		{
@@ -791,11 +818,22 @@ namespace APSGenerationUI
 			return VM && VM->GeneratedWorld ? TextGetter(VM->GeneratedWorld)
 				: FText::FromString(TEXT("--"));
 		};
+		// Rio 09.10 (playtest 26): PositionGetter gives (index, count) of the current value; none keeps the plain label.
+		const auto PositionText = [ViewModel, PositionGetter]()
+		{
+			const UWorldGenerationViewModel* VM = ViewModel.Get();
+			if (!PositionGetter || !VM || !VM->GeneratedWorld)
+			{
+				return FText::GetEmpty();
+			}
+			const FIntPoint Position = PositionGetter(VM);
+			return SelectorPosition(Position.X, Position.Y);
+		};
 
 		return SNew(SVerticalBox)
 			+ SVerticalBox::Slot().AutoHeight()
 			[
-				SNew(STextBlock).Text(Label).Font(ReadableFont("Bold", 11)).ColorAndOpacity(SecondaryText)
+				SelectorLabel(Label, PositionText)
 			]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 3.0f, 0.0f, 8.0f)
 			[
@@ -892,11 +930,23 @@ namespace APSGenerationUI
 			}
 			return FText::FromString(TEXT("--"));
 		};
+		// Rio 09.10 (playtest 26): "N / M" over the same list the arrows step through. A fixed list is resolved once here;
+		// a model-dependent one (CLASS per TYPE) each time it is drawn.
+		const TArray<int64> FixedValues = ValuesGetter ? TArray<int64>() : GetSelectableEnumValues(Enum);
+		const auto PositionText = [ViewModel, Getter, ValuesGetter, FixedValues]()
+		{
+			if (const UWorldGenerationViewModel* VM = ViewModel.Get(); VM && VM->GeneratedWorld)
+			{
+				const TArray<int64> Values = ValuesGetter ? ValuesGetter(VM->GeneratedWorld) : FixedValues;
+				return SelectorPosition(Values.IndexOfByKey(static_cast<int64>(Getter(VM->GeneratedWorld))), Values.Num());
+			}
+			return FText::GetEmpty();
+		};
 
 		return SNew(SVerticalBox)
 			+ SVerticalBox::Slot().AutoHeight()
 			[
-				SNew(STextBlock).Text(Label).Font(ReadableFont("Bold", 11)).ColorAndOpacity(SecondaryText)
+				SelectorLabel(Label, PositionText)
 			]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 3.0f, 0.0f, 8.0f)
 			[
@@ -1008,9 +1058,12 @@ namespace APSGenerationUI
 					SAssignNew(Slider, SAPSGenerationRangeSlider)
 					.MinValue(bDynamicRange ? 0.0f : static_cast<float>(Min))
 					.MaxValue(bDynamicRange ? 1.0f : static_cast<float>(Max))
+					// Rio 09.10 (A23): in double, so an int32 row with a dynamic maximum (HOME START PLANET INDEX) does not
+					// divide integers to a zero step; double rows compute exactly as before.
 					.StepSize_Lambda([bDynamicRange, ResolveMaximum, Min, Delta]()
 					{
-						return static_cast<float>(bDynamicRange ? Delta / (ResolveMaximum() - Min) : Delta);
+						return static_cast<float>(bDynamicRange ? static_cast<double>(Delta)
+							/ FMath::Max(static_cast<double>(ResolveMaximum() - Min), UE_DOUBLE_SMALL_NUMBER) : static_cast<double>(Delta));
 					})
 					.SliderBarColor(FSlateColor(CyanDim))
 					.SliderHandleColor(FSlateColor(Cyan))
@@ -1019,7 +1072,8 @@ namespace APSGenerationUI
 						if (const UWorldGenerationViewModel* VM = ViewModel.Get(); VM && VM->GeneratedWorld)
 						{
 							const TValue Value = Getter(VM->GeneratedWorld);
-							return static_cast<float>(bDynamicRange ? (Value - Min) / (ResolveMaximum() - Min) : Value);
+							return static_cast<float>(bDynamicRange ? static_cast<double>(Value - Min)
+								/ FMath::Max(static_cast<double>(ResolveMaximum() - Min), UE_DOUBLE_SMALL_NUMBER) : static_cast<double>(Value));
 						}
 						return 0.0f;
 					})
@@ -1147,6 +1201,89 @@ namespace APSGenerationUI
 							return VM && VM->GeneratedWorld ? static_cast<int32>(Getter(VM->GeneratedWorld)) : Min;
 						})
 						.OnValueCommitted_Lambda([ViewModel, Setter](const int32 Value, ETextCommit::Type)
+						{
+							if (UWorldGenerationViewModel* VM = ViewModel.Get()) Setter(VM, Value);
+						})
+					]
+				]
+				]
+			];
+	}
+
+	/**
+	 * Rio 08.10 (playtest 17: "STAR DENSITY can only be raised"): the linear 0.01..1000 slider kept the usual 7..14 in its
+	 * first percent, so a drag could only raise it. A double on a logarithmic slider that lands on three significant
+	 * digits; the spin box keeps exact entry like NumberRow. The model value and its range are unchanged.
+	 */
+	template <typename TGetter, typename TSetter>
+	TSharedRef<SWidget> LogDoubleRow(const FText& Label, const double Min, const double Max, const double Delta,
+		TWeakObjectPtr<UWorldGenerationViewModel> ViewModel, TGetter Getter, TSetter Setter)
+	{
+		const double LogMin = FMath::Loge(FMath::Max(Min, 1.0e-6));
+		const double LogSpan = FMath::Max(FMath::Loge(FMath::Max(Max, Min * 1.0001)) - LogMin, 1.0e-6);
+		return SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight()
+			[
+				SNew(STextBlock).Text(Label).Font(ReadableFont("Bold", 11)).ColorAndOpacity(SecondaryText)
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 3.0f, 0.0f, 9.0f)
+			[
+				SNew(SBorder).BorderImage(&ControlBrush).Padding(2.0f)
+				[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center).Padding(7.0f, 0.0f)
+				[
+					SNew(SBox).HeightOverride(FAPSUIStyle::Metrics().SliderHitHeight)
+					.VAlign(VAlign_Fill)
+					[
+					SNew(SAPSGenerationRangeSlider)
+					.MinValue(0.0f).MaxValue(1.0f).StepSize(0.001f)
+					.SliderBarColor(FSlateColor(CyanDim))
+					.SliderHandleColor(FSlateColor(Cyan))
+					.Value_Lambda([ViewModel, Getter, Min, LogMin, LogSpan]()
+					{
+						const UWorldGenerationViewModel* VM = ViewModel.Get();
+						const double Value = VM && VM->GeneratedWorld ? static_cast<double>(Getter(VM->GeneratedWorld)) : Min;
+						return static_cast<float>(FMath::Clamp(
+							(FMath::Loge(FMath::Max(Value, Min)) - LogMin) / LogSpan, 0.0, 1.0));
+					})
+					.OnValueChanged_Lambda([ViewModel, Setter, Min, Max, LogMin, LogSpan](const float Position)
+					{
+						if (UWorldGenerationViewModel* VM = ViewModel.Get())
+						{
+							const double Raw = FMath::Exp(LogMin
+								+ FMath::Clamp(static_cast<double>(Position), 0.0, 1.0) * LogSpan);
+							const double Step = FMath::Pow(10.0, FMath::FloorToDouble(FMath::LogX(10.0, Raw)) - 2.0);
+							Setter(VM, FMath::Clamp(FMath::RoundToDouble(Raw / Step) * Step, Min, Max));
+						}
+					})
+					]
+				]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(7.0f, 0.0f, 0.0f, 0.0f)
+				[
+					SNew(SBox).WidthOverride(104.0f)
+					[
+						SNew(SSpinBox<double>)
+						.MinValue(Min).MaxValue(Max)
+						.Delta(Delta).EnableSlider(false).MinDesiredWidth(96.0f)
+						.Justification(ETextJustify::Center)
+						.MaxFractionalDigits_Lambda([ViewModel, Getter]()
+						{
+							const UWorldGenerationViewModel* VM = ViewModel.Get();
+							const double Magnitude = VM && VM->GeneratedWorld
+								? FMath::Abs(static_cast<double>(Getter(VM->GeneratedWorld))) : 0.0;
+							return TOptional<int32>(Magnitude >= 1000.0 ? 0 : Magnitude >= 10.0 ? 1 : 2);
+						})
+						.Value_Lambda([ViewModel, Getter, Min]()
+						{
+							const UWorldGenerationViewModel* VM = ViewModel.Get();
+							return VM && VM->GeneratedWorld ? static_cast<double>(Getter(VM->GeneratedWorld)) : Min;
+						})
+						.OnValueChanged_Lambda([ViewModel, Setter](const double Value)
+						{
+							if (UWorldGenerationViewModel* VM = ViewModel.Get()) Setter(VM, Value);
+						})
+						.OnValueCommitted_Lambda([ViewModel, Setter](const double Value, ETextCommit::Type)
 						{
 							if (UWorldGenerationViewModel* VM = ViewModel.Get()) Setter(VM, Value);
 						})
@@ -2281,6 +2418,19 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 5.0f)[BoolRow(LOCTEXT("StartWithHomePlanet", "START WITH HOME PLANET"), [](const UGeneratedWorld* W){return W->bStartWithHomePlanet;}, [](UGeneratedWorld* W, bool V){W->bStartWithHomePlanet=V;})]
 	];
 
+	// Rio 08.10 (playtest 11/16/17: "and preferably a luminosity modifier, to pick it by hand: obviously strong overexposure"):
+	// STAR BRIGHTNESS on GALAXY and CLUSTER, one value of the menu session (UWorldGenerationViewModel::SetPreviewStarBrightness).
+	const auto StarBrightnessRows = [VM]()
+	{
+		return SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight()[NumberRow<double>(LOCTEXT("StarBrightness", "STAR BRIGHTNESS"), 0.1, 2.0, 0.05, VM,
+				[VM](const UGeneratedWorld*){ return VM.IsValid() ? VM->GetPreviewStarBrightness() : 1.0; },
+				[](UWorldGenerationViewModel* V, double X){ V->SetPreviewStarBrightness(X); })]
+			+ SVerticalBox::Slot().AutoHeight()
+			[SNew(STextBlock).Text(LOCTEXT("StarBrightnessHint", "A VIEWING AID FOR THIS MENU: THE WORLD AND ITS SAVE DO NOT CHANGE. BELOW 1 THE STARS AND THE GLOW DIM; ABOVE 1 ONLY THE GPU STARS AND THE GLOW BRIGHTEN."))
+			.AutoWrapText(true).Font(ReadableFont("Regular", 9)).ColorAndOpacity(SecondaryText)];
+	};
+
 	const TSharedRef<SWidget> GalaxyControls = SNew(SScrollBox) + SScrollBox::Slot()
 	[
 		SNew(SVerticalBox)
@@ -2303,11 +2453,23 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 		+ SVerticalBox::Slot().AutoHeight()[NumberRow<int32>(LOCTEXT("GalaxySize", "SIZE"), APSGalaxyMorphology::MinGalaxySize, 100000, 1, VM, [](const UGeneratedWorld* W){ return W->GalaxySize; }, [](UWorldGenerationViewModel* V, int32 X){ V->SetGalaxySize(X); })]
 		// Rio 03.10: STARS (placed, log slider) replaces MODELED STAR COUNT; the catalogue stays hidden. The ceiling is the
 		// current renderer's (APSGalaxyMorphology::MaxPlacedStars) until the GPU star layer lands.
-		+ SVerticalBox::Slot().AutoHeight()[LogNumberRow(LOCTEXT("PlacedStars", "STARS"), APSGalaxyMorphology::PreviewReferenceBudget, APSGalaxyMorphology::MaxPlacedStars, VM, [](const UGeneratedWorld* W){ return W->GalaxyPlacedStarCount > 0 ? W->GalaxyPlacedStarCount : APSGalaxyMorphology::PreviewReferenceBudget; }, [](UWorldGenerationViewModel* V, int32 X){ V->SetGalaxyPlacedStarCount(X); })]
-		+ SVerticalBox::Slot().AutoHeight()[NumberRow<double>(LOCTEXT("Density", "STAR DENSITY"), 0.01, 1000.0, 0.1, VM, [](const UGeneratedWorld* W){ return W->GalaxyStarDensity; }, [](UWorldGenerationViewModel* V, double X){ V->SetGalaxyStarDensity(X); })]
+		// Rio 09.10 (playtest 17: "STARS does not react"): the GPU layer drew 8 million points after the placed stars, so a
+		// placed count of 1,800..50,000 changed nothing visible. STARS is now every star drawn: placed + GPU points, up to
+		// the session's GPU count (UWorldGenerationViewModel::SetGalaxyDrawnStars).
+		+ SVerticalBox::Slot().AutoHeight()[LogNumberRow(LOCTEXT("PlacedStars", "STARS"), APSGalaxyMorphology::PreviewReferenceBudget,
+			VM.IsValid() ? VM->GetGalaxyDrawnStarCeiling() : APSGalaxyMorphology::MaxPlacedStars, VM,
+			[VM](const UGeneratedWorld* W)
+			{
+				return VM.IsValid() ? static_cast<int32>(FMath::Min<int64>(VM->GetGalaxyDrawnStarTarget(), MAX_int32))
+					: (W->GalaxyPlacedStarCount > 0 ? W->GalaxyPlacedStarCount : APSGalaxyMorphology::PreviewReferenceBudget);
+			},
+			[](UWorldGenerationViewModel* V, int32 X){ V->SetGalaxyDrawnStars(X); })]
+		// Rio 08.10 (playtest 17): the same 0.01..1000 on a logarithmic slider, so it can be lowered as well as raised.
+		+ SVerticalBox::Slot().AutoHeight()[LogDoubleRow(LOCTEXT("Density", "STAR DENSITY"), 0.01, 1000.0, 0.1, VM, [](const UGeneratedWorld* W){ return W->GalaxyStarDensity; }, [](UWorldGenerationViewModel* V, double X){ V->SetGalaxyStarDensity(X); })]
 		// Rio 03.10: the galaxy's star sizes and spectral classes, the same presets as the cluster's rows.
 		+ SVerticalBox::Slot().AutoHeight()[EnumRow<EStarClusterPopulation>(LOCTEXT("GalaxyPopulation", "POPULATION"), VM, [](const UGeneratedWorld* W){ return W->GalaxyStarPopulation; }, {}, [](UWorldGenerationViewModel* V, int32 X){ V->SetGalaxyStarPopulation(X); })]
 		+ SVerticalBox::Slot().AutoHeight()[EnumRow<EStarClusterComposition>(LOCTEXT("GalaxyComposition", "COMPOSITION"), VM, [](const UGeneratedWorld* W){ return W->GalaxyStarComposition; }, {}, [](UWorldGenerationViewModel* V, int32 X){ V->SetGalaxyStarComposition(X); })]
+		+ SVerticalBox::Slot().AutoHeight()[StarBrightnessRows()]
 	];
 
 	const TSharedRef<SWidget> ClusterControls = SNew(SScrollBox) + SScrollBox::Slot()
@@ -2318,6 +2480,13 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 		+ SVerticalBox::Slot().AutoHeight()[EnumRow<EStarClusterType>(LOCTEXT("ClusterType", "FORMATION / PRESET"), VM, [](const UGeneratedWorld* W){ return W->StarClusterType; })]
 		+ SVerticalBox::Slot().AutoHeight()[EnumRow<EStarClusterPopulation>(LOCTEXT("Population", "POPULATION"), VM, [](const UGeneratedWorld* W){ return W->StarClusterPopulation; })]
 		+ SVerticalBox::Slot().AutoHeight()[EnumRow<EStarClusterComposition>(LOCTEXT("Composition", "COMPOSITION"), VM, [](const UGeneratedWorld* W){ return W->StarClusterComposition; })]
+		// Rio 08.10 (playtest 29): DENSITY, 1 = the cluster as generated; below 1 its systems move apart from the centre, above
+		// 1 they close in, the formation keeping its shape (UGeneratedWorld::StarClusterDensity).
+		+ SVerticalBox::Slot().AutoHeight()[LogDoubleRow(LOCTEXT("ClusterDensity", "DENSITY"), 0.05, 20.0, 0.01, VM, [](const UGeneratedWorld* W){ return W->StarClusterDensity; }, [](UWorldGenerationViewModel* V, double X){ V->SetStarClusterDensity(X); })]
+		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 8.0f)
+		[SNew(STextBlock).Text(LOCTEXT("ClusterDensityHint", "1 = AS GENERATED. BELOW 1 THE SYSTEMS MOVE APART FROM THE CENTRE (0.125 = TWICE THE DISTANCES), ABOVE 1 THEY CLOSE IN; THE SHAPE STAYS. SAVED WITH THE WORLD."))
+		.AutoWrapText(true).Font(ReadableFont("Regular", 9)).ColorAndOpacity(SecondaryText)]
+		+ SVerticalBox::Slot().AutoHeight()[StarBrightnessRows()]
 	];
 
 	const TSharedRef<SWidget> SystemControls = SNew(SScrollBox) + SScrollBox::Slot()
@@ -2362,7 +2531,10 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 		+ SVerticalBox::Slot().AutoHeight()
 		[
 			SNew(SBox).IsEnabled_Lambda([VM](){ return VM.IsValid() && VM->GetHomeStartPlanetCount() > 0; })
-			[NumberRow<int32>(LOCTEXT("HomeStartIndex", "HOME START PLANET INDEX"), 1, 120, 1, VM, [VM](const UGeneratedWorld* W){ return FMath::Clamp(W->StartPlanetIndex, 1, FMath::Max(1, VM.IsValid() ? VM->GetHomeStartPlanetCount() : W->PlanetsAmount)); }, [](UWorldGenerationViewModel* V, int32 X){ V->SetStartPlanetIndex(X); })]
+			// Rio 09.10 (A23): the slider spans this family (1..planets), not 1..120 where every value past the last planet
+			// meant the last one.
+			[NumberRow<int32>(LOCTEXT("HomeStartIndex", "HOME START PLANET INDEX"), 1, 120, 1, VM, [VM](const UGeneratedWorld* W){ return FMath::Clamp(W->StartPlanetIndex, 1, FMath::Max(1, VM.IsValid() ? VM->GetHomeStartPlanetCount() : W->PlanetsAmount)); }, [](UWorldGenerationViewModel* V, int32 X){ V->SetStartPlanetIndex(X); },
+				nullptr, [VM](const UGeneratedWorld* W){ return FMath::Max(1, VM.IsValid() ? VM->GetHomeStartPlanetCount() : W->PlanetsAmount); })]
 		]
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)
 		[
@@ -2422,6 +2594,14 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 					{
 						V->SetEnumValue(StaticEnum<EPlanetType>(), static_cast<int32>(Presets[0]));
 					}
+				},
+				// Rio 09.10 (playtest 26): the family among the ones the arrows offer (a moon's stop before the giants).
+				[](const UWorldGenerationViewModel* V)
+				{
+					const int32 FamilyCount = V->IsSelectedPreviewBodyMoon()
+						? GasGiantSurfaceFamilyIndex : GasGiantSurfaceFamilyIndex + 1;
+					const int32 Current = GetSurfaceFamilyIndex(V->GeneratedWorld->PlanetType);
+					return FIntPoint(Current >= 0 && Current < FamilyCount ? Current : INDEX_NONE, FamilyCount);
 				})
 		]
 		+ SVerticalBox::Slot().AutoHeight()
@@ -2449,6 +2629,17 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 					const int32 Base = Current == INDEX_NONE ? (Direction < 0 ? 0 : -1) : Current;
 					const int32 Next = (Base + (Direction < 0 ? -1 : 1) + Presets.Num()) % Presets.Num();
 					V->SetEnumValue(StaticEnum<EPlanetType>(), static_cast<int32>(Presets[Next]));
+				},
+				// Rio 09.10 (playtest 26): the preset within its family, as the arrows step it.
+				[](const UWorldGenerationViewModel* V)
+				{
+					int32 Family = GetSurfaceFamilyIndex(V->GeneratedWorld->PlanetType);
+					if (Family == GasGiantSurfaceFamilyIndex && V->IsSelectedPreviewBodyMoon())
+					{
+						Family = static_cast<int32>(EAPSPlanetSurfaceArchetype::Rocky);
+					}
+					const TArray<EPlanetType> Presets = GetSurfacePresetsForFamily(Family);
+					return FIntPoint(Presets.IndexOfByKey(V->GeneratedWorld->PlanetType), Presets.Num());
 				})
 		]
 		+ SVerticalBox::Slot().AutoHeight()

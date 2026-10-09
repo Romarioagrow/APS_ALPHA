@@ -143,6 +143,9 @@ void UAPSAudioSubsystem::BankLoaded()
 	// Queue the first music chunk before the first menu/gameplay playback request.
 	if (Bank->MenuMusic) UGameplayStatics::PrimeSound(Bank->MenuMusic);
 	if (Bank->ExplorationMusic) UGameplayStatics::PrimeSound(Bank->ExplorationMusic);
+	// APS DEV 08.10 (same crash, independent diagnosis): keep the bank, its mix and classes alive for the whole game;
+	// the audio device's override map holds raw pointers to them across world changes.
+	if (!Bank->IsRooted()) Bank->AddToRoot();
 	UGameplayStatics::PushSoundMixModifier(this, Bank->Mix);
 	bMixPushed = true;
 	ApplyMix();
@@ -167,6 +170,7 @@ void UAPSAudioSubsystem::ApplyMix()
 	for (int32 Index = 0; Index < UE_ARRAY_COUNT(Classes); ++Index)
 	{
 		const float Level = Index == 0 ? Master : Settings->Get(static_cast<EAPSAudioChannel>(Index)) * Master;
+		if (!Classes[Index]) { UE_LOG(LogAPSAudio, Warning, TEXT("Audio bank: sound class %d unset; override skipped"), Index); continue; }
 		UGameplayStatics::SetSoundMixClassOverride(this, Bank->Mix, Classes[Index],
 			Level, 1.f, 0.1f, false);
 	}
@@ -493,7 +497,18 @@ void UAPSAudioSubsystem::Deinitialize()
 	if (VehicleSoundsHandle) { VehicleSoundsHandle->CancelHandle(); VehicleSoundsHandle.Reset(); }
 	StopAll();
 	VehicleSounds.Reset();
-	if (Bank && bMixPushed) UGameplayStatics::PopSoundMixModifier(this, Bank->Mix);
+	if (Bank && bMixPushed)
+	{
+		// Planets-v2 08.10 (crash in both 0.6.3 builds on entering L_WorldGeneration): the class overrides are keyed by
+		// raw class pointers inside the audio device and outlive this world subsystem, its bank and its classes; the
+		// next world's ApplyMix adds new entries beside the stale ones and FAudioDevice::ApplyClassAdjusters reads freed
+		// memory (FName::ToString, audio worker). Clear every override before the pop.
+		for (USoundClass* Class : {Bank->MasterClass.Get(), Bank->MusicClass.Get(), Bank->AmbienceClass.Get(), Bank->EffectsClass.Get(), Bank->UIClass.Get()})
+		{
+			if (Class) UGameplayStatics::ClearSoundMixClassOverride(this, Bank->Mix, Class, 0.f);
+		}
+		UGameplayStatics::PopSoundMixModifier(this, Bank->Mix);
+	}
 	bMixPushed = false;
 	Bank = nullptr;
 	Super::Deinitialize();

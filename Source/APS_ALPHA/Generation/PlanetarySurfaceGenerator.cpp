@@ -13,6 +13,7 @@
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "HAL/IConsoleManager.h"
+#include "UObject/UObjectIterator.h"
 
 // Rio 06.10 (audit: the moon tail master swap had no switch back to the 61532ed6 masters).
 static TAutoConsoleVariable<int32> CVarMoonTailMaster(
@@ -21,6 +22,43 @@ static TAutoConsoleVariable<int32> CVarMoonTailMaster(
 	TEXT("AtmoScape master for the rest (as in 61532ed6). Read when a body's atmosphere is (re)initialised: set it before ")
 	TEXT("generation (-ExecCmds)."),
 	ECVF_Default);
+
+// Rio 09.10 (4K profile at the HQ: the gameplay atmosphere shell is 18 ms of a 46 ms native-4K frame, 5 ms at 1080p). Its
+// raymarch costs CameraSamples x LightSamples per pixel; AAtmoScape's class defaults are 32 x 16 (the menu preview caps
+// them at 8 x 4 in AstroGenerator). 0 keeps the class default.
+namespace APSAtmosphereSamples
+{
+	int32 GCamera = 0;
+	int32 GLight = 0;
+
+	int32 Camera(const int32 ClassDefault) { return GCamera > 0 ? FMath::Clamp(GCamera, 1, 128) : ClassDefault; }
+	int32 Light(const int32 ClassDefault) { return GLight > 0 ? FMath::Clamp(GLight, 1, 128) : ClassDefault; }
+
+	/** Gameplay atmospheres (not the preview's, which carries a presentation radius) take a changed value at once. */
+	void Apply(IConsoleVariable*)
+	{
+		const AAtmoScape* Defaults = GetDefault<AAtmoScape>();
+		for (TObjectIterator<AAtmoScape> It; It; ++It)
+		{
+			AAtmoScape* Atmosphere = *It;
+			const UWorld* World = Atmosphere ? Atmosphere->GetWorld() : nullptr;
+			if (!World || !World->IsGameWorld() || Atmosphere->HasAnyFlags(RF_ClassDefaultObject | RF_ArchetypeObject)
+				|| Atmosphere->PresentationPlanetRadiusCm > 0.0f)
+			{
+				continue;
+			}
+			Atmosphere->CameraSamplesCount = Camera(Defaults->CameraSamplesCount);
+			Atmosphere->LightSamplesCount = Light(Defaults->LightSamplesCount);
+		}
+	}
+
+	FAutoConsoleVariableRef CVarCamera(TEXT("aps.Atmosphere.CameraSamples"), GCamera,
+		TEXT("Camera-ray samples of a gameplay atmosphere (AtmoScape, per pixel, times the light samples); 0 keeps the class default (32)."),
+		FConsoleVariableDelegate::CreateStatic(&Apply), ECVF_Default);
+	FAutoConsoleVariableRef CVarLight(TEXT("aps.Atmosphere.LightSamples"), GLight,
+		TEXT("Light-ray samples of a gameplay atmosphere (AtmoScape); 0 keeps the class default (16)."),
+		FConsoleVariableDelegate::CreateStatic(&Apply), ECVF_Default);
+}
 
 // Sets default values
 APlanetarySurfaceGenerator::APlanetarySurfaceGenerator()
@@ -322,8 +360,8 @@ void APlanetarySurfaceGenerator::InitAtmoScape(UWorld* World, double PlanetaryRa
 		}
 		PlanetAtmosphere->SetActorScale3D(FVector::OneVector);
 		const AAtmoScape* AtmosphereDefaults = GetDefault<AAtmoScape>();
-		PlanetAtmosphere->CameraSamplesCount = AtmosphereDefaults->CameraSamplesCount;
-		PlanetAtmosphere->LightSamplesCount = AtmosphereDefaults->LightSamplesCount;
+		PlanetAtmosphere->CameraSamplesCount = APSAtmosphereSamples::Camera(AtmosphereDefaults->CameraSamplesCount);
+		PlanetAtmosphere->LightSamplesCount = APSAtmosphereSamples::Light(AtmosphereDefaults->LightSamplesCount);
         
         
         // Установка параметров и свойств для объекта Atmosphere.

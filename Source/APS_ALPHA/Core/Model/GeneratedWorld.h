@@ -5,6 +5,7 @@
 #include "APS_ALPHA/Core/Enums/PlanetarySystemType.h"
 #include "APS_ALPHA/Core/Enums/PlanetType.h"
 #include "APS_ALPHA/Core/Enums/PlanetHabitability.h"
+#include "APS_ALPHA/Core/Enums/PlanetaryZoneType.h"
 #include "APS_ALPHA/Core/Enums/StarSpectralClass.h"
 #include "APS_ALPHA/Core/Enums/StarType.h"
 #include "APS_ALPHA/Core/Enums/StellarType.h"
@@ -32,6 +33,35 @@ enum class ESpectralClass : uint8;
 enum class EStellarType : uint8;
 enum class EStarType : uint8;
 enum class EAstroGenerationLevel : uint8;
+
+/**
+ * Rio 09.10 (A23, HOME START PLANET INDEX): the generated climate and physics a planet keeps when the home slot moves.
+ * The home slot is rebuilt from the HOME recipe, an ordinary slot from the procedural family; a pinned world keeps its
+ * own values on either. Off (every older save and every unpinned edit) changes nothing.
+ */
+USTRUCT()
+struct FAPSPreviewBodyGeneratedPin
+{
+	GENERATED_BODY()
+
+	UPROPERTY()
+	bool bPinned{false};
+
+	UPROPERTY()
+	int32 TemperatureK{0};
+
+	UPROPERTY()
+	EPlanetaryZoneType Zone{EPlanetaryZoneType::Unknown};
+
+	UPROPERTY()
+	double Density{0.0};
+
+	UPROPERTY()
+	double Mass{0.0};
+
+	UPROPERTY()
+	double GravityStrength{0.0};
+};
 
 /**
  * User-authored body values retained while the disposable main-menu hierarchy is
@@ -98,6 +128,10 @@ struct FAPSPreviewBodyEditOverride
 
 	UPROPERTY()
 	FLinearColor AtmosphereColor{FLinearColor(3.8f, 13.5f, 33.0f, 0.0f)};
+
+	/** Rio 09.10 (A23): generated climate/physics this planet keeps when the home slot moves (FAPSPreviewBodyGeneratedPin). */
+	UPROPERTY()
+	FAPSPreviewBodyGeneratedPin Generated;
 };
 
 /** An explicit, actor-free edit of one addressed star, including its AUTO baseline. */
@@ -157,6 +191,10 @@ struct FAPSPreviewPlanetOrbitEdit
 	bool bOverrideInclination{false};
 	UPROPERTY()
 	double InclinationDegrees{0.0};
+	/** Rio 09.10 (playtest 32): the player's own ORBIT DISTANCE (SetSelectedPlanetOrbitDistanceAu), applied by the home system
+	 * under REAL SCALE too. False (the roll's edits, every save made before 09.10) keeps today's REAL SCALE layout. */
+	UPROPERTY()
+	bool bAppliesAtRealScale{false};
 };
 
 /** Partial system recipe: untouched fields keep their original generation inputs. */
@@ -377,6 +415,15 @@ public:
 
 	UPROPERTY(EditAnywhere, Category = "Galaxy")
 	double GalaxyStarDensity{ 10.0 };
+
+	/**
+	 * Rio 08.10 (CLUSTER DENSITY): systems per volume of the home cluster against its generated layout. Every system keeps
+	 * its direction from the cluster centre and its distance scales by Density^(-1/3) (0.125: twice as far, 8: half), so the
+	 * formation's shape stays. Exactly 1 (the default, and every older save) keeps the cluster, its dataset input hash and
+	 * every position as before; any other value seals its own dataset.
+	 */
+	UPROPERTY(EditAnywhere, Category = "Star Cluster", meta = (ClampMin = "0.05", ClampMax = "20.0"))
+	double StarClusterDensity{ 1.0 };
 
 	UPROPERTY(EditAnywhere, Category = "Galaxy")
 	double PlanetRadius{ 6750.0 };

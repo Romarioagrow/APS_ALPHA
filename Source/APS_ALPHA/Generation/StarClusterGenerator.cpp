@@ -146,6 +146,45 @@ bool UStarClusterGenerator::SampleSeededFormation(const EStarClusterType Cluster
 	}
 }
 
+bool UStarClusterGenerator::SampleSeededStreamFormation(const EStarClusterType ClusterType, const int32 GenerationSeed,
+	const int32 FormationIndex, const int32 FormationCount, const FVector& ClusterBounds, FVector& OutPosition)
+{
+	// Rio 09.10 (playtest 30): the same formulas as CalculateStarPosition's ElongatedStream / Hourglass cases; only the
+	// random draws come from the cluster's own stream. One draw per statement (argument order is unspecified in C++).
+	constexpr uint64 SaltHistoricScatter = 0x4356325f48495354ull; // CV2_HIST
+	APSClusterFormations::FStream Stream(APSHashStream::Key(GenerationSeed, FormationIndex, SaltHistoricScatter));
+	switch (ClusterType)
+	{
+	case EStarClusterType::ElongatedStream:
+		{
+			const double NormalizedIndex = FormationCount > 1
+				? FMath::Clamp(static_cast<double>(FormationIndex) / static_cast<double>(FormationCount - 1), 0.0, 1.0) : 0.5;
+			const double X = FMath::Lerp(-ClusterBounds.X * 0.5, ClusterBounds.X * 0.5, NormalizedIndex);
+			const double Taper = 0.2 + 0.8 * FMath::Sin(PI * NormalizedIndex);
+			const double ScatterY = Stream.Range(-ClusterBounds.Y * 0.5, ClusterBounds.Y * 0.5);
+			const double ScatterZ = Stream.Range(-ClusterBounds.Z * 0.5, ClusterBounds.Z * 0.5);
+			const double Y = ScatterY * Taper
+				+ FMath::Sin(NormalizedIndex * UE_TWO_PI * 2.0) * ClusterBounds.Y * 0.16;
+			OutPosition = FVector(X, Y, ScatterZ * Taper) * 100;
+			return true;
+		}
+	case EStarClusterType::Hourglass:
+		{
+			const double SignedHeight = Stream.Range(-1.0, 1.0);
+			const double RadiusFraction = FMath::Sqrt(Stream.U());
+			const double Angle = Stream.U() * UE_TWO_PI;
+			const double LobeRadius = FMath::Lerp(
+				ClusterBounds.X * 0.04, ClusterBounds.X * 0.48, FMath::Abs(SignedHeight));
+			const double Radius = RadiusFraction * LobeRadius;
+			OutPosition = FVector(FMath::Cos(Angle) * Radius, FMath::Sin(Angle) * Radius,
+				SignedHeight * ClusterBounds.Z * 0.5) * 100;
+			return true;
+		}
+	default:
+		return false;
+	}
+}
+
 double UStarClusterGenerator::GetSizeExtentFactor(const EStarClusterSize StarClusterSize)
 {
 	// Roughly constant star density (extent ~ count^1/3), softened so Tiny stays readable.

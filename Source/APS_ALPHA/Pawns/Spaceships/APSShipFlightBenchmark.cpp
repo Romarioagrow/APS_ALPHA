@@ -1088,6 +1088,11 @@ namespace APSShipBenchmark
 		int32 Planets{-1};
 		bool bMoonsApplied{false};
 		bool bPlanetsApplied{false};
+		/** Rio 08.10 night (aps.Ship.StartHomeType): the home planet's surface family was set for this start. */
+		bool bHomeTypeApplied{false};
+		/** Rio 09.10 (A23, aps.Ship.StartHomeIndex): the start planet index was set, then the new home focused. */
+		bool bHomeIndexApplied{false};
+		bool bHomeIndexFocused{false};
 		/** Rio 05.10 (real scale, stage 2): REAL SCALE was switched on for this start (aps.Galaxy.RealScaleStart). */
 		bool bRealScaleApplied{false};
 		/** C19 ground start as "package/pad/vehicles" (0-2 / 0-1 / 0-7), empty: the menu's own. */
@@ -1106,6 +1111,17 @@ namespace APSShipBenchmark
 		TEXT("aps.Galaxy.RealScaleStart"), 0,
 		TEXT("Rio 05.10 (REAL SCALE, stage 2; test runs): 1 makes aps.Ship.StartGenerated switch REAL SCALE on in the menu and ")
 		TEXT("wait for the rebuilt preview before it starts the game. 0: the menu's own setting."));
+
+	TAutoConsoleVariable<FString> CVarStartHomeType(
+		TEXT("aps.Ship.StartHomeType"), TEXT(""),
+		TEXT("Rio 08.10 night (test runs): an EPlanetType name (Oceanic, Terrestrial, Forest, Volcanic, ...) that ")
+		TEXT("aps.Ship.StartGenerated sets on the home planet, as the menu's SURFACE FAMILY does, before the start. ")
+		TEXT("Empty: the menu's own."));
+
+	TAutoConsoleVariable<int32> CVarStartHomeIndex(
+		TEXT("aps.Ship.StartHomeIndex"), 0,
+		TEXT("Rio 09.10 (A23, test runs): HOME START PLANET INDEX that aps.Ship.StartGenerated sets in the menu (after the ")
+		TEXT("planet count) before the start: the world on that orbit becomes the home as it is. 0: the menu's own."));
 
 	AMainMenuController* FindMenuController()
 	{
@@ -1188,6 +1204,30 @@ namespace APSShipBenchmark
 			UE_LOG(LogTemp, Log, TEXT("[APS.ShipBench] generated start: %d planet(s) in the home system"), GGeneratedStart.Planets);
 			return true;
 		}
+		if (const int32 HomeIndex = CVarStartHomeIndex.GetValueOnGameThread(); HomeIndex > 0 && !GGeneratedStart.bHomeIndexApplied)
+		{
+			// Rio 09.10 (A23): the world on orbit N becomes the home as it is; the family is logged before and after.
+			GGeneratedStart.bHomeIndexApplied = true;
+			ViewModel->LogHomeFamily(TEXT("before StartHomeIndex"));
+			const int32 OldIndex = ViewModel->GeneratedWorld ? ViewModel->GeneratedWorld->StartPlanetIndex : 0;
+			ViewModel->SetStartPlanetIndex(HomeIndex);
+			GGeneratedStart.ReadySeconds = 0.0;
+			UE_LOG(LogTemp, Log, TEXT("[APS.ShipBench] generated start: home start planet %d -> %d (asked %d of %d)"), OldIndex,
+				ViewModel->GeneratedWorld ? ViewModel->GeneratedWorld->StartPlanetIndex : 0, HomeIndex,
+				ViewModel->GetHomeStartPlanetCount());
+			return true;
+		}
+		if (GGeneratedStart.bHomeIndexApplied && !GGeneratedStart.bHomeIndexFocused)
+		{
+			GGeneratedStart.bHomeIndexFocused = true;
+			if (const AAstroGenerator* Generator = ViewModel->GetPreviewGenerator(); Generator && IsValid(Generator->HomePlanet))
+			{
+				ViewModel->FocusPreviewBody(Generator->HomePlanet);
+			}
+			ViewModel->LogHomeFamily(TEXT("after StartHomeIndex"));
+			GGeneratedStart.ReadySeconds = 0.0;
+			return true;
+		}
 		if (GGeneratedStart.Moons >= 0 && !GGeneratedStart.bMoonsApplied)
 		{
 			// Lunar starts need moons: set them, then wait for the regenerated preview before choosing the start.
@@ -1196,6 +1236,26 @@ namespace APSShipBenchmark
 			GGeneratedStart.ReadySeconds = 0.0;
 			UE_LOG(LogTemp, Log, TEXT("[APS.ShipBench] generated start: %d moon(s) around the home planet"), GGeneratedStart.Moons);
 			return true;
+		}
+		if (!GGeneratedStart.bHomeTypeApplied)
+		{
+			// Rio 08.10 night: the home planet's family (ocean worlds and the like), as the SURFACE FAMILY stepper sets it.
+			GGeneratedStart.bHomeTypeApplied = true;
+			const FString TypeName = CVarStartHomeType.GetValueOnGameThread().TrimStartAndEnd();
+			if (!TypeName.IsEmpty())
+			{
+				const UEnum* TypeEnum = StaticEnum<EPlanetType>();
+				const int64 Value = TypeEnum->GetValueByNameString(
+					TypeName.Contains(TEXT("::")) ? TypeName : TEXT("EPlanetType::") + TypeName);
+				if (Value != INDEX_NONE)
+				{
+					ViewModel->SetEnumValue(TypeEnum, static_cast<int32>(Value));
+					GGeneratedStart.ReadySeconds = 0.0;
+					UE_LOG(LogTemp, Log, TEXT("[APS.ShipBench] generated start: home planet type %s"), *TypeName);
+					return true;
+				}
+				UE_LOG(LogTemp, Warning, TEXT("[APS.ShipBench] generated start: unknown home planet type %s, keeping the menu's"), *TypeName);
+			}
 		}
 		const auto LoadBlueprintClass = [](FString ObjectPath, UClass* Base) -> UClass*
 		{
@@ -1284,6 +1344,35 @@ namespace APSShipBenchmark
 		TEXT("opens the Civilization generator on the home planet and starts L_WorldGeneration like the menu's Start ")
 		TEXT("(optionally with another home ship or pilot)."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&StartGenerated));
+
+	/** Rio 09.10 (playtest 08.10 items 1-3, seat checks in Single): the main menu's Start Single Game, without clicking. */
+	FTSTicker::FDelegateHandle GStartSingleTicker;
+
+	bool TickStartSingle(float)
+	{
+		AMainMenuController* Controller = FindMenuController();
+		if (!Controller)
+		{
+			return true; // the menu is not up yet
+		}
+		UE_LOG(LogTemp, Log, TEXT("[APS.Test] aps.Test.StartSingle: Start Single Game, as the menu's button does"));
+		GStartSingleTicker.Reset();
+		Controller->LaunchSingleGame();
+		return false;
+	}
+
+	void StartSingle(const TArray<FString>&, UWorld*)
+	{
+		if (!GStartSingleTicker.IsValid())
+		{
+			GStartSingleTicker = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateStatic(&TickStartSingle), 0.5f);
+		}
+	}
+
+	FAutoConsoleCommandWithWorldAndArgs StartSingleCommand(
+		TEXT("aps.Test.StartSingle"),
+		TEXT("aps.Test.StartSingle: from the main menu, Start Single Game as its button does (the authored L_APS_SinglePlay_StartLocation)."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&StartSingle));
 #endif
 
 	/** Unattended sequence for -game runs: wait for the pawn and streaming, board, benchmark, optionally quit. */

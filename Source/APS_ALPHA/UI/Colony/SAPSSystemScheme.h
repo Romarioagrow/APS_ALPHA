@@ -4,13 +4,15 @@
 #include "Widgets/SLeafWidget.h"
 
 class AActor;
+class AStar;
 class UWorld;
 
 /**
- * System scheme of the civilization menu (Rio, 02.10: "2D schemes in order and to scale of size, without distances;
- * a hypergiant shows its edge"). Each star of the current system has a lane: the star at the left, its planets in
- * orbital order with even gaps, moons in a column under their planet. Discs share one kilometre scale, so a gas giant
- * dwarfs a rocky world and a hypergiant shows only its limb. Wheel zooms, a drag pans, a click picks a body.
+ * System scheme of the civilization menu (Rio, 02.10: "2D schemes in order and to scale of size, without distances").
+ * Each star of the current system has a lane: the star at the left, its planets in orbital order with even gaps, moons
+ * in a column under their planet. Planets and moons share one kilometre scale, so a gas giant dwarfs a rocky world
+ * (Rio 09.10); the stars share one of their own, whole in their lanes, and a star drawn smaller than the planets' scale
+ * says by how much. Wheel zooms around the cursor (one view transform for everything), a drag pans, a click picks.
  */
 class APS_ALPHA_API SAPSSystemScheme final : public SLeafWidget
 {
@@ -30,6 +32,12 @@ public:
 	/** Rio 05.10 (star map): pins the scheme to this star's system (the star map's drill-down); null follows the player again. */
 	void ShowSystem(AActor* Star);
 	bool IsPinned() const { return PinnedStar.IsValid(); }
+	/** Rio 09.10 (item 33, "BHOUNKNOWN"): a star's class as the scheme and its card say it ("G6V", "BLACK HOLE"). */
+	static FText StarClassText(const AStar& Star);
+	/** Wheel steps around a point of the scheme (local): that point stays where it is. The wheel and the test runs. */
+	void ZoomAt(double WheelSteps, const FVector2D& Local);
+	/** Test runs: aps.Test.Scheme [open | zoom <wheel steps> [x y] | log] (x, y: fractions of the scheme's size). */
+	static void RunTestCommand(const TArray<FString>& Args, UWorld* World);
 
 	virtual FVector2D ComputeDesiredSize(float) const override { return FVector2D(640.0, 420.0); }
 	virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& Geometry, const FSlateRect& CullingRect,
@@ -60,7 +68,8 @@ private:
 		int32 Parent{INDEX_NONE};
 	};
 
-	/** Lays the scheme out for the current size and zoom: disc centres and radii in local space. */
+	/** Lays the scheme out for the current size (the default view, every star whole), then applies the zoom and the pan as
+	 * one transform: disc centres and radii, lane tops and label rows in local space. */
 	void Layout(const FVector2D& Size) const;
 	int32 HitTest(const FVector2D& Local) const;
 
@@ -69,13 +78,9 @@ private:
 	TArray<FBody> Bodies;
 	int32 Lanes{0};
 	TWeakObjectPtr<AActor> Picked;
-	/** Rio 06.10: set by Layout to the zoom that shows every star whole (the default view), then by the wheel. */
+	/** Rio 09.10: the view's magnification of the laid-out scheme, 1 = the default view (the wheel's lower limit). */
 	mutable double Zoom{1.0};
-	/** A new system opens at the fitting zoom (Layout resolves it once it knows the view's size). */
-	mutable bool bFitPending{true};
-	/** Rio 06.10 (audit: the fit was judged with the planets at their smallest dots): the fit's passes left; the second one
-	 * re-judges it at the candidate zoom with the lanes' real largest discs. Set to 2 with bFitPending. */
-	mutable int32 FitPasses{2};
+	/** The view's offset in local pixels, applied after the zoom. */
 	FVector2D Pan{FVector2D::ZeroVector};
 	bool bDragging{false};
 	bool bDragged{false};
@@ -84,21 +89,19 @@ private:
 	mutable FVector2D LaidOutSize{FVector2D::ZeroVector};
 	mutable TArray<FVector2D> Centres;
 	mutable TArray<float> Radii;
-	/** Pixels per kilometre of the last layout, for the scale bar. */
+	/** Pixels per kilometre of the planets and moons on screen (zoom included), for the scale bar and the stars' note. */
 	mutable double PixelsPerKm{0.0};
 	/** Per lane: where the planets' labels start (one row under the largest disc, Rio 02.10: "even paddings"). */
 	mutable TArray<double> LabelRows;
 	/** Rio 04.10 evening ("zoomed in they lie on each other, zoomed out the star never shows whole"): per lane its top and
-	 * height in the last layout. A lane is at least its share of the widget and grows with its largest disc, labels and
-	 * moon column, so zooming in never stacks one lane onto the next; the scheme then also pans vertically. */
+	 * height on screen. A lane is at least its share of the widget and grows with its largest disc, labels and moon
+	 * column, so lanes never overlap; the scheme then also pans vertically. */
 	mutable TArray<double> LaneTops;
 	mutable TArray<double> LaneHeights;
-	/** The size of everything laid out, for the pan limits, and the pan the last layout used (within those limits). */
+	/** The size of everything laid out at zoom 1, for the pan limits, and the pan the last layout used (within them). */
 	mutable FVector2D ContentSize{FVector2D::ZeroVector};
 	mutable FVector2D LaidOutPan{FVector2D::ZeroVector};
-	/** The wheel's limits: zoomed out, the system's largest star fits its lane whole and to scale; zoomed in, the largest
-	 * planet still fits the view. */
-	mutable double MinZoom{0.25};
+	/** The wheel's upper limit: the largest planet's disc up to about 40% of the view's height. */
 	mutable double MaxZoom{60.0};
 	/** Pan clamped so the scheme never leaves the view: not right of its left edge, never all of it off to the left or up. */
 	FVector2D ClampPan(const FVector2D& Wanted, const FVector2D& Size) const;

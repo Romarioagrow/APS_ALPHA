@@ -29,7 +29,13 @@ public:
 	virtual void Deinitialize() override;
 
 private:
-	void UpdateObjectFill(const FVector& CameraLocation, const FRotator& CameraRotation, bool bInsideStation);
+	void UpdateObjectFill(const FVector& CameraLocation, const FRotator& CameraRotation, bool bInsideStation, float DeltaTime);
+	/** Rio 09.10 (aps.Lighting.ObjectFillBlendRate): the fill eases to its target (no one-frame jump at a station zone's
+	 * edge); a camera jump (a cut, a world shift) snaps it. Below 0: not started. */
+	float SmoothedObjectFill{-1.0f};
+	FVector LastFillCameraLocation{FVector::ZeroVector};
+	/** Rio 09.10 (aps.Lighting.ObjectFillSystemAU): the fill is on between systems only; logged when that changes. */
+	bool bFillBetweenSystems{false};
 	/**
 	 * Rio 04.10 evening ("from orbit the night side is an absolutely black body, it looks like a bug: let a silhouette
 	 * show, beautifully"): above a world, past the near-surface fill's reach, a faint cool light travelling towards the

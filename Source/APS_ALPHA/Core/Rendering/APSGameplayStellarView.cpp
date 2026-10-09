@@ -204,9 +204,11 @@ namespace APSGameplayStellarDay
 
 	/** A5: which catalogue stars carry rays in flight (APSStellarOpticalSupport::Select); a change re-sizes them all. */
 	// Rio 02.10: a random share with rays read as uneven; every bright enough star sparkles.
-	TAutoConsoleVariable<int32> CVarRayRule(TEXT("aps.Stars.RayRule"), 1,
-		TEXT("Rays on the catalogue stars in flight: 0 a stable share of the bright ones (accepted), 1 every bright enough ")
-		TEXT("star, 2 none (comparison for Rio, 01.10)."));
+	// Rio 08.10 (0.6.1): the crosses stand out of the point field and look unrealistic between stars; none for now, the
+	// rules stay for later reuse (1 brings back 02.10's look).
+	TAutoConsoleVariable<int32> CVarRayRule(TEXT("aps.Stars.RayRule"), 2,
+		TEXT("Rays on the catalogue stars in flight: 0 a stable share of the bright ones, 1 every bright enough ")
+		TEXT("star (02.10), 2 none (default since 08.10)."));
 	TAutoConsoleVariable<float> CVarRayBrightness(TEXT("aps.Stars.RayBrightness"), 0.1f,
 		TEXT("RayRule 1: the brightness from which a catalogue star carries rays (lower: more stars sparkle)."));
 	TAutoConsoleVariable<float> CVarRaySize(TEXT("aps.Stars.RaySize"), 1.0f,

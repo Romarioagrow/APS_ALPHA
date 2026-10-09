@@ -583,6 +583,8 @@ public:
 protected:
 	virtual USceneComponent* GetPilotSeatComponent() const override;
 	virtual FTransform GetPilotExitTransform() const override;
+	/** Rio 09.10 (aps.Ship.SafeStandUp): a cabin's pilot stands up on a checked spot of the seat's deck. */
+	virtual FTransform ResolvePilotExitTransform(APawn& LeavingPilot, const FTransform& Proposed) const override;
 
 	/**
 	 * Alternative flight models move the ship here: the band model (UAPSShipFlightModel) by default. Return true
@@ -721,6 +723,8 @@ private:
 	friend class FAPSShipFlightBenchmark;
 	friend class UAPSShipFlightModel;
 	friend class FAPSFleetCommand;
+	/** Rio 09.10 (APSShipLightBudget.cpp): the ship's own lights by its motion (GetHullMotionReason) and camera distance. */
+	friend class FAPSShipLightBudget;
 
 	bool bSeatWasAutoConfigured{false};
 	bool bExitWasAutoConfigured{false};

@@ -53,6 +53,14 @@ namespace APSGalaxyGpuStars
 	 * together with the camera": the share follows the flight in log space from the share shown when the flight began. */
 	void SetMenuGlowScope(EMenuGlowScope Scope, float FlightAlpha = 1.0f);
 
+	/**
+	 * Rio 08.10 (STAR BRIGHTNESS on GALAXY / CLUSTER, "obviously strong overexposure, let me pick it by hand"): a viewing aid
+	 * of the menu preview only. Multiplies the menu layer's GPU points and glow on every screen (0.05..4; 1 = exactly as
+	 * before: nothing is sent). The points' brightness cut follows it, so no point appears or disappears. The gameplay sky,
+	 * the catalogue, seeds and saves are never touched.
+	 */
+	void SetMenuStarBrightness(float Brightness);
+
 	/** Gameplay daylight: a GPU layer of the world fades like the catalogue points (no-op without a layer). */
 	void SetWorldDaylightVisibility(const UWorld* World, float Visibility);
 

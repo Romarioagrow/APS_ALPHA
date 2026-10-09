@@ -238,6 +238,12 @@ public:
 	bool IsPreviewCameraTransitionActive() const { return bPreviewCameraTransitionActive; }
 	/** Angular space available around the optical axis inside the actual menu panel. */
 	void SetContinuousPreviewFramingTangent(double Tangent);
+	/**
+	 * Rio 08.10 (STAR BRIGHTNESS, a menu viewing aid): the catalogue star points of the preview's galaxy and cluster views.
+	 * 1 = as today (their own material, untouched); below 1 dimmer through a material instance of their own; above 1 as
+	 * today (the shared point material stops its visibility at 1). Kept across rebuilds; never generated or saved data.
+	 */
+	void SetPreviewStarBrightness(float Brightness);
 	bool GetContinuousPreviewClusterLocation(int32 InstanceIndex, FVector& OutLocation) const;
 	bool ProjectContinuousPreviewWorldPosition(const FVector& PhysicalWorldPosition, FVector& OutLocation,
 		const AActor* CoordinateOwner = nullptr) const;
@@ -584,6 +590,8 @@ protected:
 	bool bContinuousPreviewInitialized{false};
 	double ContinuousPreviewFramingTangent{0.0};
 	bool bContinuousPreviewAutoFraming{true};
+	/** Rio 08.10 (SetPreviewStarBrightness): applied to the catalogue views now and to every view created later. */
+	float PreviewStarBrightness{1.0f};
 	TArray<TWeakObjectPtr<AActor>> ContinuousPreviewBodies;
 	TArray<FAPSContinuousPreviewPoint> ContinuousGalaxyPoints;
 	TArray<FAPSContinuousPreviewPoint> ContinuousClusterPoints;
@@ -1089,6 +1097,9 @@ public:
 
 	UPROPERTY(EditAnywhere, Category = "Galaxy")
 	double GalaxyStarDensity{10.0};
+
+	/** Rio 08.10: CLUSTER DENSITY (UGeneratedWorld::StarClusterDensity); exactly 1 keeps every cluster as generated before. */
+	double StarClusterDensity{1.0};
 
 	UPROPERTY(EditAnywhere, Category = "Player Spawn")
 	bool bCharacterSpawn{true};

@@ -305,6 +305,78 @@ namespace APSSettingsUI
 		void (UGameUserSettings::*Set)(int32);
 	};
 
+	/**
+	 * Rio 09.10 (4K, "max settings", 30-50 fps): the render scale has its own row and the quality chips keep it.
+	 * UE's SetOverallScalabilityLevel puts EPIC and CINEMATIC at 100 % (every 4K pixel shaded, about four times the
+	 * AUTO work). The values are BaseScalability.ini's [ResolutionQuality] presets; 0 is the engine's display-based
+	 * default (r.ScreenPercentage.Default.Desktop.Mode 1: 1440p shown renders about 56 %, 2160p renders 1080p).
+	 */
+	constexpr float RenderScales[] = {0.0f, 50.0f, 58.328f, 66.662f, 100.0f};
+	constexpr int32 RenderScaleCount = static_cast<int32>(UE_ARRAY_COUNT(RenderScales));
+
+	FText RenderScaleName(const float Scale)
+	{
+		if (Scale <= 0.0f) return LOCTEXT("ScaleAuto", "AUTO");
+		if (FMath::IsNearlyEqual(Scale, 50.0f, 0.01f)) return LOCTEXT("ScalePerformance", "PERFORMANCE");
+		if (FMath::IsNearlyEqual(Scale, 58.328f, 0.01f)) return LOCTEXT("ScaleBalanced", "BALANCED");
+		if (FMath::IsNearlyEqual(Scale, 66.662f, 0.01f)) return LOCTEXT("ScaleQuality", "QUALITY");
+		if (FMath::IsNearlyEqual(Scale, 100.0f, 0.01f)) return LOCTEXT("ScaleNative", "NATIVE");
+		return FText::Format(LOCTEXT("ScaleCustom", "{0} %"), FText::AsNumber(FMath::RoundToInt(Scale)));
+	}
+
+	float RenderScale(const UGameUserSettings& S)
+	{
+		float Normalized = 0.0f, Value = 0.0f, Min = 0.0f, Max = 0.0f;
+		S.GetResolutionScaleInformationEx(Normalized, Value, Min, Max);
+		return Value;
+	}
+
+	/** The size the scene renders at before TSR fills the screen (LegacyScreenPercentageDriver.cpp for AUTO). */
+	FIntPoint RenderedSize(const UGameUserSettings& S)
+	{
+		const FIntPoint Shown = S.GetFullscreenMode() == EWindowMode::WindowedFullscreen
+			? S.GetDesktopResolution() : S.GetScreenResolution();
+		const double ShownPixels = FMath::Max(static_cast<double>(Shown.X) * Shown.Y, 1.0);
+		double Fraction = RenderScale(S) / 100.0;
+		if (Fraction <= 0.0)
+		{
+			// BaseEngine.ini [Rendering.AutoScreenPercentage]: 720p -> 720p, 2160p -> 1080p, 4320p -> 1440p (16:9 pixel counts).
+			const auto Pixels = [](const double Height) { return Height * Height * 16.0 / 9.0; };
+			double Rendered = ShownPixels;
+			if (ShownPixels > Pixels(4320.0))
+			{
+				Rendered = ShownPixels * Pixels(1440.0) / Pixels(4320.0);
+			}
+			else if (ShownPixels > Pixels(2160.0))
+			{
+				Rendered = FMath::Lerp(Pixels(1080.0), Pixels(1440.0), (ShownPixels - Pixels(2160.0)) / (Pixels(4320.0) - Pixels(2160.0)));
+			}
+			else if (ShownPixels > Pixels(720.0))
+			{
+				Rendered = FMath::Lerp(Pixels(720.0), Pixels(1080.0), (ShownPixels - Pixels(720.0)) / (Pixels(2160.0) - Pixels(720.0)));
+			}
+			Fraction = FMath::Sqrt(Rendered / ShownPixels);
+		}
+		return FIntPoint(FMath::RoundToInt(Shown.X * Fraction), FMath::RoundToInt(Shown.Y * Fraction));
+	}
+
+	/** The level every quality group shares, or -1; unlike GetOverallScalabilityLevel it ignores the render scale. */
+	int32 OverallLevel(const UGameUserSettings& S)
+	{
+		const int32 Level = S.GetViewDistanceQuality();
+		const int32 Others[] = {S.GetAntiAliasingQuality(), S.GetShadowQuality(), S.GetGlobalIlluminationQuality(),
+			S.GetReflectionQuality(), S.GetPostProcessingQuality(), S.GetTextureQuality(), S.GetVisualEffectQuality(),
+			S.GetFoliageQuality(), S.GetShadingQuality()};
+		for (const int32 Other : Others)
+		{
+			if (Other != Level)
+			{
+				return -1;
+			}
+		}
+		return Level;
+	}
+
 	/** Frame-rate caps the stepper walks through; 0 is no cap. */
 	constexpr float FrameRates[] = {30.0f, 60.0f, 90.0f, 120.0f, 144.0f, 165.0f, 240.0f, 0.0f};
 	constexpr int32 FrameRateCount = static_cast<int32>(UE_ARRAY_COUNT(FrameRates));
@@ -490,7 +562,7 @@ TSharedRef<SWidget> SAPSSettingsPage::BuildVideoTab()
 			]
 			+ SVerticalBox::Slot().AutoHeight()
 			[
-				Row(LOCTEXT("Resolution", "RESOLUTION"), LOCTEXT("ResolutionHint", "The size of the rendered image."),
+				Row(LOCTEXT("Resolution", "RESOLUTION"), LOCTEXT("ResolutionHint", "The size of the rendered image. Borderless always uses the desktop size, so picking a resolution switches to FULLSCREEN."),
 					Stepper([this]()
 						{
 							const UGameUserSettings* S = Settings();
@@ -584,12 +656,34 @@ TSharedRef<SWidget> SAPSSettingsPage::BuildGraphicsTab()
 		Overall->AddSlot().AutoWidth().Padding(Level == 0 ? 0.0f : 6.0f, 0.0f, 0.0f, 0.0f)
 		[
 			Chip(QualityName(Level),
-				[Level]() { const UGameUserSettings* S = Settings(); return S && S->GetOverallScalabilityLevel() == Level; },
+				[Level]() { const UGameUserSettings* S = Settings(); return S && OverallLevel(*S) == Level; },
 				[Level]()
 				{
 					if (UGameUserSettings* S = Settings())
 					{
+						const float Scale = RenderScale(*S);
 						S->SetOverallScalabilityLevel(Level);
+						S->SetResolutionScaleValueEx(Scale);
+						S->ApplyNonResolutionSettings();
+						S->SaveSettings();
+					}
+				}, 92.0f)
+		];
+	}
+
+	const TSharedRef<SHorizontalBox> Scales = SNew(SHorizontalBox);
+	for (int32 Index = 0; Index < RenderScaleCount; ++Index)
+	{
+		const float Value = RenderScales[Index];
+		Scales->AddSlot().AutoWidth().Padding(Index == 0 ? 0.0f : 6.0f, 0.0f, 0.0f, 0.0f)
+		[
+			Chip(RenderScaleName(Value),
+				[Value]() { const UGameUserSettings* S = Settings(); return S && FMath::IsNearlyEqual(RenderScale(*S), Value, 0.01f); },
+				[Value]()
+				{
+					if (UGameUserSettings* S = Settings())
+					{
+						S->SetResolutionScaleValueEx(Value);
 						S->ApplyNonResolutionSettings();
 						S->SaveSettings();
 					}
@@ -610,8 +704,13 @@ TSharedRef<SWidget> SAPSSettingsPage::BuildGraphicsTab()
 			{
 				if (UGameUserSettings* S = Settings())
 				{
+					// The benchmark also picks a render scale (100 % on a fast card: native 4K); RENDER SCALE keeps its own.
+					const float Scale = RenderScale(*S);
 					S->RunHardwareBenchmark();
 					S->ApplyHardwareBenchmarkResults();
+					S->SetResolutionScaleValueEx(Scale);
+					S->ApplyNonResolutionSettings();
+					S->SaveSettings();
 				}
 			}))
 	];
@@ -621,11 +720,29 @@ TSharedRef<SWidget> SAPSSettingsPage::BuildGraphicsTab()
 			TAttribute<FText>::CreateLambda([]()
 			{
 				const UGameUserSettings* S = Settings();
-				return S && S->GetOverallScalabilityLevel() < 0
+				return S && OverallLevel(*S) < 0
 					? LOCTEXT("OverallCustom", "Custom: the groups below differ.")
-					: LOCTEXT("OverallHint", "Sets every group below to one level.");
+					: LOCTEXT("OverallHint", "Sets every group below to one level. RENDER SCALE stays as picked.");
 			}),
 			Overall)
+	];
+	Rows->AddSlot().AutoHeight()
+	[
+		Row(LOCTEXT("RenderScale", "RENDER SCALE"),
+			TAttribute<FText>::CreateLambda([]()
+			{
+				const UGameUserSettings* S = Settings();
+				if (!S)
+				{
+					return FText::GetEmpty();
+				}
+				const FIntPoint Size = RenderedSize(*S);
+				return FText::Format(LOCTEXT("RenderScaleHint",
+					"Renders {0} x {1}, TSR fills the screen. AUTO follows the display; NATIVE shades every pixel and is the heaviest."),
+					FText::AsNumber(Size.X, &FNumberFormattingOptions::DefaultNoGrouping()),
+					FText::AsNumber(Size.Y, &FNumberFormattingOptions::DefaultNoGrouping()));
+			}),
+			Scales)
 	];
 	for (const FQualityGroup& Group : Groups)
 	{
@@ -833,6 +950,12 @@ void SAPSSettingsPage::StepResolution(const int32 Delta)
 	if (S && Resolutions.IsValidIndex(Index))
 	{
 		S->SetScreenResolution(Resolutions[Index]);
+		// UE 5.4 sizes a BORDERLESS window to the monitor and ignores the resolution (FSceneViewport::ResizeFrame),
+		// so a picked resolution only takes effect in FULLSCREEN or WINDOWED (Rio 08.10, packaged 0.6.0-alpha).
+		if (S->GetFullscreenMode() == EWindowMode::WindowedFullscreen)
+		{
+			S->SetFullscreenMode(EWindowMode::Fullscreen);
+		}
 		bVideoDirty = true;
 	}
 }

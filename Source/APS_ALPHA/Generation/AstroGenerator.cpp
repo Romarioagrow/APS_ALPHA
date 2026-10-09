@@ -1169,6 +1169,14 @@ void AAstroGenerator::GenerateWorldByModel()
 	// that are not represented in the legacy generation structs.
 	ApplyPreviewBodyEditOverrides(GeneratedWorldModel);
 	ApplyPreviewDisplayNames(GeneratedWorldModel);
+	// Rio 09.10 (A23, HOME START PLANET INDEX): which world the game starts on, to compare with the menu's choice.
+	if (IsValid(HomePlanet))
+	{
+		UE_LOG(LogTemp, Log, TEXT("[APS.WorldGeneration] Home world committed: %s '%s' %s %.0f km moons=%d T=%d"),
+			*GetPreviewBodyStableKey(HomePlanet), *HomePlanet->AstroName.ToString(),
+			*UEnum::GetValueAsString(HomePlanet->PlanetType), HomePlanet->RadiusKM, HomePlanet->Moons.Num(),
+			HomePlanet->PlanetData.PlanetModel.IsValid() ? HomePlanet->PlanetData.PlanetModel->Temperature : 0);
+	}
 }
 
 int32 AAstroGenerator::GetMainMenuHeroGalaxyInstanceCount() const
@@ -2302,6 +2310,22 @@ uint32 AAstroGenerator::BuildCanonicalStellarProjectionContextHash() const
 	return Hash;
 }
 
+namespace APSClusterDensity
+{
+	/** Rio 08.10 (CLUSTER DENSITY): the model value the generator uses; anything invalid is the default 1. */
+	double Sanitize(const double Density)
+	{
+		return FMath::IsFinite(Density) && Density > 0.0 ? FMath::Clamp(Density, 0.05, 20.0) : 1.0;
+	}
+
+	/** Cluster positions and the cluster's logical extent scale by Density^(-1/3) about its centre: exactly 1 at density 1. */
+	double DistanceScale(const double Density)
+	{
+		const double Safe = Sanitize(Density);
+		return Safe == 1.0 ? 1.0 : FMath::Pow(Safe, -1.0 / 3.0);
+	}
+}
+
 uint32 AAstroGenerator::BuildCanonicalStellarDatasetInputHash() const
 {
 	uint32 Hash = GetTypeHash(FAPSCanonicalStellarDataset::CurrentVersion);
@@ -2337,6 +2361,12 @@ uint32 AAstroGenerator::BuildCanonicalStellarDatasetInputHash() const
 	// layout); OFF leaves the input hash of every existing world as it was.
 	if (UsesRealScale())
 		Hash = HashCombine(Hash, 0x5245414cu); // "REAL"
+	// Rio 08.10 (CLUSTER DENSITY): another density seals its own dataset; exactly 1 leaves every existing world's hash.
+	if (const double ClusterDensity = APSClusterDensity::Sanitize(StarClusterDensity); ClusterDensity != 1.0)
+	{
+		Hash = HashCombine(Hash, 0x434c4453u); // "CLDS"
+		Hash = HashCombine(Hash, APSCanonicalStellarProjection::HashQuantizedDouble(ClusterDensity, 1.0e-9));
+	}
 	return Hash != 0u ? Hash : 1u;
 }
 
@@ -9565,7 +9595,9 @@ void AAstroGenerator::GetPreviewBodyEntries(TArray<FAPSPreviewBodyEntry>& OutEnt
 		PlanetEntry.Actor = SelectedPlanet;
 		PlanetEntry.Label = FText::FromString(APSGeneratedBodyIdentity::Label(SelectedPlanet,
 			FString::Printf(TEXT("PLANET %d"), PlanetIndex + 1)));
-		PlanetEntry.Details = FText::FromString(APSGeneratedBodyIdentity::RadiusDetails(SelectedPlanet));
+		// Rio 09.10 (A23, HOME START PLANET INDEX): the start world is marked, so an index change shows which world it is.
+		PlanetEntry.Details = FText::FromString((SelectedPlanet == HomePlanet ? FString(TEXT("HOME  /  ")) : FString())
+			+ APSGeneratedBodyIdentity::RadiusDetails(SelectedPlanet));
 		PlanetEntry.Depth = 1;
 		OutEntries.Add(MoveTemp(PlanetEntry));
 
@@ -9631,7 +9663,9 @@ void AAstroGenerator::GetPreviewBodyEntries(TArray<FAPSPreviewBodyEntry>& OutEnt
 			PlanetEntry.Actor = const_cast<APlanet*>(Planet);
 			PlanetEntry.Label = FText::FromString(APSGeneratedBodyIdentity::Label(Planet,
 				FString::Printf(TEXT("PLANET %c%d"), StarLetter, PlanetIndex + 1)));
-			PlanetEntry.Details = FText::FromString(APSGeneratedBodyIdentity::RadiusDetails(Planet));
+			// Rio 09.10 (A23): the start world is marked in the system list.
+			PlanetEntry.Details = FText::FromString((Planet == HomePlanet ? FString(TEXT("HOME  /  ")) : FString())
+				+ APSGeneratedBodyIdentity::RadiusDetails(Planet));
 			PlanetEntry.Depth = 1;
 			OutEntries.Add(MoveTemp(PlanetEntry));
 
@@ -10354,6 +10388,7 @@ void AAstroGenerator::ApplyWorldModel()
 	StartPlanetNumber = FMath::Clamp(StartPlanetNumber, 1,
 		GeneratedWorldModel->FindPreviewSystemEditOverride(TEXT("SYS0")) ? 120 : PlanetsAmount);
 	GalaxyStarDensity = GeneratedWorldModel->GalaxyStarDensity;
+	StarClusterDensity = GeneratedWorldModel->StarClusterDensity;
 	// Actor pointers captured by the menu preview are world-local and become stale
 	// across OpenLevel. Only the placed authored SinglePlay generator is allowed to
 	// retain serialized hierarchy actors; generated runtime/preview paths select the
@@ -10457,6 +10492,10 @@ void AAstroGenerator::GenerateStarCluster()
 		? CanonicalDataset->ClusterBounds
 		: StarClusterGenerator->GetStarClusterBoundsByRange(ClusterType)
 			* UStarClusterGenerator::GetSizeExtentFactor(StarClusterModel->StarClusterSize);
+	// Rio 08.10 (CLUSTER DENSITY): a canonical cluster's layout scales about its centre by Density^(-1/3), exactly 1 by
+	// default. The formation is sampled in its usual bounds (same draws, same shape); the positions sealed in the dataset
+	// and the logical extent carry the scale, so a reused dataset (gameplay, saves) composes to the same frame.
+	const double ClusterDensityScale = CanonicalDataset ? APSClusterDensity::DistanceScale(StarClusterDensity) : 1.0;
 	NewStarCluster->ClusterType = ClusterType;
 	NewStarCluster->StarClusterComposition = StarClusterModel->StarClusterComposition;
 	NewStarCluster->StarClusterPopulation = StarClusterModel->StarClusterPopulation;
@@ -10531,6 +10570,10 @@ void AAstroGenerator::GenerateStarCluster()
 			(NewStarCluster->ClusterBounds.GetAbs().GetMax() * 0.5
 				+ MaximumGeneratedStarRadiusSolar * 100.0) * 100.0;
 		LogicalClusterHalfExtent = FMath::Max(LogicalClusterHalfExtent, GlobularHalfExtent);
+	}
+	if (ClusterDensityScale != 1.0)
+	{
+		LogicalClusterHalfExtent *= ClusterDensityScale;
 	}
 	const uint32 ClusterProjectionHash = HashCombine(
 		GetTypeHash(NewStarCluster->GenerationSeed),
@@ -10626,7 +10669,10 @@ void AAstroGenerator::GenerateStarCluster()
 				// the dataset prefix.
 				// StableIds remain canonical-prefix ordinals; only their deterministic
 				// formation address follows a full-cycle permutation of the same catalogue.
+				// Rio 09.10 (playtest 30, "Elongated Stream: everything drifts"): the stream's place along its length is its
+				// index too, so the menu's prefix drew only one end of it, off the cluster centre. Same full-cycle policy.
 				const int32 FormationIndex = ClusterType == EStarClusterType::RingArc
+					|| ClusterType == EStarClusterType::ElongatedStream
 					? static_cast<int32>(ClusterFormationOrder.Resolve(CanonicalIndex))
 					: CanonicalIndex;
 				TSharedPtr<FStarModel> StarModel = MakeShared<FStarModel>();
@@ -10638,8 +10684,18 @@ void AAstroGenerator::GenerateStarCluster()
 				{
 					StarGenerator->GenerateStarModelByProbability(StarModel, StarClusterModel);
 				}
-				const FVector StarPosition = StarClusterGenerator->CalculateStarPosition(
+				FVector StarPosition = StarClusterGenerator->CalculateStarPosition(
 					FormationIndex, NewStarCluster, StarModel);
+				// Rio 09.10 (playtest 30): the stream's and the hourglass's scatter came from the global RNG, so every rebuild
+				// of the same seed drew another formation. The call above still runs and consumes the same global draws, so
+				// every later star, system and planet of this seed stays as it was; only these two shapes take the seeded
+				// position. A finalized dataset (every save) keeps its stored positions: this runs for new datasets only.
+				UStarClusterGenerator::SampleSeededStreamFormation(ClusterType, NewStarCluster->GenerationSeed,
+					FormationIndex, NewStarCluster->ModeledStarAmount, NewStarCluster->ClusterBounds, StarPosition);
+				if (ClusterDensityScale != 1.0)
+				{
+					StarPosition *= ClusterDensityScale;
+				}
 				StarModel->Location = StarPosition;
 				FStarSystemModel PotentialSystemModel;
 				const int32 SystemSeed = static_cast<int32>(HashCombine(
@@ -11657,6 +11713,36 @@ void AAstroGenerator::GenerateStarSystemByModel()
 					Edit->ApplyToPlanetOrbits(*PlanetarySystemModel, bCompactProceduralOrbits, StarModel->Radius);
 			if (bCompactProceduralOrbits && IsValid(GeneratedWorldModel)) GeneratedWorldModel->ApplyPlanetOrbitEdits(
 				*PlanetarySystemModel, FString::Printf(TEXT("SYS0/S%d"), StarNumber), StarModel->Radius);
+			// Rio 09.10 (playtest 32, "ORBIT DISTANCE snaps back"): since REAL SCALE became the default (06.10) the home
+			// system skipped every manual distance, so the slider's value fell back to the generated one. Under REAL SCALE
+			// only the player's own distances apply (FAPSPreviewPlanetOrbitEdit::bAppliesAtRealScale), with the same clamp as
+			// ApplyPlanetOrbitEdits; the surface clearance pass below follows as before. A family without such an edit (the
+			// roll's edits, every save made before) is not touched here: today's layout, exactly.
+			const bool bRealScalePlayerOrbits = !bCompactProceduralOrbits && UsesRealScale()
+				&& (bIsPreviewGeneration || !bIntegrateStartPlanet) && IsValid(GeneratedWorldModel);
+			const auto FindPlayerOrbitDistance = [&](const int32 PlanetModelIndex) -> const FAPSPreviewPlanetOrbitEdit*
+			{
+				const FAPSPreviewPlanetOrbitEdit* Edit = bRealScalePlayerOrbits ? GeneratedWorldModel->FindPlanetOrbitEdit(
+					FString::Printf(TEXT("SYS0/S%d/P%d"), StarNumber, PlanetModelIndex)) : nullptr;
+				return Edit && Edit->bAppliesAtRealScale && Edit->bOverrideDistance && FMath::IsFinite(Edit->DistanceAu)
+					? Edit : nullptr;
+			};
+			if (bRealScalePlayerOrbits)
+			{
+				const double MaximumAu = UGeneratedWorld::MaximumPlanetOrbitAu(StarModel->Radius);
+				for (int32 PlanetModelIndex = 0; PlanetModelIndex < PlanetarySystemModel->PlanetsList.Num(); ++PlanetModelIndex)
+				{
+					const TSharedPtr<FPlanetData>& PlanetData = PlanetarySystemModel->PlanetsList[PlanetModelIndex];
+					const FAPSPreviewPlanetOrbitEdit* Edit = FindPlayerOrbitDistance(PlanetModelIndex);
+					if (!Edit || !PlanetData.IsValid() || !PlanetData->PlanetModel.IsValid()) continue;
+					const double RadiusKm = FMath::Max(static_cast<double>(PlanetData->PlanetModel->RadiusKM),
+						PlanetData->PlanetModel->Radius * 6371.0);
+					const double MinimumAu = UGeneratedWorld::MinimumPlanetOrbitAu(StarModel->Radius, RadiusKm);
+					PlanetData->OrbitRadius = FMath::Clamp(Edit->DistanceAu, MinimumAu, FMath::Max(MinimumAu, MaximumAu));
+					PlanetData->PlanetModel->OrbitDistance = PlanetData->OrbitRadius;
+					PlanetData->PlanetModelData = *PlanetData->PlanetModel;
+				}
+			}
 			UPlanetarySystemGenerator::EnforcePlanetSurfaceClearance(
 				*PlanetarySystemModel);
 			if (RetainedModelEdits > 0)
@@ -11787,7 +11873,12 @@ void AAstroGenerator::GenerateStarSystemByModel()
 						NewStar->StarRadiusKM * 100000.0 * 1.35 + PlanetEnvelopeCm,
 						NewStar->StarRadiusKM * 100000.0 + PlanetEnvelopeCm * 2.0);
 					OrbitRadiusCm = FMath::Max(OrbitRadiusCm, StellarClearanceCm);
-					if (!bCompactProceduralOrbits && PreviousSafeOrbitRadiusCm > 0.0)
+					// Rio 09.10 (playtest 32): this chain runs in index order, so it would push a planet moved inside its
+					// predecessor straight back out. The player's REAL SCALE distance keeps its place (the surface clearance
+					// pass above already ran in distance order) and does not anchor the next planet either, so moving one
+					// planet never shifts the others. Without such an edit this is the old code path exactly.
+					const bool bManualDistance = FindPlayerOrbitDistance(PlanetIndex) != nullptr;
+					if (!bCompactProceduralOrbits && !bManualDistance && PreviousSafeOrbitRadiusCm > 0.0)
 					{
 						const double InterOrbitGapCm = FMath::Max(
 							AuToCentimetres * 0.01, NewStar->StarRadiusKM * 100000.0 * 0.08);
@@ -11795,8 +11886,11 @@ void AAstroGenerator::GenerateStarSystemByModel()
 							PreviousSafeOrbitRadiusCm + PreviousPlanetEnvelopeCm
 							+ PlanetEnvelopeCm + InterOrbitGapCm);
 					}
-					PreviousSafeOrbitRadiusCm = OrbitRadiusCm;
-					PreviousPlanetEnvelopeCm = PlanetEnvelopeCm;
+					if (!bManualDistance)
+					{
+						PreviousSafeOrbitRadiusCm = OrbitRadiusCm;
+						PreviousPlanetEnvelopeCm = PlanetEnvelopeCm;
+					}
 					PlanetModel->OrbitDistance = OrbitRadiusCm / AuToCentimetres;
 					FPlanetData->OrbitRadius = PlanetModel->OrbitDistance;
 				}
@@ -14504,6 +14598,19 @@ bool AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> Start
 			IsValid(NewHomeSpaceship) ? TEXT("OK") : TEXT("NULL"),
 			IsValid(GeneratedHomeStarSystem) ? TEXT("OK") : TEXT("NULL"));
 		return false;
+	}
+
+	// Rio 08.10 (0.6.0-alpha): the HQ shipyard slot was laid out for the default M3, and an L or bigger flagship
+	// (500 m to 2 km) spawned there overlaps the HQ hub, pads and shipyard, so it cannot fly out. Only such hulls
+	// step out along the HQ's up axis to the first clear place; the accepted M3/M start stays exactly where it was.
+	if (NewHomeSpaceship->SizeClass >= ESpaceshipSizeClass::L)
+	{
+		const FQuat UpLine = FRotationMatrix::MakeFromYZ(
+			HomeSpaceHeadquarters->GetActorUpVector(), HomeSpaceHeadquarters->GetActorForwardVector()).ToQuat();
+		APSShipPlacement::PlaceClear(*NewHomeSpaceship, HomeSpaceshipLocation, UpLine);
+		UE_LOG(LogTemp, Log, TEXT("[APS.Civilization] home ship %s (size class %d) moved clear of the HQ to %s"),
+			*GetNameSafe(NewHomeSpaceship), static_cast<int32>(NewHomeSpaceship->SizeClass),
+			*NewHomeSpaceship->GetActorLocation().ToCompactString());
 	}
 
 	if (NewHomeSpaceship && GeneratedHomeStarSystem)

@@ -31,6 +31,8 @@
 #include "Camera/CameraComponent.h"
 #include "Components/ArrowComponent.h"
 #include "Components/BoxComponent.h"
+#include "Components/CapsuleComponent.h"
+#include "GameFramework/Character.h"
 #include "Components/HierarchicalInstancedStaticMeshComponent.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "Components/PoseableMeshComponent.h"
@@ -939,6 +941,17 @@ namespace APSAutomaticShipInteraction
 			&& Component->GetRelativeRotation().IsNearlyZero(0.1);
 	}
 
+	// Rio 09.10 (playtest 08.10 items 1-3, Single: stuck in the hull, a corridor instead of the bridge, no gravity): the authored
+	// L_APS_SinglePlay_StartLocation (29.09) saved for every placed ship the bounds-fallback seat, exit point and sphere of the
+	// hulls of that time; on today's refit hulls those seats sit 2-30 cm from the hull's pivot (the keel on M_P2_01/02/03, S and L
+	// ships), and the pilot got up there. See RefreshInteractionGeometry.
+	TAutoConsoleVariable<int32> CVarCabinSeatFromSocket(
+		TEXT("aps.Ship.CabinSeatFromSocket"), 1,
+		TEXT("Rio 09.10 (playtest 08.10 items 1-3): 1: a hull with an authored cabin seat socket (PilotSeat/PilotChair/CockpitSeat) ")
+		TEXT("always takes its seat, its exit point and its interaction/gravity sphere from the hull, replacing what a level ")
+		TEXT("instance saved for those native components (L_APS_SinglePlay_StartLocation keeps 29.09 fallback seats 2-30 cm from ")
+		TEXT("today's hull pivots). 0: a saved instance transform is kept, as before."));
+
 	UStaticMeshComponent* FindLargestMesh(const ASpaceship* Ship)
 	{
 		TArray<UStaticMeshComponent*> MeshComponents;
@@ -1704,11 +1717,18 @@ void ASpaceship::RefreshInteractionGeometry()
 		TEXT("PilotSeat"), TEXT("PilotChair"), TEXT("CockpitSeat"), TEXT("DriverSeat"), TEXT("Seat")};
 	static const TArray<FName> ExitSocketNames{
 		TEXT("PilotExit"), TEXT("ShipExit"), TEXT("RampExit"), TEXT("Entry"), TEXT("Door"), TEXT("Exit")};
+	// Rio 09.10 (aps.Ship.CabinSeatFromSocket): a modelled cabin (the sockets HasWalkableInterior counts) owns its seat, exit
+	// point and sphere: what a level instance saved for those native components is replaced.
+	static const TArray<FName> CabinSeatSocketNames{TEXT("PilotSeat"), TEXT("PilotChair"), TEXT("CockpitSeat")};
+	FTransform CabinSeatTransform;
+	const bool bCabinOwnsGeometry = !IsGroundVehicle()
+		&& APSAutomaticShipInteraction::CVarCabinSeatFromSocket.GetValueOnGameThread() != 0
+		&& APSAutomaticShipInteraction::FindSocketTransform(InteractionMesh, CabinSeatSocketNames, CabinSeatTransform);
 
 	const bool bSeatStillUsesLastAutoTransform = bSeatWasAutoConfigured
 		&& PilotChair->GetRelativeTransform().Equals(LastAutoSeatRelativeTransform, 0.1);
 	const bool bCanConfigureSeat = bForceGeneratedConfiguration || bSeatStillUsesLastAutoTransform
-		|| APSAutomaticShipInteraction::IsNativeSeatTransform(PilotChair);
+		|| APSAutomaticShipInteraction::IsNativeSeatTransform(PilotChair) || bCabinOwnsGeometry;
 	if (bCanConfigureSeat)
 	{
 		FTransform SeatTransform;
@@ -1721,6 +1741,13 @@ void ASpaceship::RefreshInteractionGeometry()
 				InteractionMesh->GetComponentTransform().TransformPosition(FallbackSeatLocation),
 				FVector::OneVector);
 		}
+		if (bCabinOwnsGeometry && !bSeatWasAutoConfigured && !APSAutomaticShipInteraction::IsNativeSeatTransform(PilotChair)
+			&& !PilotChair->GetComponentLocation().Equals(SeatTransform.GetLocation(), 1.0))
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[APS.Seat] %s: seat taken from the hull's cabin socket; the instance's saved seat (relative %s) is ignored"),
+				*GetName(), *PilotChair->GetRelativeLocation().ToCompactString());
+		}
 		PilotChair->SetWorldTransform(SeatTransform);
 		bSeatWasAutoConfigured = true;
 		LastAutoSeatRelativeTransform = PilotChair->GetRelativeTransform();
@@ -1729,7 +1756,7 @@ void ASpaceship::RefreshInteractionGeometry()
 	const bool bExitStillUsesLastAutoTransform = bExitWasAutoConfigured
 		&& PilotExitPoint->GetRelativeTransform().Equals(LastAutoExitRelativeTransform, 0.1);
 	const bool bCanConfigureExit = bForceGeneratedConfiguration || bExitStillUsesLastAutoTransform
-		|| APSAutomaticShipInteraction::IsNativeExitTransform(PilotExitPoint);
+		|| APSAutomaticShipInteraction::IsNativeExitTransform(PilotExitPoint) || bCabinOwnsGeometry;
 	if (bCanConfigureExit)
 	{
 		FTransform ExitTransform;
@@ -1754,7 +1781,7 @@ void ASpaceship::RefreshInteractionGeometry()
 		&& SphereCollisionComponent->GetRelativeLocation().Equals(LastAutoInteractionZoneRelativeLocation, 0.1)
 		&& FMath::IsNearlyEqual(
 			SphereCollisionComponent->GetUnscaledSphereRadius(), LastAutoInteractionRadius, 0.1f);
-	if (bForceGeneratedConfiguration || bZoneStillUsesLastAutoValues || bZoneUsesNativeDefaults)
+	if (bForceGeneratedConfiguration || bZoneStillUsesLastAutoValues || bZoneUsesNativeDefaults || bCabinOwnsGeometry)
 	{
 		// The root is the visual hull and imported ships are commonly actor-scaled.
 		// Keep the interaction sphere in world units instead of inheriting that scale.
@@ -1885,6 +1912,8 @@ void ASpaceship::Tick(float DeltaTime)
 		CurrentBoostMultiplier, TargetBoost, DeltaTime, BoostResponse);
 
 	AdvanceEngineModeTransition(DeltaTime);
+	// Rio 09.10 (aps.Ship.HullBodySyncOnce, default 0): this tick's step and turn reach the hull's own body once.
+	APSShipHull::FScopedBodySync HullBodySync(*this);
 	{
 		TRACE_CPUPROFILER_EVENT_SCOPE(APS_Ship_Move);
 		APSShipPerf::FScope Scope(bMeasure, APSShipPerf::Move);
@@ -1897,6 +1926,7 @@ void ASpaceship::Tick(float DeltaTime)
 		TRACE_CPUPROFILER_EVENT_SCOPE(APS_Ship_Rotation);
 		APSShipPerf::FScope Scope(bMeasure, APSShipPerf::Rotation);
 		ApplyRotationInput(DeltaTime);
+		HullBodySync.End();
 	}
 	{
 		TRACE_CPUPROFILER_EVENT_SCOPE(APS_Ship_Stabilize);
@@ -3899,7 +3929,10 @@ bool ASpaceship::MoveShipKinematic(const FVector& Delta, bool bSweep, FHitResult
 	// clear sphere path with the same channel, responses and ignore lists proves the body sweep clear too.
 	const auto SphereMayHit = [this, RootPrimitive, &Delta]()
 	{
-		const FBox BodyBox = RootPrimitive->BodyInstance.GetBodyBounds();
+		// Rio 09.10 (aps.Ship.HullBodySyncOnce): this tick's turn may not be in the body yet; the bounds it will have.
+		const UAPSShipHullComponent* SyncedHull = Cast<UAPSShipHullComponent>(RootPrimitive);
+		const FBox BodyBox = SyncedHull && SyncedHull->HasPendingBodySync() ? SyncedHull->GetPendingBodyBounds()
+			: RootPrimitive->BodyInstance.GetBodyBounds();
 		const FVector SphereCenter = BodyBox.IsValid ? BodyBox.GetCenter() : RootPrimitive->Bounds.Origin;
 		const double SphereRadius = BodyBox.IsValid ? BodyBox.GetExtent().Size() : RootPrimitive->Bounds.BoxExtent.Size();
 		FCollisionQueryParams Params(SCENE_QUERY_STAT(APSShipSweepPrecheck), RootPrimitive->bTraceComplexOnMove, this);
@@ -4098,6 +4131,29 @@ bool ASpaceship::MoveShipWithProxySweep(const FVector& Delta, FHitResult& OutHit
 					return true;
 				}
 			}
+		}
+	}
+	// Rio 08.10 (0.6.0-alpha): an L flagship spawned inside the HQ could not leave in orbit (the climb-out above needs a
+	// planet's "up", and the slide meets the HQ again). Still held by a structure it is already inside (an HQ, a station, a
+	// shipyard, a colony; never a ship or a pawn): this move ignores those parts, as ground vehicles do when stuck.
+	if (bBlocked && bUnstick && Earliest.bStartPenetrating)
+	{
+		for (int32 Pass = 0; Pass < 4 && bBlocked && Earliest.bStartPenetrating; ++Pass)
+		{
+			// Truly inside (a resting or grazing contact still blocks, so a pilot pressing onto a deck never sinks through
+			// it); a structure or a part of one (the HQ's parked M3 is its child actor), never a ship or a pawn of its own.
+			const AActor* Held = Earliest.GetActor();
+			const bool bStructure = Held && (Held->IsA<ATechActor>()
+				|| (Held->GetParentActor() && Held->GetParentActor()->IsA<ATechActor>()));
+			if (!bStructure || Held->IsA<APawn>() || !Earliest.GetComponent() || Earliest.PenetrationDepth < UnstickDepthCm)
+			{
+				break;
+			}
+			Params.AddIgnoredComponent(Earliest.GetComponent());
+			ClimbedOutHit = Earliest;
+			bClimbedOut = true;
+			Move = Delta;
+			bBlocked = SweepBoxes(Move, Earliest, false);
 		}
 	}
 	if (!bBlocked)
@@ -7029,6 +7085,150 @@ FTransform ASpaceship::GetPilotExitTransform() const
 	const FTransform Seat = PilotChair->GetComponentTransform();
 	const FVector Back = -FVector::VectorPlaneProject(Seat.GetUnitAxis(EAxis::X), Up).GetSafeNormal();
 	return FTransform(Seat.GetRotation(), Seat.GetLocation() + Back * 120.0 + Up * 60.0);
+}
+
+namespace APSShipStandUp
+{
+	// Rio 09.10 (playtest 08.10 items 1-3: stuck in the hull, a corridor instead of the bridge, no gravity): the place behind
+	// the seat was never checked (the engine's FindTeleportSpot in APilotingVehicle tests nothing while the pilot's collision is
+	// still off), and two cabins have their seat socket facing aft (L_P1_15: the console is on its -X; S_P3_01: yaw 180 under a
+	// nose at +X), so "behind the seat" was inside the console or the dash.
+	TAutoConsoleVariable<int32> CVarSafeStandUp(
+		TEXT("aps.Ship.SafeStandUp"), 1,
+		TEXT("Rio 09.10 (playtest 08.10 items 1-3): 1: a pilot getting up in a ship with a cabin stands only on a deck of this ship ")
+		TEXT("30-140 cm under the seat socket, in a free capsule, in sight of the seat, checked once the hull's own collision is ")
+		TEXT("back: 120 cm aft of the seat (aft = away from the nearest Widget_* console socket, else toward the PilotExit socket, ")
+		TEXT("else against the nose), then the PilotExit socket, then aft-left/right, then 200 cm aft; facing the seat. [APS.Seat] ")
+		TEXT("logs the choice. 0: 120 cm behind the seat socket's X axis and 60 cm up, unchecked, as before."));
+
+	struct FSpot
+	{
+		const TCHAR* Name;
+		FVector Probe;
+		// 09.10 (M_P2_02 on 0.6.4: the 1.2 m spot behind the seat failed the sight line, the pilot stood 2.5 m away at the
+		// cabin exit): the place a pilot got up at before (the legacy transform) needs no sight line, only this deck and room.
+		bool bNeedsSight{true};
+	};
+}
+
+FTransform ASpaceship::ResolvePilotExitTransform(APawn& LeavingPilot, const FTransform& Proposed) const
+{
+	UWorld* World = GetWorld();
+	const ACharacter* Walker = Cast<ACharacter>(&LeavingPilot);
+	const UCapsuleComponent* Capsule = Walker ? Walker->GetCapsuleComponent() : nullptr;
+	UPrimitiveComponent* Hull = GetPrimaryHullComponent();
+	if (APSShipStandUp::CVarSafeStandUp.GetValueOnGameThread() == 0 || !World || !Capsule || !Hull || !PilotChair
+		|| !HasWalkableInterior())
+	{
+		return Proposed;
+	}
+	const double Radius = Capsule->GetScaledCapsuleRadius();
+	const double HalfHeight = Capsule->GetScaledCapsuleHalfHeight();
+	const FVector Up = GetActorUpVector();
+	const FVector Seat = PilotChair->GetComponentLocation();
+
+	// Aft of the seat: away from the nearest console socket the cabin tools put in front of the pilot, else toward the authored
+	// cabin exit, else against the nose. The seat socket's own X is not trusted (L_P1_15 and S_P3_01 face aft).
+	FVector Aft = FVector::ZeroVector;
+	double ConsoleDistance = 400.0;
+	for (const FName Socket : Hull->GetAllSocketNames())
+	{
+		if (Socket.ToString().StartsWith(TEXT("Widget_")))
+		{
+			const FVector ToConsole = FVector::VectorPlaneProject(Hull->GetSocketLocation(Socket) - Seat, Up);
+			const double Distance = ToConsole.Size();
+			if (Distance > 30.0 && Distance < ConsoleDistance)
+			{
+				ConsoleDistance = Distance;
+				Aft = -ToConsole / Distance;
+			}
+		}
+	}
+	// The cabin tools author PilotExit as the standing capsule's centre just behind the seat; S_P3_01's is the ramp outside.
+	static const FName CabinExitSocket(TEXT("PilotExit"));
+	const bool bHasExitSocket = Hull->DoesSocketExist(CabinExitSocket);
+	const FVector CabinExit = bHasExitSocket ? Hull->GetSocketLocation(CabinExitSocket) : Seat;
+	const FVector ExitPlanar = FVector::VectorPlaneProject(CabinExit - Seat, Up);
+	const bool bCabinExit = bHasExitSocket && ExitPlanar.Size() <= 400.0
+		&& FMath::Abs(FVector::DotProduct(CabinExit - Seat, Up)) <= 150.0;
+	if (Aft.IsNearlyZero() && bCabinExit && ExitPlanar.Size() > 30.0)
+	{
+		Aft = ExitPlanar.GetSafeNormal();
+	}
+	if (Aft.IsNearlyZero())
+	{
+		Aft = -FVector::VectorPlaneProject(GetShipForwardVector(), Up).GetSafeNormal();
+	}
+	if (Aft.IsNearlyZero())
+	{
+		return Proposed;
+	}
+	const FVector Side = FVector::CrossProduct(Up, Aft).GetSafeNormal();
+
+	TArray<APSShipStandUp::FSpot, TInlineAllocator<6>> Spots;
+	// Do no harm: where today's place stands on the seat's own deck in a free capsule, the pilot keeps getting up there.
+	Spots.Add({TEXT("legacy"), Proposed.GetLocation(), false});
+	Spots.Add({TEXT("aft120"), Seat + Aft * 120.0});
+	if (bCabinExit)
+	{
+		Spots.Add({TEXT("cabinExit"), CabinExit});
+	}
+	Spots.Add({TEXT("aft120L"), Seat + Aft * 120.0 - Side * 90.0});
+	Spots.Add({TEXT("aft120R"), Seat + Aft * 120.0 + Side * 90.0});
+	Spots.Add({TEXT("aft200"), Seat + Aft * 200.0});
+
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(APSStandUpSpot), false, &LeavingPilot);
+	const FQuat CapsuleRotation = FQuat::FindBetweenNormals(FVector::UpVector, Up);
+	const FCollisionShape Shape = FCollisionShape::MakeCapsule(
+		static_cast<float>(FMath::Max(Radius - 2.0, 1.0)), static_cast<float>(FMath::Max(HalfHeight - 2.0, Radius)));
+	// Over the backrest and under a 2.2 m cabin ceiling (the seat socket is 0.6-1.0 m over its deck).
+	const FVector SeatSight = Seat + Up * 140.0;
+	const FQuat Facing = FRotationMatrix::MakeFromXZ(-Aft, Up).ToQuat();
+	const FTransform& ShipFrame = GetActorTransform();
+	FString Tried;
+	const TCHAR* FreeName = nullptr;
+	FVector FreeCentre = FVector::ZeroVector;
+	for (const APSShipStandUp::FSpot& Spot : Spots)
+	{
+		FHitResult Deck;
+		const bool bDeckHit = World->LineTraceSingleByChannel(
+			Deck, Spot.Probe + Up * 80.0, Spot.Probe - Up * 250.0, ECC_Pawn, Params);
+		const double DeckBelowSeat = bDeckHit ? FVector::DotProduct(Seat - Deck.ImpactPoint, Up) : 0.0;
+		// A walkable deck of this ship at the seat's own level.
+		const bool bDeck = bDeckHit && !Deck.bStartPenetrating && Deck.GetActor() == this
+			&& FVector::DotProduct(Deck.ImpactNormal, Up) >= 0.7 && DeckBelowSeat >= 30.0 && DeckBelowSeat <= 140.0;
+		const FVector Centre = Deck.ImpactPoint + Up * (HalfHeight + 3.0);
+		const bool bFree = bDeck && !World->OverlapBlockingTestByChannel(Centre, CapsuleRotation, ECC_Pawn, Shape, Params);
+		FHitResult Wall;
+		const bool bInSight = bFree && (!Spot.bNeedsSight || !World->LineTraceSingleByChannel(
+			Wall, SeatSight, Centre + Up * (HalfHeight - Radius), ECC_Pawn, Params));
+		Tried += FString::Printf(TEXT(" %s(deck=%s %.0fcm free=%d sight=%d%s%s)"), Spot.Name,
+			bDeckHit ? *GetNameSafe(Deck.GetComponent()) : TEXT("none"), DeckBelowSeat, bFree ? 1 : 0, bInSight ? 1 : 0,
+			Wall.bBlockingHit ? TEXT(" wall=") : TEXT(""), Wall.bBlockingHit ? *GetNameSafe(Wall.GetComponent()) : TEXT(""));
+		if (bInSight)
+		{
+			UE_LOG(LogTemp, Log, TEXT("[APS.Seat] %s stand-up: spot=%s local=%s cm seatLocal=%s cm legacyLocal=%s cm;%s"),
+				*GetName(), Spot.Name, *ShipFrame.InverseTransformPosition(Centre).ToCompactString(),
+				*ShipFrame.InverseTransformPosition(Seat).ToCompactString(),
+				*ShipFrame.InverseTransformPosition(Proposed.GetLocation()).ToCompactString(), *Tried);
+			return FTransform(Spot.bNeedsSight ? Facing : Proposed.GetRotation(), Centre);
+		}
+		if (bFree && !FreeName)
+		{
+			FreeName = Spot.Name;
+			FreeCentre = Centre;
+		}
+	}
+	if (FreeName)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[APS.Seat] %s stand-up: no spot in sight of the seat; spot=%s local=%s cm (free, on the seat's deck);%s"),
+			*GetName(), FreeName, *ShipFrame.InverseTransformPosition(FreeCentre).ToCompactString(), *Tried);
+		return FTransform(Facing, FreeCentre);
+	}
+	UE_LOG(LogTemp, Warning, TEXT("[APS.Seat] %s stand-up: no free spot on the seat's deck; the old place legacyLocal=%s cm;%s"),
+		*GetName(), *ShipFrame.InverseTransformPosition(Proposed.GetLocation()).ToCompactString(), *Tried);
+	return Proposed;
 }
 
 void ASpaceship::ComputeProximity()

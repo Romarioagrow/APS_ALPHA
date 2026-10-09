@@ -20,6 +20,12 @@ DECLARE_DELEGATE_OneParam(FOnSurfaceObjectOpen, AActor*);
  * turns on its own (drag to turn it, the real star lights its day side); beside it the whole surface unwrapped. Both
  * carry the markers: the colony, outposts, stations in orbit, ships near the world and the pilot.
  *
+ * Rio 09.10 ("why are there only space stations on the surface map"): what stands on the ground (the home colony and its
+ * landing pad, settlements, outposts and structures on the ground, the ancient sites and located anomalies, landed ships)
+ * keeps its own marks under the names the object pages and the HUD use; what flies above the ground band (stations, HQs,
+ * shipyards, outposts in orbit, ships in orbit) is a small dim orbit mark at the point under it, its label "/ ORBIT" and
+ * after the surface's own. The pilot (YOU) and the ship the player flies stay bright.
+ *
  * Only what the civilization knows is shown (Rio 02.10: "only the scanned ones"): an unsurveyed world is a dark disc
  * and map under a scanner's noise with what orbits it, a surveyed one coarse and pale, a studied one in full. The
  * sampled heights, liquid and climate are kept per texel, so a new survey level or look only colours them again.
@@ -97,7 +103,12 @@ private:
 		Station,
 		Ship,
 		Pilot,
-		Anomaly
+		Anomaly,
+		/** An ancient site (Gameplay/Ancients) on or over this world, under the name its page and the HUD give it. */
+		Ancient,
+		/** The home colony's landing pad. */
+		Pad,
+		Count
 	};
 	struct FMarker
 	{
@@ -110,6 +121,10 @@ private:
 		FLinearColor Color{FLinearColor::White};
 		/** Above the surface, km (orbit markers and flying ships). */
 		double AltitudeKm{0.0};
+		/** Above the ground band: in orbit (or flying high), drawn as a dim orbit mark, not as a point on the surface. */
+		bool bOrbit{false};
+		/** The ship the player flies (or the home ship while on foot): never dimmed. */
+		bool bPlayerShip{false};
 	};
 	/** What the civilization knows of the world: fleet command's survey level (everything without fleet command). */
 	enum class EKnown : uint8
@@ -160,6 +175,8 @@ private:
 	int32 PickMarker(const FGeometry& Geometry, const FVector2D& ScreenPosition) const;
 	/** The picked marker in Markers (it is found again after every refresh by its actor and label), or INDEX_NONE. */
 	int32 SelectedIndex() const;
+	/** One [APS.SurfaceMap] line when what the map shows changes (the full list with aps.UI.SurfaceMapLog 1). */
+	void LogMarkers();
 
 	FOnSurfaceObjectOpen OnOpenObject;
 	TWeakObjectPtr<AActor> SelectedActor;
@@ -198,6 +215,8 @@ private:
 	FText BakeSummary;
 	bool bNoSurface{false};
 	TArray<FMarker> Markers;
+	/** What the last [APS.SurfaceMap] line described. */
+	FString MarkerSignature;
 	/**
 	 * The view both halves share (Rio 02.10: "both maps linked, the globe and the plane zoomed"): the longitude and
 	 * latitude at the centre, radians, and the zoom, 1..12. The globe looks at the centre; the map shows a window

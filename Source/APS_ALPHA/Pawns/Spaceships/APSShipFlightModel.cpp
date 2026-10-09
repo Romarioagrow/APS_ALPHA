@@ -1,4 +1,4 @@
-#include "APSShipFlightModel.h"
+﻿#include "APSShipFlightModel.h"
 #include "APS_ALPHA/UI/Hud/APSFlightReadout.h"
 #include "APSShipFlightBenchmark.h"
 #include "Components/MeshComponent.h"
@@ -27,6 +27,8 @@
 #include "Components/PoseableMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/World.h"
+#include "Engine/OverlapResult.h"
+#include "Components/PrimitiveComponent.h"
 #include "EngineUtils.h"
 #include "GameFramework/PlayerController.h"
 #include "HAL/IConsoleManager.h"
@@ -208,6 +210,116 @@ namespace APSShipFlightModelLocal
 		TEXT("How long the autopilot's course takes to swing to a new aim (a detour round a world appearing or ending), s."));
 	TAutoConsoleVariable<float> CVarAutopilotBank(TEXT("aps.Autopilot.Bank"), 25.0f,
 		TEXT("How far the autopilot banks into a turn, degrees (0 = level turns)."));
+	/**
+	 * Rio 08.10 night (0.6.1: engaged on the HQ pad with a star below the deck, the autopilot turned the hull into the
+	 * deck, scraped along it and wedged in the merged pad mesh for good): a departure before the turn.
+	 */
+	TAutoConsoleVariable<int32> CVarAutopilotDepart(TEXT("aps.Autopilot.Depart"), 1,
+		TEXT("1: engaged at rest next to a structure (a pad, a station), the autopilot first lifts the ship along its own up ")
+		TEXT("until the hull clears the deck by aps.Autopilot.DepartClearM, then leaves level for a course below that deck. 0: off."));
+	TAutoConsoleVariable<float> CVarAutopilotDepartClearM(TEXT("aps.Autopilot.DepartClearM"), 15.0f,
+		TEXT("How far above its own hull the ship lifts before the autopilot turns, metres."));
+	TAutoConsoleVariable<float> CVarAutopilotDepartSpeed(TEXT("aps.Autopilot.DepartSpeed"), 12.0f,
+		TEXT("The lift's speed, m/s."));
+	TAutoConsoleVariable<int32> CVarAutopilotDepartExit(TEXT("aps.Autopilot.DepartExit"), 1,
+		TEXT("Rio 08.10 sweep (autopilot from the HQ to the planet's far side: stuck in the station for 70 s; stations are not ")
+		TEXT("solid bodies of the route): until the ship is out of the structure it lifted from, a course through that ")
+		TEXT("structure leaves outward first. 0: off."));
+	TAutoConsoleVariable<int32> CVarAutopilotTargetNoDetour(TEXT("aps.Autopilot.TargetNoDetour"), 1,
+		TEXT("Rio 08.10 sweep: a solid body whose centre is inside the target's stop sphere (the star of a target system) is ")
+		TEXT("not flown round as an obstacle (the course aimed 1.2 radii beside it and arrived 10-20 degrees off). 0: as before."));
+	TAutoConsoleVariable<int32> CVarAutopilotAvoidStations(TEXT("aps.Autopilot.AvoidStations"), 1,
+		TEXT("Rio 08.10 sweep (autopilot to the planet's far side ran into the station next to the HQ): stations on the way are ")
+		TEXT("flown round like worlds (their hull bounds; not the target, not one the ship is inside). 0: as before."));
+	TAutoConsoleVariable<float> CVarAutopilotBlockedSeconds(TEXT("aps.Autopilot.BlockedSeconds"), 4.0f,
+		TEXT("Full thrust on course and under 1 m/s for this long: the autopilot hands the helm back with a notice (0: never)."));
+	TAutoConsoleVariable<float> CVarAutopilotDepartLeaveM(TEXT("aps.Autopilot.DepartLeaveM"), 1500.0f,
+		TEXT("For a course below the deck it left: how far the ship flies level and slightly up before it turns down, metres."));
+	/**
+	 * Rio 08.10 (playtest item 46): "the autopilot's tempo is inverted. In space gaining speed takes forever, then the
+	 * main distance flies by in seconds, then it slows down for a long time again. It must be the other way round." The
+	 * speed was proportional to the distance from the body behind or ahead in nearly every phase, so every e-fold of
+	 * distance cost the same time: ~30 s for the first 1% of a trip, 80-98% of it in 5-11 s, the last 1% in 32-81 s
+	 * (bench and Rio's own flights 05-07.10). The tempo plans the trip at engage instead (fixed per trip):
+	 * up and down at one log-speed rate, a main leg at Trip / T_main, a stop in finite time.
+	 */
+	TAutoConsoleVariable<int32> CVarTempo(TEXT("aps.Autopilot.Tempo"), 1,
+		TEXT("Rio 08.10 (item 46): 1 plans each autopilot trip: one smooth rate up and down, a main leg that lasts ")
+		TEXT("(aps.Autopilot.Tempo.Main*), a stop in finite time. Read at engage. 0: the 0.6.2 law exactly."));
+	TAutoConsoleVariable<float> CVarTempoRate(TEXT("aps.Autopilot.Tempo.Rate"), 1.5f,
+		TEXT("Log-speed rate of the climb and the descent, 1/s (0.3..2; above 2 the star approach crossfade (4/s) lags)."));
+	TAutoConsoleVariable<float> CVarTempoClassExponent(TEXT("aps.Autopilot.Tempo.ClassExponent"), 0.0f,
+		TEXT("The rate times the hull class agility to this power (0: every class alike; 0.5: big hulls slower)."));
+	TAutoConsoleVariable<float> CVarTempoMainSeconds(TEXT("aps.Autopilot.Tempo.MainSeconds"), 8.0f,
+		TEXT("The main leg's duration for a 1 AU trip, s; it grows by aps.Autopilot.Tempo.MainPerDecade per decade of distance."));
+	TAutoConsoleVariable<float> CVarTempoMainPerDecade(TEXT("aps.Autopilot.Tempo.MainPerDecade"), 3.0f,
+		TEXT("Seconds of main leg added per tenfold distance (15 ly: ~26 s; 14 000 ly: ~35 s)."));
+	TAutoConsoleVariable<float> CVarTempoMainMaxSeconds(TEXT("aps.Autopilot.Tempo.MainMaxSeconds"), 40.0f,
+		TEXT("The longest main leg, s."));
+	TAutoConsoleVariable<float> CVarTempoMinCruiseLy(TEXT("aps.Autopilot.Tempo.MinCruiseLyPerSecond"), 0.0f,
+		TEXT("A floor for the main leg's speed, light years a second (Rio liked ~1 for an S hull between stars). 0: off."));
+	TAutoConsoleVariable<float> CVarTempoNearKm(TEXT("aps.Autopilot.Tempo.NearKm"), 20.0f,
+		TEXT("Within this of the stop the rate is the old even approach (1/aps.Autopilot.ApproachSeconds), km."));
+	TAutoConsoleVariable<float> CVarTempoFarKm(TEXT("aps.Autopilot.Tempo.FarKm"), 2000.0f,
+		TEXT("From this distance to the stop the full rate applies (log blend from NearKm), km."));
+	TAutoConsoleVariable<float> CVarTempoStopShare(TEXT("aps.Autopilot.Tempo.StopShare"), 0.5f,
+		TEXT("The finite-time stop zone as a share of the arrival distance (0: no soft stop, the old brake at the end)."));
+	TAutoConsoleVariable<float> CVarTempoJerkSeconds(TEXT("aps.Autopilot.Tempo.JerkSeconds"), 1.0f,
+		TEXT("How long the climb rate takes to grow from 0 to the full rate, s."));
+	TAutoConsoleVariable<float> CVarTempoKneeSeconds(TEXT("aps.Autopilot.Tempo.KneeSeconds"), 0.5f,
+		TEXT("Time constant of the soft approach to a speed limit while climbing, s."));
+	TAutoConsoleVariable<float> CVarTempoCapture(TEXT("aps.Autopilot.Tempo.Capture"), 1.05f,
+		TEXT("Above the planned cap by at most this factor the speed follows the plan; above that the old overspeed shed."));
+	TAutoConsoleVariable<float> CVarTempoFollowRate(TEXT("aps.Autopilot.Tempo.FollowRate"), 5.0f,
+		TEXT("Outside the stop zone the speed follows a falling cap no faster than this log rate, 1/s (0: exactly)."));
+	TAutoConsoleVariable<int32> CVarTempoGuardResume(TEXT("aps.Autopilot.Tempo.GuardResume"), 1,
+		TEXT("1: after a closing guard cut a long frame, the next frame resumes the planned speed (the guard still cuts every frame)."));
+	// 08.10 bench (LEIS, far1000): the velocity's lateral error toward the target shrinks at ~0.4/s, slower than a 1.5/s
+	// descent, so the angle to the target grew to 10-40 degrees at the end and the ship flew past its stop and circled for
+	// 20-40 s. While the velocity is off the course by more than AlignDeg the plan's rate is scaled by AlignDeg / angle.
+	TAutoConsoleVariable<float> CVarTempoAlignDeg(TEXT("aps.Autopilot.Tempo.AlignDeg"), 1.0f,
+		TEXT("Above this angle between the velocity and the course the planned rate is scaled by AlignDeg / angle, degrees ")
+		TEXT("(0: off)."));
+	TAutoConsoleVariable<float> CVarTempoAlignFloor(TEXT("aps.Autopilot.Tempo.AlignFloor"), 0.1f,
+		TEXT("The smallest factor aps.Autopilot.Tempo.AlignDeg may scale the planned rate to (0.02..1)."));
+	// Rio 09.10 (0.6.3: autopilot from the surface to a base on the same planet, 9,096 km: the plan asked 1,140 km/s,
+	// the boosted bands let it fly 300-400 km/s low over the ground, ORBITAL <-> CRUISE every few seconds, WorldScape
+	// rebuilding all the way: 30 fps and 60-130 ms hitches). Shorter trips keep the 0.6.2 law exactly.
+	TAutoConsoleVariable<float> CVarTempoMinTripAU(TEXT("aps.Autopilot.Tempo.MinTripAU"), 0.1f,
+		TEXT("Rio 09.10: the planned tempo only for trips at least this long, AU (0.1 AU = 15 million km: other planets, ")
+		TEXT("stars); trips round a planet, to its moons and stations fly the 0.6.2 law. 0: every trip."));
+	TAutoConsoleVariable<int32> CVarTripLog(TEXT("aps.Autopilot.TripLog"), 1,
+		TEXT("1: a plan line at engage and a summary line per autopilot trip (samples for the piloted ship only); 2: samples ")
+		TEXT("for every ship; 0: none."));
+
+	/** A structure (an HQ, a station, a shipyard, a colony, or one of their parts) touching the hull or within 2 m. */
+	/** The structure (an HQ, a station, a shipyard, a colony) touching the hull or within 2 m, or null. */
+	const AActor* NextStructure(const ASpaceship& Ship, const UPrimitiveComponent* Hull)
+	{
+		const UWorld* World = Ship.GetWorld();
+		if (!World || !Hull)
+		{
+			return nullptr;
+		}
+		FCollisionQueryParams Params(SCENE_QUERY_STAT(APSAutopilotDepart), false, &Ship);
+		TArray<AActor*> Attached;
+		Ship.GetAttachedActors(Attached, false, true);
+		Params.AddIgnoredActors(Attached);
+		TArray<FOverlapResult> Overlaps;
+		World->OverlapMultiByObjectType(Overlaps, Hull->Bounds.Origin, FQuat::Identity,
+			FCollisionObjectQueryParams(FCollisionObjectQueryParams::AllStaticObjects),
+			FCollisionShape::MakeBox(Hull->Bounds.BoxExtent + FVector(200.0)), Params);
+		for (const FOverlapResult& Overlap : Overlaps)
+		{
+			const AActor* Actor = Overlap.GetActor();
+			if (Actor && !Actor->IsA<APawn>() && (Actor->IsA<ATechActor>()
+				|| (Actor->GetParentActor() && Actor->GetParentActor()->IsA<ATechActor>())))
+			{
+				return Actor->IsA<ATechActor>() ? Actor : Actor->GetParentActor();
+			}
+		}
+		return nullptr;
+	}
 	/**
 	 * Rio 06.10 (walking aboard a fast ship: 120 -> 40-60 fps, back in the seat 120 at once): with nobody at the helm the
 	 * walker has the detailed hull's own body in the physics scene (aps.Ship.WalkOnShellAtSpeed 0), and the autopilot turned
@@ -438,6 +550,26 @@ namespace APSShipFlightModelLocal
 		return LightYearsPerSecond < 10.0 ? FString::Printf(TEXT("%.3f ly/s"), LightYearsPerSecond)
 			: LightYearsPerSecond < 1000.0 ? FString::Printf(TEXT("%.1f ly/s"), LightYearsPerSecond)
 			: FString::Printf(TEXT("%.0f ly/s"), LightYearsPerSecond);
+	}
+
+	/** Rio 08.10 (aps.Autopilot.TripLog): a distance in km, AU or light years. */
+	FString FormatDistance(double Cm)
+	{
+		if (Cm < 0.0) return TEXT("-");
+		if (Cm < 0.01 * AstronomicalUnitCm) return FString::Printf(TEXT("%.1f km"), Cm / 100000.0);
+		if (Cm < 0.05 * LightYearCm) return FString::Printf(TEXT("%.3g AU"), Cm / AstronomicalUnitCm);
+		return FString::Printf(TEXT("%.4g ly"), Cm / LightYearCm);
+	}
+
+	/** aps.Autopilot.Tempo: the log-speed rate at this distance from the stop, the old even approach (1/ApproachSeconds)
+	 * within NearKm, the full rate from FarKm, a log blend between. */
+	double TempoRateAt(const double RemainingCm, const double FullRate)
+	{
+		const double NearRate = 1.0 / FMath::Max(static_cast<double>(CVarAutopilotApproachSeconds.GetValueOnGameThread()), 0.5);
+		const double NearCm = FMath::Clamp(static_cast<double>(CVarTempoNearKm.GetValueOnGameThread()), 0.1, 1000.0) * 100000.0;
+		const double FarCm = FMath::Max(static_cast<double>(CVarTempoFarKm.GetValueOnGameThread()) * 100000.0, NearCm * 1.01);
+		const double Blend = FMath::Clamp(FMath::Loge(FMath::Max(RemainingCm, NearCm) / NearCm) / FMath::Loge(FarCm / NearCm), 0.0, 1.0);
+		return NearRate + (FMath::Max(FullRate, NearRate) - NearRate) * Blend;
 	}
 
 	FString BodyName(const AActor* Actor)
@@ -890,6 +1022,11 @@ void UAPSShipFlightModel::EngageAutopilot(AActor* Target)
 		return;
 	}
 	DisengageStarDrive(TEXT("autopilot"));
+	// A new target while flying: the last trip's summary first (aps.Autopilot.TripLog).
+	if (Trip.bActive)
+	{
+		LogAutopilotTrip(TEXT("retarget"));
+	}
 	// Where to stop: in a low orbit of a world, beside a station, well clear of a star.
 	double RadiusCm = 10000.0;
 	double ArrivalCm = 100000.0;
@@ -916,6 +1053,8 @@ void UAPSShipFlightModel::EngageAutopilot(AActor* Target)
 		// deep inside the star. A target in or by a star is met like that star, three radii out.
 		ArrivalCm = APSShipFlightModelLocal::StarRadiusCm(*Around) * 3.0;
 	}
+	// A new target during the departure lift or the level leg keeps them (the lift needs a ship at rest to start).
+	const bool bKeepDeparture = IsAutopilotEngaged() && (bAutopilotDeparting || bAutopilotLeaving);
 	AutopilotTarget = Target;
 	AutopilotArrivalCm = ArrivalCm;
 	AutopilotRemainingCm = -1.0;
@@ -927,6 +1066,88 @@ void UAPSShipFlightModel::EngageAutopilot(AActor* Target)
 	SetAutoBands();
 	UE_LOG(LogTemp, Log, TEXT("[APS.Autopilot] %s engaged for %s (stops %.0f km from its surface)"), *GetNameSafe(Ship),
 		*GetNameSafe(Target), ArrivalCm / 100000.0);
+	// Rio 08.10 (item 46, aps.Autopilot.Tempo): the trip's plan, fixed until the autopilot is off or retargeted.
+	{
+		using namespace APSShipFlightModelLocal;
+		TempoTargetRadiusCm = RadiusCm;
+		TempoTripCm = FMath::Max(FVector::Dist(ShipFramePlace(GetOwner(), *Target), Ship->GetActorLocation()) - RadiusCm - ArrivalCm, 0.0);
+		const double Main = FMath::Clamp(static_cast<double>(CVarTempoMainSeconds.GetValueOnGameThread()), 2.0, 60.0);
+		const double PerDecade = FMath::Clamp(static_cast<double>(CVarTempoMainPerDecade.GetValueOnGameThread()), 0.0, 20.0);
+		const double MaxMain = FMath::Clamp(static_cast<double>(CVarTempoMainMaxSeconds.GetValueOnGameThread()), Main, 120.0);
+		TempoMainSeconds = FMath::Clamp(Main + PerDecade * FMath::LogX(10.0, FMath::Max(TempoTripCm / AstronomicalUnitCm, 1.0e-9)),
+			Main, MaxMain);
+		const double MinCruiseCm = FMath::Clamp(static_cast<double>(CVarTempoMinCruiseLy.GetValueOnGameThread()), 0.0, 10.0) * LightYearCm;
+		TempoCruiseCapCm = FMath::Max3(TempoTripCm / TempoMainSeconds,
+			FMath::Min(Ship->KinematicVelocity.Size(), TempoRate() * TempoTripCm), FMath::Min(MinCruiseCm, TempoTripCm / Main));
+		bTempoTrip = CVarTempo.GetValueOnGameThread() != 0 && TempoTripCm > 0.0
+			&& TempoTripCm >= FMath::Max(static_cast<double>(CVarTempoMinTripAU.GetValueOnGameThread()), 0.0) * AstronomicalUnitCm;
+		bTempoOnLaw = false;
+		bTempoLanding = false;
+		bTempoGuardCut = false;
+		TempoLogRate = 0.0;
+		TempoStarCm = -1.0;
+		TempoStopZoneCm = 0.0;
+		TempoFrameCapCm = 0.0;
+		TempoLastCapCm = 0.0;
+		TempoPrevRemainingCm = -1.0;
+		TempoPrevDeltaTime = 0.0f;
+		TempoLastLogSpeedCm = Ship->KinematicVelocity.Size();
+		if (!bKeepDeparture)
+		{
+			AutopilotDepartSeconds = 0.0f;
+		}
+		const int32 TripLog = CVarTripLog.GetValueOnGameThread();
+		Trip = FAutopilotTrip();
+		Trip.bActive = TripLog != 0;
+		Trip.bSamples = TripLog == 2 || (TripLog == 1 && (Ship->IsPlayerControlled() || Ship->HasPilot()));
+		Trip.Tempo = bTempoTrip ? 1 : 0;
+		Trip.StartRemainingCm = TempoTripCm;
+		if (Trip.bActive)
+		{
+			const double StopZone = FMath::Clamp(static_cast<double>(CVarTempoStopShare.GetValueOnGameThread()), 0.0, 2.0) * ArrivalCm;
+			const double StopRate = TempoRateAt(StopZone, TempoRate());
+			UE_LOG(LogTemp, Log, TEXT("[APS.Autopilot] %s tempo %d: trip %s, main %.1f s at %s, rate %.2f/s, stop zone %s (end decel %s/s)"),
+				*GetNameSafe(Ship), Trip.Tempo, *FormatDistance(TempoTripCm), TempoMainSeconds, *FormatSpeed(TempoCruiseCapCm),
+				TempoRate(), *FormatDistance(StopZone), *FormatSpeed(StopRate * StopRate * StopZone * 0.5));
+		}
+	}
+	// Rio 08.10 night: at rest next to a structure the ship lifts clear before it turns (UpdateAutopilot).
+	if (!bKeepDeparture)
+	{
+		bAutopilotDeparting = false;
+		bAutopilotLeaving = false;
+		DebugVerticalInput = 0.0f;
+	}
+	if (!bKeepDeparture)
+	{
+		AutopilotDepartFrom.Reset();
+		AutopilotStuckSeconds = 0.0f;
+	}
+	const AActor* DepartFrom = !bKeepDeparture && APSShipFlightModelLocal::CVarAutopilotDepart.GetValueOnGameThread() != 0
+		&& Ship->KinematicVelocity.Size() < 500.0
+		? APSShipFlightModelLocal::NextStructure(*Ship, Ship->GetPrimaryHullComponent()) : nullptr;
+	if (DepartFrom)
+	{
+		// The structure's bounds (as an offset from its pivot, so world shifts carry it): the exit leg (UpdateAutopilot).
+		FVector BoundsOrigin;
+		FVector BoundsExtent;
+		DepartFrom->GetActorBounds(true, BoundsOrigin, BoundsExtent, true);
+		AutopilotDepartFrom = DepartFrom;
+		bAutopilotExitLogged = false;
+		AutopilotDepartFromOffset = BoundsOrigin - DepartFrom->GetActorLocation();
+		AutopilotDepartFromRadiusCm = BoundsExtent.Size() * 1.1 + 5000.0;
+		const UPrimitiveComponent* Hull = Ship->GetPrimaryHullComponent();
+		bAutopilotDeparting = true;
+		AutopilotDepartUp = Ship->GetShipUpVector().GetSafeNormal(UE_SMALL_NUMBER, Ship->GetActorUpVector());
+		AutopilotDepartStart = Ship->GetActorLocation();
+		AutopilotDepartClearCm = (Hull ? (Hull->Bounds.Origin - AutopilotDepartStart).Size() + Hull->Bounds.SphereRadius : 5000.0)
+			+ FMath::Max(APSShipFlightModelLocal::CVarAutopilotDepartClearM.GetValueOnGameThread(), 0.0f) * 100.0;
+		AutopilotDepartBestRiseCm = 0.0;
+		AutopilotDepartSeconds = 0.0f;
+		AutopilotDepartStallSeconds = 0.0f;
+		UE_LOG(LogTemp, Log, TEXT("[APS.Autopilot] %s departs: lifts %.0f m along its up before it turns"),
+			*GetNameSafe(Ship), AutopilotDepartClearCm / 100.0);
+	}
 	if (APSShipFlightModelLocal::CVarAutopilotSetsCourse.GetValueOnGameThread() != 0 && Ship->ShipNavigation)
 	{
 		const FShipNavigationContact* Selected = Ship->ShipNavigation->GetSelectedContact();
@@ -949,6 +1170,8 @@ void UAPSShipFlightModel::ApplyWorldShift(const FVector& Offset)
 			Body.Center += Offset;
 		}
 	}
+	// The departure lift measures its rise and its level leg from a world point.
+	AutopilotDepartStart += Offset;
 }
 
 void UAPSShipFlightModel::DisengageAutopilot(const TCHAR* Reason)
@@ -958,6 +1181,19 @@ void UAPSShipFlightModel::DisengageAutopilot(const TCHAR* Reason)
 		return;
 	}
 	UE_LOG(LogTemp, Log, TEXT("[APS.Autopilot] %s off: %s"), *GetNameSafe(GetShip()), Reason);
+	if (Trip.bActive)
+	{
+		LogAutopilotTrip(Reason);
+	}
+	Trip = FAutopilotTrip();
+	bTempoTrip = false;
+	bTempoOnLaw = false;
+	bTempoLanding = false;
+	bTempoGuardCut = false;
+	TempoStarCm = -1.0;
+	TempoLogRate = 0.0;
+	TempoPrevRemainingCm = -1.0;
+	TempoPrevDeltaTime = 0.0f;
 	AutopilotTarget.Reset();
 	bAutopilotRotated = false;
 	AutopilotCourse = FVector::ZeroVector;
@@ -966,6 +1202,184 @@ void UAPSShipFlightModel::DisengageAutopilot(const TCHAR* Reason)
 	bDebugDrive = false;
 	DebugForwardInput = 0.0f;
 	bDebugBoost = false;
+	bAutopilotDeparting = false;
+	bAutopilotLeaving = false;
+	DebugVerticalInput = 0.0f;
+	AutopilotDepartFrom.Reset();
+	AutopilotStuckSeconds = 0.0f;
+}
+
+bool UAPSShipFlightModel::TempoCapActive() const
+{
+	return bTempoTrip && IsAutopilotEngaged() && !bStarDrive;
+}
+
+bool UAPSShipFlightModel::IsAutopilotTempo() const
+{
+	// A band picked with 1-5 under the autopilot keeps its old pace (limits, boost, growth); the plan's cap stays.
+	return TempoCapActive() && !bManualBand;
+}
+
+double UAPSShipFlightModel::TempoRate() const
+{
+	const ASpaceship* Ship = GetShip();
+	const double Agility = Ship ? APSFlightBandModel::ClassAgility(static_cast<uint8>(Ship->SizeClass)) : 1.0;
+	return FMath::Clamp(static_cast<double>(APSShipFlightModelLocal::CVarTempoRate.GetValueOnGameThread())
+		* FMath::Pow(FMath::Max(Agility, 1.0e-3), static_cast<double>(FMath::Clamp(
+			APSShipFlightModelLocal::CVarTempoClassExponent.GetValueOnGameThread(), 0.0f, 1.0f))), 0.3, 2.0);
+}
+
+double UAPSShipFlightModel::TempoCapCm(const double RemainingCm, const double SpeedCm, const float DeltaTime)
+{
+	using namespace APSShipFlightModelLocal;
+	// v = r * sqrt(X * (X + Xs)): r * X far out (one log-speed rate), a constant deceleration ~r^2 Xs / 2 at the end, so
+	// the ship stops in finite time. Stepped exactly over the frame (r held for the frame): X(t) = Xs sinh^2(r (tau - t) / 2).
+	const double Dt = FMath::Max(static_cast<double>(DeltaTime), 1.0e-4);
+	const double X = FMath::Max(RemainingCm, 0.0);
+	double R = TempoRateAt(X, TempoRate());
+	// The plan's rate waits for the heading: off the course, the way closes no faster than the velocity can turn onto it.
+	const float AlignDeg = CVarTempoAlignDeg.GetValueOnGameThread();
+	const ASpaceship* AlignShip = GetShip();
+	if (AlignDeg > 0.0f && AlignShip && SpeedCm > 1.0 && !AutopilotCourse.IsNearlyZero())
+	{
+		const double Angle = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(
+			FVector::DotProduct(AlignShip->KinematicVelocity / SpeedCm, AutopilotCourse.GetSafeNormal()), -1.0, 1.0)));
+		if (Angle > AlignDeg)
+		{
+			R *= FMath::Max(static_cast<double>(AlignDeg) / Angle,
+				static_cast<double>(FMath::Clamp(CVarTempoAlignFloor.GetValueOnGameThread(), 0.02f, 1.0f)));
+		}
+	}
+	const double Xs = FMath::Clamp(static_cast<double>(CVarTempoStopShare.GetValueOnGameThread()), 0.0, 2.0) * AutopilotArrivalCm;
+	TempoStopZoneCm = Xs;
+	double FrameCap = 0.0;
+	if (Xs > 0.0)
+	{
+		const double S = FMath::Sqrt(X / Xs);
+		const double Tau = (2.0 / R) * FMath::Loge(S + FMath::Sqrt(S * S + 1.0));
+		if (Tau <= Dt)
+		{
+			FrameCap = X / Dt;
+			bTempoLanding = true;
+		}
+		else
+		{
+			const double Sh = FMath::Sinh(R * (Tau - Dt) * 0.5);
+			FrameCap = FMath::Max(X - Xs * Sh * Sh, 0.0) / Dt;
+		}
+	}
+	else
+	{
+		FrameCap = X * (1.0 - FMath::Exp(-R * Dt)) / Dt;
+	}
+	TempoFrameCapCm = FrameCap;
+	double Cap = FrameCap;
+	if (FrameCap > 1.0)
+	{
+		if (FlightBand < EAPSFlightBand::Cruise)
+		{
+			// Below CRUISE the plan only bounds the way down; the plateau never starts below the speed already reached, so
+			// the cap does not dip when CRUISE begins.
+			// (v^-2 - v_frame^-2)^-1/2 written as v / sqrt(1 - q^2): no absolute epsilon, and a ship at rest asks nothing.
+			const double Q = SpeedCm / FrameCap;
+			const double Need = SpeedCm <= 1.0 ? 0.0 : Q < 0.999 ? SpeedCm / FMath::Sqrt(1.0 - Q * Q) : 30.0 * FrameCap;
+			TempoCruiseCapCm = FMath::Max(TempoCruiseCapCm, Need);
+		}
+		else if (TempoCruiseCapCm > 1.0)
+		{
+			// A soft corner between the plateau and the way down.
+			Cap = 1.0 / FMath::Sqrt(1.0 / (TempoCruiseCapCm * TempoCruiseCapCm) + 1.0 / (FrameCap * FrameCap));
+		}
+	}
+	Cap = FMath::Max(Cap, 3000.0);
+	TempoLastCapCm = Cap;
+	return Cap;
+}
+
+void UAPSShipFlightModel::LogAutopilotTrip(const TCHAR* Reason)
+{
+	using namespace APSShipFlightModelLocal;
+	const FAutopilotTrip& T = Trip;
+	if (!T.bActive)
+	{
+		return;
+	}
+	// Peak, the main leg (speed >= 90% of the peak), the share of the way flown in it, and the way milestones.
+	double Peak = 0.0;
+	float PeakAt = -1.0f;
+	for (const FAutopilotTripSample& S : T.Samples)
+	{
+		if (S.SpeedCm > Peak)
+		{
+			Peak = S.SpeedCm;
+			PeakAt = S.T;
+		}
+	}
+	float MainFrom = -1.0f;
+	float MainTo = -1.0f;
+	double MainFromX = -1.0;
+	double MainToX = -1.0;
+	float FirstCruise = -1.0f;
+	float To1 = -1.0f;
+	float To10 = -1.0f;
+	float To90 = -1.0f;
+	float To99 = -1.0f;
+	double LogUp = 0.0;
+	double LogDown = 0.0;
+	int32 Drops10 = 0;
+	const double Start = FMath::Max(T.StartRemainingCm, 1.0);
+	for (int32 Index = 0; Index < T.Samples.Num(); ++Index)
+	{
+		const FAutopilotTripSample& S = T.Samples[Index];
+		if (FirstCruise < 0.0f && S.Band >= static_cast<uint8>(EAPSFlightBand::Cruise))
+		{
+			FirstCruise = S.T;
+		}
+		if (Peak > 0.0 && S.SpeedCm >= 0.9 * Peak)
+		{
+			if (MainFrom < 0.0f)
+			{
+				MainFrom = S.T;
+				MainFromX = S.RemainingCm;
+			}
+			MainTo = S.T;
+			MainToX = S.RemainingCm;
+		}
+		const double Done = 1.0 - S.RemainingCm / Start;
+		if (To1 < 0.0f && Done >= 0.01) To1 = S.T;
+		if (To10 < 0.0f && Done >= 0.10) To10 = S.T;
+		if (To90 < 0.0f && Done >= 0.90) To90 = S.T;
+		if (To99 < 0.0f && Done >= 0.99) To99 = S.T;
+		if (Index > 0)
+		{
+			const FAutopilotTripSample& P = T.Samples[Index - 1];
+			const double Step = FMath::Max(static_cast<double>(S.T - P.T), 1.0e-3);
+			if (P.SpeedCm > 100000.0 && S.SpeedCm > 100000.0 && S.RemainingCm > TempoStopZoneCm)
+			{
+				const double Rate = FMath::Loge(S.SpeedCm / P.SpeedCm) / Step;
+				LogUp = FMath::Max(LogUp, Rate);
+				LogDown = FMath::Min(LogDown, Rate);
+				Drops10 += S.SpeedCm < 0.1 * P.SpeedCm ? 1 : 0;
+			}
+		}
+	}
+	const double End = T.Samples.Num() > 0 ? T.Samples.Last().T : T.Elapsed;
+	const double MainShare = MainFromX >= 0.0 ? FMath::Clamp((MainFromX - MainToX) / Start, 0.0, 1.0) * 100.0 : 0.0;
+	const double FpsMean = T.Elapsed > 0.0 ? T.Frames / T.Elapsed : 0.0;
+	const double FpsMin = T.MaxFrame > 0.0 ? 1.0 / T.MaxFrame : 0.0;
+	UE_LOG(LogTemp, Log, TEXT("[APS.Autopilot] %s trip (%s): tempo=%d rate=%.2f trip=%s plan=%.1fs@%s | total %.1f lift %.1f cruise@%.1f ")
+		TEXT("| climb %.1f main %.1f (%.0f%%) descent %.1f | to1%% %.1f 10-90%% %.1f 99%%-stop %.1f | peak=%s@%.1f | lr up=%.2f down=%.2f ")
+		TEXT("| drops10=%d | bands M/F/O/C/S %.0f/%.0f/%.0f/%.0f/%.0f | guard=%d (long %d) resume=%d xjump=%d | land=%s v=%s surface=%s ")
+		TEXT("(plan %s) | fps %.0f min %.0f%s"),
+		*GetNameSafe(GetShip()), Reason, T.Tempo, TempoRate(), *FormatDistance(T.StartRemainingCm), TempoMainSeconds,
+		*FormatSpeed(TempoCruiseCapCm), T.Elapsed, T.LiftSeconds, T.CruiseAt,
+		MainFrom >= 0.0f && FirstCruise >= 0.0f ? MainFrom - FirstCruise : -1.0f, MainFrom >= 0.0f ? MainTo - MainFrom : -1.0f,
+		MainShare, MainTo >= 0.0f ? End - MainTo : -1.0, To1, To10 >= 0.0f && To90 >= 0.0f ? To90 - To10 : -1.0f,
+		To99 >= 0.0f ? End - To99 : -1.0, *FormatSpeed(Peak), PeakAt, LogUp, LogDown, Drops10,
+		T.BandSeconds[0], T.BandSeconds[1], T.BandSeconds[2], T.BandSeconds[3], T.BandSeconds[4],
+		T.GuardCuts, T.GuardLong, T.Resumes, T.XJumps, T.LandKind, *FormatSpeed(FMath::Max(T.LandSpeedCm, 0.0)),
+		*FormatDistance(T.StopSurfaceCm), *FormatDistance(AutopilotArrivalCm), FpsMean, FpsMin,
+		T.bTruncated ? TEXT(" (samples truncated)") : T.bSamples ? TEXT("") : TEXT(" (no samples)"));
 }
 
 void UAPSShipFlightModel::UpdateAutopilot(const float DeltaTime)
@@ -1019,19 +1433,50 @@ void UAPSShipFlightModel::UpdateAutopilot(const float DeltaTime)
 	const double Distance = ToTarget.Size();
 	AutopilotRemainingCm = FMath::Max(Distance - RadiusCm - AutopilotArrivalCm, 0.0);
 	const double Speed = Ship->KinematicVelocity.Size();
+	// aps.Autopilot.Tempo: a jump of the way left (an origin shift, the still ship's settlement, a system standing up)
+	// is not followed exactly; the plan is captured again smoothly.
+	TempoTargetRadiusCm = RadiusCm;
+	// (The way closed since the last call was flown in the last frame: its own length, not this one's.)
+	if (TempoCapActive() && TempoPrevRemainingCm >= 0.0 && AutopilotRemainingCm < TempoPrevRemainingCm
+		- (2.0 * Speed * FMath::Max(static_cast<double>(DeltaTime), static_cast<double>(TempoPrevDeltaTime))
+			+ 0.02 * TempoPrevRemainingCm + 1.0e5))
+	{
+		++Trip.XJumps;
+		bTempoOnLaw = false;
+	}
+	TempoPrevRemainingCm = AutopilotRemainingCm;
+	TempoPrevDeltaTime = DeltaTime;
 	// Rio 04.10 ("on arrival it spun like mad round the object and would not stop"): the bands slow a ship near worlds
 	// and stations only, so a small target (an ancient site) was met at full band speed, its 1 km stop crossed within a
 	// frame and every turn back overshot again. The speed is held to what covers the way left to the stop in a few seconds.
 	constexpr double ArrivalSpeedCm = 3000.0;
-	AutopilotSpeedCapCm = FMath::Max((Distance - RadiusCm - AutopilotArrivalCm * 0.5)
-		/ FMath::Max(APSShipFlightModelLocal::CVarAutopilotApproachSeconds.GetValueOnGameThread(), 0.5f), ArrivalSpeedCm);
+	const bool bLandedLastFrame = bTempoLanding;
+	const double LandingCapCm = TempoLastCapCm;
+	bTempoLanding = false;
+	AutopilotSpeedCapCm = TempoCapActive()
+		? FMath::Max(TempoCapCm(AutopilotRemainingCm, Speed, DeltaTime), ArrivalSpeedCm)
+		: FMath::Max((Distance - RadiusCm - AutopilotArrivalCm * 0.5)
+			/ FMath::Max(APSShipFlightModelLocal::CVarAutopilotApproachSeconds.GetValueOnGameThread(), 0.5f), ArrivalSpeedCm);
 	if (Distance - RadiusCm <= AutopilotArrivalCm)
 	{
+		Trip.StopSurfaceCm = Distance - RadiusCm;
+		// aps.Autopilot.Tempo: the finite-time stop landed on its point last frame: the ship stands.
+		if (IsAutopilotTempo() && bLandedLastFrame && bTempoOnLaw && TempoStopZoneCm > 0.0
+			&& Speed <= 1.5 * LandingCapCm + ArrivalSpeedCm)
+		{
+			Trip.LandSpeedCm = Speed;
+			Trip.LandKind = TEXT("law");
+			Ship->KinematicVelocity = FVector::ZeroVector;
+			DisengageAutopilot(TEXT("arrived"));
+			return;
+		}
 		// There: brake to a stop, then hand the ship back. (Not through SetDebugDrive: its log line came every frame, 278
 		// lines in 4 s of Rio's 04.10 arrival.)
 		AutopilotSpeedCapCm = ArrivalSpeedCm;
 		if (Speed < 2000.0)
 		{
+			Trip.LandSpeedCm = Speed;
+			Trip.LandKind = TEXT("brake");
 			DisengageAutopilot(TEXT("arrived"));
 			return;
 		}
@@ -1040,6 +1485,61 @@ void UAPSShipFlightModel::UpdateAutopilot(const float DeltaTime)
 		bDebugBoost = false;
 		return;
 	}
+	// Rio 08.10 sweep (aps.Autopilot.BlockedSeconds): full thrust on course (last frame's input) and no way made: the
+	// autopilot is blocked by something it does not see (a structure it is not routed round); the helm goes back.
+	const float BlockedSeconds = APSShipFlightModelLocal::CVarAutopilotBlockedSeconds.GetValueOnGameThread();
+	if (BlockedSeconds > 0.0f && !bAutopilotDeparting && bDebugDrive && DebugForwardInput >= 0.99f && Speed < 100.0)
+	{
+		AutopilotStuckSeconds += DeltaTime;
+		if (AutopilotStuckSeconds >= BlockedSeconds)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[APS.Autopilot] %s blocked: %.1f s at full thrust under 1 m/s, the helm goes back"),
+				*GetNameSafe(Ship), AutopilotStuckSeconds);
+			VehicleNotice(TEXT("AUTOPILOT BLOCKED - TAKE THE HELM"));
+			DisengageAutopilot(TEXT("blocked"));
+			return;
+		}
+	}
+	else
+	{
+		AutopilotStuckSeconds = 0.0f;
+	}
+	// Rio 08.10 night: the departure lift (EngageAutopilot). No turn and no bank until the hull clears the deck: a straight
+	// lift leaves the deck (the proxy sweep lets a move out of an overlap go), and holding the attitude makes no new one.
+	if (bAutopilotDeparting)
+	{
+		AutopilotDepartSeconds += DeltaTime;
+		const double Rise = FVector::DotProduct(Ship->GetActorLocation() - AutopilotDepartStart, AutopilotDepartUp);
+		if (Rise > AutopilotDepartBestRiseCm + 50.0)
+		{
+			AutopilotDepartBestRiseCm = Rise;
+			AutopilotDepartStallSeconds = 0.0f;
+		}
+		else
+		{
+			AutopilotDepartStallSeconds += DeltaTime;
+		}
+		const TCHAR* Done = Rise >= AutopilotDepartClearCm ? TEXT("clear of the deck")
+			: AutopilotDepartSeconds >= 20.0f ? TEXT("time out")
+			: AutopilotDepartStallSeconds >= 1.5f ? TEXT("no rise (a ceiling?)") : nullptr;
+		if (!Done)
+		{
+			const double LateralCm = FMath::Max(CurrentSpeedLimitCm * GetBandSettings(FlightBand).LateralFraction, 1.0);
+			bDebugDrive = true;
+			DebugForwardInput = 0.0f;
+			bDebugBoost = false;
+			DebugVerticalInput = static_cast<float>(FMath::Clamp(
+				FMath::Max(APSShipFlightModelLocal::CVarAutopilotDepartSpeed.GetValueOnGameThread(), 1.0f) * 100.0 / LateralCm, 0.05, 1.0));
+			AutopilotLastRotation = Ship->GetActorQuat();
+			bAutopilotRotated = true;
+			return;
+		}
+		bAutopilotDeparting = false;
+		DebugVerticalInput = 0.0f;
+		bAutopilotLeaving = true;
+		UE_LOG(LogTemp, Log, TEXT("[APS.Autopilot] %s departed (%s, %.0f m up in %.1f s)"), *GetNameSafe(Ship), Done,
+			Rise / 100.0, AutopilotDepartSeconds);
+	}
 	// Rio 02.10 ("an object behind a planet: the autopilot tries to fly straight through it"): a world on the way is flown
 	// round through a point beside its limb, clear of its air, recomputed every frame until the target is in sight.
 	const FVector ShipLocation = Ship->GetActorLocation();
@@ -1047,15 +1547,29 @@ void UAPSShipFlightModel::UpdateAutopilot(const float DeltaTime)
 	const double SegmentSquared = Segment.SizeSquared();
 	FVector Aim = TargetPlace;
 	double NearestBlock = TNumericLimits<double>::Max();
+	const bool bAvoidStations = APSShipFlightModelLocal::CVarAutopilotAvoidStations.GetValueOnGameThread() != 0;
 	for (const FFlightBody& Body : FlightBodies)
 	{
 		const AActor* BodyActor = Body.Actor.Get();
-		if (!Body.bSolid || SegmentSquared < 1.0 || (BodyActor && BodyActor == Target) || (!Body.bFixedLocation && !BodyActor))
+		const bool bStation = bAvoidStations && !Body.bSolid && BodyActor && BodyActor->IsA<ASpaceStation>();
+		if ((!Body.bSolid && !bStation) || SegmentSquared < 1.0 || (BodyActor && BodyActor == Target)
+			|| (!Body.bFixedLocation && !BodyActor))
 		{
 			continue;
 		}
 		const FVector Centre = Body.bFixedLocation ? Body.Center : BodyActor->GetActorTransform().TransformPosition(Body.Center)
 			+ (UAPSWorldOriginSubsystem::PlaceFor(GetOwner(), *BodyActor) - BodyActor->GetActorLocation());
+		// Rio 08.10 sweep (aps.Autopilot.TargetNoDetour): the target's own star (inside its stop sphere) is no obstacle.
+		if (APSShipFlightModelLocal::CVarAutopilotTargetNoDetour.GetValueOnGameThread() != 0
+			&& FVector::DistSquared(Centre, TargetPlace) <= FMath::Square(RadiusCm + AutopilotArrivalCm))
+		{
+			continue;
+		}
+		// A station the ship is still inside (its own HQ, a dock) is left by the departure's exit leg, not flown round.
+		if (bStation && FVector::DistSquared(Centre, ShipLocation) <= FMath::Square(Body.RadiusCm))
+		{
+			continue;
+		}
 		const double Along = FVector::DotProduct(Centre - ShipLocation, Segment) / SegmentSquared;
 		const FVector Closest = ShipLocation + Segment * FMath::Clamp(Along, 0.0, 1.0);
 		// Through the solid sphere a hair inside its surface: a target on a world's near side is not behind it.
@@ -1095,6 +1609,57 @@ void UAPSShipFlightModel::UpdateAutopilot(const float DeltaTime)
 			}
 			const double Climb = FMath::Max(Body.RadiusCm + Clearance - FVector::Distance(ShipLocation, Centre), Clearance * 0.25);
 			Aim = ShipLocation + (Radial * 0.8 + Lean * 0.6).GetSafeNormal(UE_SMALL_NUMBER, Radial) * Climb * 1.5;
+		}
+	}
+	// Rio 08.10 night: after the lift, a course below the deck it left would turn the ship back into the structure. It
+	// leaves level and slightly up first, aps.Autopilot.DepartLeaveM along the deck's plane, then takes its course.
+	if (bAutopilotLeaving)
+	{
+		const FVector Course = (Aim - ShipLocation).GetSafeNormal();
+		const FVector Away = ShipLocation - AutopilotDepartStart;
+		const double Planar = FVector::VectorPlaneProject(Away, AutopilotDepartUp).Size();
+		FVector Level = FVector::VectorPlaneProject(Course, AutopilotDepartUp).GetSafeNormal();
+		if (Level.IsNearlyZero())
+		{
+			Level = FVector::VectorPlaneProject(Ship->GetShipForwardVector(), AutopilotDepartUp).GetSafeNormal();
+		}
+		if (FVector::DotProduct(Course, AutopilotDepartUp) < 0.0 && !Level.IsNearlyZero()
+			&& Planar < FMath::Max(APSShipFlightModelLocal::CVarAutopilotDepartLeaveM.GetValueOnGameThread(), 0.0f) * 100.0)
+		{
+			Aim = ShipLocation + (Level + AutopilotDepartUp * 0.3).GetSafeNormal() * 100000.0;
+		}
+		else
+		{
+			bAutopilotLeaving = false;
+		}
+	}
+	// Rio 08.10 sweep (aps.Autopilot.DepartExit): stations are not solid bodies of the route, so a course through the
+	// structure the ship lifted from ran into it. Inside its bounds, a course passing through its core leaves outward first.
+	if (const AActor* From = AutopilotDepartFrom.Get();
+		From && !bAutopilotDeparting && APSShipFlightModelLocal::CVarAutopilotDepartExit.GetValueOnGameThread() != 0)
+	{
+		const FVector FromCentre = From->GetActorLocation() + AutopilotDepartFromOffset;
+		const FVector Out = ShipLocation - FromCentre;
+		if (Out.Size() >= AutopilotDepartFromRadiusCm)
+		{
+			AutopilotDepartFrom.Reset();
+		}
+		else
+		{
+			const FVector Course = (Aim - ShipLocation).GetSafeNormal();
+			const double Ahead = FVector::DotProduct(FromCentre - ShipLocation, Course);
+			const double Miss = FVector::Dist(FromCentre, ShipLocation + Course * Ahead);
+			if (Ahead > 0.0 && Miss < AutopilotDepartFromRadiusCm * 0.9)
+			{
+				const FVector Up = AutopilotDepartUp.IsNearlyZero() ? Ship->GetShipUpVector() : AutopilotDepartUp;
+				Aim = ShipLocation + (Out.GetSafeNormal(UE_SMALL_NUMBER, Up) + Up * 0.5).GetSafeNormal(UE_SMALL_NUMBER, Up) * 100000.0;
+				if (!bAutopilotExitLogged)
+				{
+					bAutopilotExitLogged = true;
+					UE_LOG(LogTemp, Log, TEXT("[APS.Autopilot] %s exits %s outward first (course through it, %.0f m to clear)"),
+						*GetNameSafe(Ship), *GetNameSafe(From), (AutopilotDepartFromRadiusCm - Out.Size()) / 100.0);
+				}
+			}
 		}
 	}
 	const FVector ToAim = Aim - ShipLocation;
@@ -1197,7 +1762,12 @@ void UAPSShipFlightModel::UpdateAutopilot(const float DeltaTime)
 	// Rio 02.10 ("the autopilot crawls"): on course it flies boosted while more than three seconds of the way are left,
 	// out of the air or still far off; the bands' distance limits slow it near worlds and stations as before.
 	// Rio 04.10 ("let me make a trip longer"): a band picked with 1-5 under the autopilot is the pace, unboosted.
-	bDebugBoost = !bManualBand && Alignment > 0.97 && AutopilotRemainingCm > FMath::Max(Speed * 3.0, 50000.0)
+	// aps.Autopilot.Tempo: the plan's cap sets the pace of the descent, so the band limits stay boosted (their safety
+	// margins) until the near zone.
+	const bool bTempoBoost = IsAutopilotTempo() && AutopilotRemainingCm
+		> FMath::Clamp(static_cast<double>(APSShipFlightModelLocal::CVarTempoNearKm.GetValueOnGameThread()), 0.1, 1000.0) * 100000.0;
+	bDebugBoost = !bManualBand && Alignment > 0.97
+		&& (AutopilotRemainingCm > FMath::Max(Speed * 3.0, 50000.0) || bTempoBoost)
 		&& (!IsInAtmosphere() || AutopilotRemainingCm > 20000000.0);
 }
 
@@ -1864,6 +2434,26 @@ void UAPSShipFlightModel::UpdateNearestSurface(float DeltaTime)
 	const TCHAR* GuardKind = nullptr;
 	const void* LocalKey = nullptr;
 	FVector LocalOutward = FVector::ZeroVector;
+	// Rio 08.10 (aps.Autopilot.Tempo): CRUISE's star term for a planned trip. The target's own star is not a limit (the
+	// plan brings the ship to its stop), stars at or past the stop fade out of it, and a star left behind is left at the
+	// plan's rate (a departure factor); passing beside a star stays as before.
+	const bool bTempoStars = IsAutopilotTempo() && AutopilotTarget.Get() != nullptr;
+	FVector TempoTargetPlace = FVector::ZeroVector;
+	double TempoStopCm = 0.0;
+	double TempoHoldCm = 0.0;
+	double TempoStarDeparture = 1.0;
+	double TempoStar = -1.0;
+	if (bTempoStars)
+	{
+		TempoTargetPlace = APSShipFlightModelLocal::ShipFramePlace(GetOwner(), *AutopilotTarget.Get());
+		TempoStopCm = FVector::Dist(TempoTargetPlace, Location) - TempoTargetRadiusCm - AutopilotArrivalCm;
+		TempoHoldCm = FMath::Max(TempoTargetRadiusCm + AutopilotArrivalCm, 100000.0);
+		const FAPSFlightBandSettings& CruiseBand = GetBandSettings(EAPSFlightBand::Cruise);
+		const double StarTerm = CruiseBand.StarDistanceSpeedFactor
+			* FMath::Max(APSShipFlightModelLocal::CVarDistanceFactorScale.GetValueOnGameThread(), 0.0f)
+			* FMath::Max(CruiseBand.BoostMultiplier, 1.0);
+		TempoStarDeparture = FMath::Max(1.0, 1.25 * TempoRate() / FMath::Max(StarTerm, 1.0e-3));
+	}
 	const auto AddBody = [&](const FVector& Center, double RadiusCm, const FString& BodyName, bool bSolid, bool bStar,
 		double SystemRadiusCm, const AActor* Actor, const TCHAR* Kind, int64 Id)
 	{
@@ -1899,6 +2489,18 @@ void UAPSShipFlightModel::UpdateNearestSurface(float DeltaTime)
 		if (bStar)
 		{
 			NearestStar = NearestStar < 0.0 ? Distance : FMath::Min(NearestStar, Distance);
+			if (bTempoStars)
+			{
+				const bool bTargetStar = (Actor && Actor == AutopilotTarget.Get())
+					|| FVector::DistSquared(Center, TempoTargetPlace) <= FMath::Square(FMath::Max(3.0 * RadiusCm, TempoHoldCm));
+				const double Weight = FMath::Clamp((1.05 * TempoStopCm - Distance) / FMath::Max(0.1 * TempoStopCm, 1.0), 0.0, 1.0);
+				if (!bTargetStar && Weight > 1.0e-3)
+				{
+					const double Kept = Distance * (1.0 + (TempoStarDeparture - 1.0)
+						* FMath::Clamp(FVector::DotProduct(Heading, Outward), 0.0, 1.0)) / Weight;
+					TempoStar = TempoStar < 0.0 ? Kept : FMath::Min(TempoStar, Kept);
+				}
+			}
 			SystemGap = FMath::Min(SystemGap, Offset.Size() - SystemRadiusCm);
 			const double Clearance = Heading.IsNearlyZero() ? -1.0
 				: APSShipFlightModelLocal::StarCourseClearanceCm(-Offset, Heading, SystemRadiusCm, MissScale, PassFade);
@@ -2051,6 +2653,7 @@ void UAPSShipFlightModel::UpdateNearestSurface(float DeltaTime)
 		}
 	}
 	NearestStarDistanceCm = NearestStar;
+	TempoStarCm = bTempoStars ? TempoStar : -1.0;
 	bSystemGapKnown = SystemGap < TNumericLimits<double>::Max();
 	NearestSystemGapCm = bSystemGapKnown ? SystemGap : 0.0;
 	// Terrain above the base sphere is only known from the ground probe.
@@ -2125,7 +2728,8 @@ double UAPSShipFlightModel::BandLimitCm(EAPSFlightBand InBand, double Alpha) con
 	Inputs.SurfaceCm = LimitSurfaceDistanceCm;
 	Inputs.LocalSurfaceCm = LimitLocalDistanceCm;
 	Inputs.GroundClearanceCm = GroundLimitClearanceCm;
-	Inputs.StarCm = NearestStarDistanceCm;
+	// aps.Autopilot.Tempo: the planned trip's own star term (UpdateNearestSurface); the guards still see every star.
+	Inputs.StarCm = IsAutopilotTempo() ? TempoStarCm : NearestStarDistanceCm;
 	const double SpacingCap = APSShipFlightModelLocal::CVarStarSpacingCap.GetValueOnGameThread();
 	if (SpacingCap > 0.0 && CatalogueSpacingMedianCm > 0.0 && Inputs.StarCm >= 0.0)
 	{
@@ -2209,7 +2813,13 @@ void UAPSShipFlightModel::UpdateAutoBand(double SpeedCm, double Throttle, float 
 		const double Here = BandLimitCm(Wanted, BoostAlpha);
 		const EAPSFlightBand Up = NeighbourBand(Wanted, 1);
 		const EAPSFlightBand Down = NeighbourBand(Wanted, -1);
-		if (Up != Wanted && Up <= Highest && Throttle > 0.5 && SpeedCm >= 0.85 * Here && UpShiftBlockSeconds <= 0.0f
+		// aps.Autopilot.Tempo: a planned trip leaves its system into STELLAR at once (not at 85% of CRUISE's limit), and
+		// does not shift up on the way down to its stop.
+		const bool bTempoLeaveSystem = IsAutopilotTempo() && Wanted == EAPSFlightBand::Cruise
+			&& Up == EAPSFlightBand::Stellar && bInterstellar;
+		const bool bTempoDescent = IsAutopilotTempo() && bTempoOnLaw && TempoFrameCapCm <= 3.0 * TempoCruiseCapCm;
+		if (Up != Wanted && Up <= Highest && Throttle > 0.5
+			&& (bTempoLeaveSystem || (!bTempoDescent && SpeedCm >= 0.85 * Here)) && UpShiftBlockSeconds <= 0.0f
 			&& BandLimitCm(Up, BoostAlpha) >= (bFeel ? 1.4 : 1.25) * Here)
 		{
 			// Like an automatic gearbox: at the top of this band, and the next one would go faster here.
@@ -2355,12 +2965,16 @@ bool UAPSShipFlightModel::ApplyTranslation(float DeltaTime)
 	EnsureBandSettings();
 	UpdateNearestSurface(DeltaTime);
 	UpdateAutopilot(DeltaTime);
+	// Rio 08.10 (item 46, aps.Autopilot.Tempo): a planned trip this frame, and the speed before it moves.
+	const bool bTempo = IsAutopilotTempo();
+	const double SpeedAtStart = Ship->KinematicVelocity.Size();
 
 	const bool bBoostHeld = Ship->bIsAccelerating || (bDebugDrive && bDebugBoost);
 	BoostAlpha = FMath::FInterpConstantTo(BoostAlpha, bBoostHeld ? 1.0 : 0.0, static_cast<double>(DeltaTime), 2.5);
 	// With the mouse on the camera (C) A/D turn the hull (ASpaceship::ApplyRotationInput) instead of strafing.
 	const FVector LocalInput = FVector(bDebugDrive ? DebugForwardInput : Ship->ForwardInput,
-		Ship->IsMouseLookActive() ? 0.0f : Ship->SideInput, Ship->VerticalInput).GetClampedToMaxSize(1.0);
+		Ship->IsMouseLookActive() ? 0.0f : Ship->SideInput,
+		bDebugDrive && bAutopilotDeparting ? DebugVerticalInput : Ship->VerticalInput).GetClampedToMaxSize(1.0);
 	if (bStarDrive && ApplyStarDrive(LocalInput, DeltaTime))
 	{
 		return true;
@@ -2418,8 +3032,8 @@ bool UAPSShipFlightModel::ApplyTranslation(float DeltaTime)
 	// (30.09: it came in at four times that and braked hard), and a speed back under the limit forgets the boost.
 	KeptBoostAlpha = Ship->KinematicVelocity.Size() <= Limit ? BoostAlpha : FMath::Max(KeptBoostAlpha, BoostAlpha);
 	const double KeptBoost = bKeepsSpeed ? BandBoost(FlightBand, KeptBoostAlpha) : Boost;
-	const double KeptLimit = FMath::Min((bKeepsSpeed ? BandLimitCm(FlightBand, KeptBoostAlpha) : BaseLimit) * LimitCreep,
-		AutopilotCap);
+	const double BandKeptCm = (bKeepsSpeed ? BandLimitCm(FlightBand, KeptBoostAlpha) : BaseLimit) * LimitCreep;
+	const double KeptLimit = FMath::Min(BandKeptCm, AutopilotCap);
 
 	const double Drag = IsInAtmosphere() ? Ship->GetEnvironmentDrag() : 0.0;
 	// Rio 07.10 (aps.Ship.ShiftRampSeconds): after an AUTO shift up the thrust grows from what the old band used.
@@ -2447,8 +3061,21 @@ bool UAPSShipFlightModel::ApplyTranslation(float DeltaTime)
 		// Whatever the limit ahead allows, cruise control multiplies the speed by a bounded factor per second.
 		const double PreviousSpeed = Ship->KinematicVelocity.Size();
 		const double NextSpeed = Velocity.Size();
+		double GrowthRate = Band.MaxLogAcceleration * FMath::Sqrt(Boost);
+		if (bTempo && Band.Control == EAPSFlightBandControl::Cruise && PreviousSpeed > 1.0)
+		{
+			// aps.Autopilot.Tempo: the climb at the plan's rate, its rate growing over JerkSeconds from what it was, and a
+			// soft knee into the limit (exact over the frame).
+			const double Jerk = FMath::Clamp(static_cast<double>(APSShipFlightModelLocal::CVarTempoJerkSeconds.GetValueOnGameThread()), 0.0, 5.0);
+			const double Knee = FMath::Clamp(static_cast<double>(APSShipFlightModelLocal::CVarTempoKneeSeconds.GetValueOnGameThread()), 0.05, 5.0);
+			const double Rate = TempoRate();
+			const double Ramped = Jerk > 0.0 ? TempoLogRate + Rate * DeltaTime / Jerk : Rate;
+			const double KneeRate = Limit > PreviousSpeed
+				? FMath::Loge(Limit / PreviousSpeed) * (1.0 - FMath::Exp(-DeltaTime / Knee)) / DeltaTime : 0.0;
+			GrowthRate = FMath::Max(FMath::Min3(Rate, Ramped, KneeRate), 1.0e-3);
+		}
 		const double CappedSpeed = APSFlightBandModel::CapSpeedGrowth(PreviousSpeed, NextSpeed,
-			Band.MaxLogAcceleration * FMath::Sqrt(Boost), Band.Acceleration * 100.0 * Boost
+			GrowthRate, Band.Acceleration * 100.0 * Boost
 				* APSFlightBandModel::ClassAgility(static_cast<uint8>(Ship->SizeClass)), DeltaTime);
 		if (CappedSpeed < NextSpeed && NextSpeed > UE_DOUBLE_SMALL_NUMBER)
 		{
@@ -2465,8 +3092,36 @@ bool UAPSShipFlightModel::ApplyTranslation(float DeltaTime)
 		Velocity = APSFlightBandModel::BrakeStep(Velocity, Band.Acceleration * 100.0 * Boost * BrakeAccelerationScale,
 			Rate, DeltaTime);
 	}
-	const double Speed = Velocity.Size();
-	if (Speed > KeptLimit && Speed > UE_DOUBLE_SMALL_NUMBER)
+	double Speed = Velocity.Size();
+	// Rio 08.10 (aps.Autopilot.Tempo): the plan's cap rules while it is below the band's (kept) limit. On the plan the
+	// speed follows the cap exactly in the stop zone and no faster than FollowRate outside it (one-frame dips of the
+	// cap are not followed); after a closing guard cut a long frame, the next frame resumes the planned speed.
+	const bool bCapRules = bTempo && AutopilotCap < BandKeptCm;
+	if (!bCapRules)
+	{
+		bTempoOnLaw = false;
+	}
+	const bool bGuardCut = bTempoGuardCut;
+	bTempoGuardCut = false;
+	if (bCapRules && bTempoOnLaw && bGuardCut && APSShipFlightModelLocal::CVarTempoGuardResume.GetValueOnGameThread() != 0
+		&& Speed > UE_DOUBLE_SMALL_NUMBER && Speed < KeptLimit && LocalInput.X > 0.99
+		&& FVector::DotProduct(Velocity / Speed, AutopilotCourse) > 0.996)
+	{
+		Velocity *= KeptLimit / Speed;
+		Speed = KeptLimit;
+		++Trip.Resumes;
+	}
+	if (Speed > KeptLimit && Speed > UE_DOUBLE_SMALL_NUMBER && bCapRules
+		&& (bTempoOnLaw || Speed <= FMath::Max(static_cast<double>(APSShipFlightModelLocal::CVarTempoCapture.GetValueOnGameThread()), 1.0) * KeptLimit))
+	{
+		const double FollowRate = FMath::Clamp(static_cast<double>(APSShipFlightModelLocal::CVarTempoFollowRate.GetValueOnGameThread()), 0.0, 50.0);
+		const bool bExact = FollowRate <= 0.0 || AutopilotRemainingCm <= 1.5 * TempoStopZoneCm;
+		const double Kept = bExact ? KeptLimit
+			: FMath::Max(KeptLimit, Speed * FMath::Exp(-FMath::Max(FollowRate, 2.0 * TempoRate()) * DeltaTime));
+		Velocity *= Kept / Speed;
+		bTempoOnLaw = true;
+	}
+	else if (Speed > KeptLimit && Speed > UE_DOUBLE_SMALL_NUMBER)
 	{
 		// Band drop or closing on a body: most of the excess goes within half a second.
 		const double Factor = Band.DistanceSpeedFactor
@@ -2484,6 +3139,40 @@ bool UAPSShipFlightModel::ApplyTranslation(float DeltaTime)
 			APSFlightBandModel::ShedRate(ShedBase, Factor), DeltaTime) / Speed;
 	}
 	MoveShip(Velocity, Band.bSweepCollision, DeltaTime);
+	{
+		// aps.Autopilot.Tempo: the climb's measured log rate (the jerk limit grows from it); the trip summary's numbers.
+		const double After = Ship->KinematicVelocity.Size();
+		TempoLogRate = bTempo && SpeedAtStart > 1.0 && After > SpeedAtStart ? FMath::Loge(After / SpeedAtStart) / DeltaTime : 0.0;
+		if (Trip.bActive && IsAutopilotEngaged())
+		{
+			Trip.Elapsed += DeltaTime;
+			++Trip.Frames;
+			Trip.MaxFrame = FMath::Max(Trip.MaxFrame, static_cast<double>(DeltaTime));
+			Trip.BandSeconds[FMath::Clamp(static_cast<int32>(FlightBand), 0, 4)] += DeltaTime;
+			if (Trip.CruiseAt < 0.0 && FlightBand >= EAPSFlightBand::Cruise)
+			{
+				Trip.CruiseAt = Trip.Elapsed;
+			}
+			if (Trip.LiftSeconds < 0.0 && !bAutopilotDeparting && AutopilotDepartSeconds > 0.0f)
+			{
+				Trip.LiftSeconds = AutopilotDepartSeconds;
+			}
+			Trip.SampleAccum += DeltaTime;
+			if (Trip.bSamples && (Trip.Samples.IsEmpty() || Trip.SampleAccum >= 0.1))
+			{
+				Trip.SampleAccum = 0.0;
+				if (Trip.Samples.Num() < 12000)
+				{
+					Trip.Samples.Add(FAutopilotTripSample{static_cast<float>(Trip.Elapsed), After, AutopilotRemainingCm,
+						static_cast<uint8>(FlightBand)});
+				}
+				else
+				{
+					Trip.bTruncated = true;
+				}
+			}
+		}
+	}
 
 	if (APSShipFlightModelLocal::CVarLog.GetValueOnGameThread() != 0)
 	{
@@ -2502,8 +3191,22 @@ bool UAPSShipFlightModel::ApplyTranslation(float DeltaTime)
 				Held = CourseLimitCm > BaseLimit * 1.001 ? TEXT("-") : CourseLimitCm >= BaseLimit * 0.999 ? TEXT("COURSE")
 					: TEXT("BELOW");
 			}
+			// Rio 08.10 (aps.Autopilot.Tempo): the autopilot's phase, planned cap, plateau and way left.
+			FString AutopilotPart;
+			if (IsAutopilotEngaged())
+			{
+				const double NowSpeed = Ship->KinematicVelocity.Size();
+				const double Change = TempoLastLogSpeedCm > 1.0 && NowSpeed > 1.0 ? FMath::Loge(NowSpeed / TempoLastLogSpeedCm) : 0.0;
+				TempoLastLogSpeedCm = NowSpeed;
+				const TCHAR* Phase = bAutopilotDeparting ? TEXT("LIFT") : FlightBand < EAPSFlightBand::Cruise ? TEXT("LOCAL")
+					: AutopilotRemainingCm <= TempoStopZoneCm ? TEXT("STOP") : Change > 0.1 ? TEXT("UP") : Change < -0.1 ? TEXT("DOWN")
+					: TEXT("MAIN");
+				AutopilotPart = FString::Printf(TEXT(" ap=%s cap=%s vc=%s x=%s tempo=%d onlaw=%d"), Phase,
+					*APSShipFlightModelLocal::FormatSpeed(AutopilotSpeedCapCm), *APSShipFlightModelLocal::FormatSpeed(TempoCruiseCapCm),
+					*APSShipFlightModelLocal::FormatDistance(AutopilotRemainingCm), TempoCapActive() ? 1 : 0, bTempoOnLaw ? 1 : 0);
+			}
 			UE_LOG(LogTemp, Log,
-				TEXT("[APS.Flight] %s band=%s env=%s speed=%s limit=%s held=%s course limit=%s nearest=%s %.0f m ground=%.0f m star=%.4g AU system=%.4g AU course=%.4g AU boost=%.2f drag=%.2f %s"),
+				TEXT("[APS.Flight] %s band=%s env=%s speed=%s limit=%s held=%s course limit=%s nearest=%s %.0f m ground=%.0f m star=%.4g AU system=%.4g AU course=%.4g AU boost=%.2f drag=%.2f %s%s"),
 				*Ship->GetName(), *Band.Name, *Ship->GetFlightEnvironmentName(),
 				*APSShipFlightModelLocal::FormatSpeed(Ship->KinematicVelocity.Size()),
 				*APSShipFlightModelLocal::FormatSpeed(Limit), Held,
@@ -2511,7 +3214,7 @@ bool UAPSShipFlightModel::ApplyTranslation(float DeltaTime)
 				*NearestBodyName, NearestSurfaceDistanceCm / 100.0,
 				GroundClearanceCm / 100.0, NearestStarDistanceCm / APSShipFlightModelLocal::AstronomicalUnitCm,
 				NearestSystemGapCm / APSShipFlightModelLocal::AstronomicalUnitCm,
-				CourseClearanceCm / APSShipFlightModelLocal::AstronomicalUnitCm, Boost, Drag, *FlightLogDetails(LocalInput));
+				CourseClearanceCm / APSShipFlightModelLocal::AstronomicalUnitCm, Boost, Drag, *FlightLogDetails(LocalInput), *AutopilotPart);
 		}
 	}
 	return true;
@@ -2524,6 +3227,13 @@ void UAPSShipFlightModel::MoveShip(FVector Velocity, const bool bSweepBand, cons
 	const auto NoteGuard = [this, DeltaTime](const double Closing, const double Kept, const TCHAR* Source)
 	{
 		++GuardTriggers;
+		// aps.Autopilot.Tempo: the trip summary counts the cuts; the next frame may resume the planned speed.
+		if (IsAutopilotEngaged())
+		{
+			++Trip.GuardCuts;
+			Trip.GuardLong += DeltaTime >= 0.1f ? 1 : 0;
+			bTempoGuardCut = IsAutopilotTempo();
+		}
 		const double Share = Closing > 0.0 ? Kept / Closing : 1.0;
 		if (Share < GuardWorstShare)
 		{

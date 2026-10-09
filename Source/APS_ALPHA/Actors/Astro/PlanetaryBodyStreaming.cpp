@@ -284,6 +284,13 @@ namespace APSWorldScapeReveal
 		TEXT("Rio 06.10 (planet freezes): terrain and ocean LOD meshes of a newly published surface that build their render ")
 		TEXT("proxies per frame, still invisible; the surface then replaces the placeholder in one frame. 0: all in the reveal ")
 		TEXT("frame (the old way, 54-84 ms)."));
+	// 08.10 (tr062 traces): the frame that latches readiness also validates the payload (~8 ms) and, for a standby moon,
+	// publishes a wave; the first two proxies (~9 ms) stacked onto it gave the 33-42 ms frames of a family activation.
+	// Off by default until its own A/B (08.10: water descents with it and aps.Surface.ParallelReadyScan showed more
+	// render-thread hitches over 3 runs each, inconclusive).
+	TAutoConsoleVariable<int32> CVarRevealSkipBeginFrame(TEXT("aps.Surface.RevealSkipBeginFrame"), 0,
+		TEXT("08.10: a staged reveal builds its first proxies from the frame after it began (the readiness frame), one frame ")
+		TEXT("later; the swap stays a single frame. 0: from the readiness frame itself, as before."));
 
 	struct FStagedMesh
 	{
@@ -300,6 +307,8 @@ namespace APSWorldScapeReveal
 		int32 Next{0};
 		int32 Frames{0};
 		uint64 LastShowFrame{0};
+		/** GFrameCounter of Begin (the readiness frame). */
+		uint64 BeginFrame{0};
 		double StartSeconds{0.0};
 	};
 
@@ -419,6 +428,7 @@ namespace APSWorldScapeReveal
 		Reveal.Body = Body;
 		Reveal.Root = Root;
 		Reveal.StartSeconds = FPlatformTime::Seconds();
+		Reveal.BeginFrame = GFrameCounter;
 		const auto Stage = [&Reveal](const TArray<UWorldScapeLod*>& Lods)
 		{
 			for (const UWorldScapeLod* Lod : Lods)
@@ -485,6 +495,11 @@ namespace APSWorldScapeReveal
 				{
 					HideSections(Reveal.Meshes[Shown], Mesh);
 				}
+			}
+			if (Reveal.BeginFrame == GFrameCounter && CVarRevealSkipBeginFrame.GetValueOnGameThread() != 0)
+			{
+				++Index;
+				continue;
 			}
 			// Shown now, still invisible: their proxies are built at the end of this frame.
 			while (Budget > 0 && Reveal.Next < Reveal.Meshes.Num())

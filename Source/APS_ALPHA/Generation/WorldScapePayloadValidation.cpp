@@ -5,20 +5,55 @@
 // reached it through WorldScapeRoot.h. The root header is guarded and still
 // provides the complete UWorldScapeLod definition required below.
 #include "WorldScapeCore/Public/WorldScapeRoot.h"
+#include "Async/ParallelFor.h"
+#include "HAL/IConsoleManager.h"
+#include "ProfilingDebugging/CpuProfilerTrace.h"
 
 namespace APSWorldScapePayloadValidation
 {
 	namespace
 	{
+		// 08.10 (tr062 traces): the readiness frame of every body scanned ~10 LODs x 3 payloads (48-64k vertices each)
+		// for NaNs on the GameThread, ~8 ms per body. The arrays are worker-filled and untouched once the root has no
+		// LOD in generation (this file's contract), so the read-only scans can run on the task workers too. Off by default
+		// until its own A/B (it borrows the workers the LOD jobs and the render thread's tasks use).
+		TAutoConsoleVariable<int32> CVarParallelScan(TEXT("aps.Surface.ParallelReadyScan"), 0,
+			TEXT("08.10: the NaN scans of a WorldScape payload readiness check run in parallel chunks (same result). ")
+			TEXT("0: one serial scan on the GameThread, as before."));
+		constexpr int32 ParallelChunk = 8192;
+
+		template <typename T, typename FBad>
+		bool AnyBad(const TArray<T>& Values, FBad&& IsBad)
+		{
+			const int32 Num = Values.Num();
+			if (Num < 2 * ParallelChunk || CVarParallelScan.GetValueOnAnyThread() == 0 || !IsInGameThread())
+			{
+				return Values.ContainsByPredicate(IsBad);
+			}
+			std::atomic<bool> bBad{false};
+			const int32 Chunks = (Num + ParallelChunk - 1) / ParallelChunk;
+			ParallelFor(Chunks, [&Values, &IsBad, &bBad, Num](const int32 Chunk)
+			{
+				const int32 End = FMath::Min(Num, (Chunk + 1) * ParallelChunk);
+				for (int32 Index = Chunk * ParallelChunk; Index < End && !bBad.load(std::memory_order_relaxed); ++Index)
+				{
+					if (IsBad(Values[Index]))
+					{
+						bBad.store(true, std::memory_order_relaxed);
+					}
+				}
+			});
+			return bBad.load();
+		}
+
 		bool HasFiniteVectors(const TArray<FVector>& Values)
 		{
-			return Values.Num() > 0 && !Values.ContainsByPredicate(
-				[](const FVector& Value) { return Value.ContainsNaN(); });
+			return Values.Num() > 0 && !AnyBad(Values, [](const FVector& Value) { return Value.ContainsNaN(); });
 		}
 
 		bool HasFiniteColors(const TArray<FLinearColor>& Values)
 		{
-			return Values.Num() > 0 && !Values.ContainsByPredicate(
+			return Values.Num() > 0 && !AnyBad(Values,
 				[](const FLinearColor& Value)
 				{
 					return !FMath::IsFinite(Value.R) || !FMath::IsFinite(Value.G)
@@ -29,6 +64,7 @@ namespace APSWorldScapePayloadValidation
 
 	bool HasCompletePayload(const UWorldScapeLod* Lod, const bool bRequireProfileColor)
 	{
+		TRACE_CPUPROFILER_EVENT_SCOPE(APS_HasCompletePayload);
 		if (!IsValid(Lod) || !IsValid(Lod->Mesh) || Lod->Mesh->GetNumSections() < 3)
 		{
 			return false;

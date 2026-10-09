@@ -76,11 +76,24 @@ namespace APSWorldOrigin
 		TEXT("Rio 03.10 (another star's planets flickered, their air came and went): a ship faster than calm shifts the ")
 		TEXT("world too once it is farther from 0,0,0 than it flies in this many seconds (and aps.WorldOrigin.FloatShipKm), ")
 		TEXT("so it never reaches a planet tens of AU out. 0: a fast ship never shifts (the old rule)."));
+	TAutoConsoleVariable<int32> CVarFloatAboardLead(
+		TEXT("aps.WorldOrigin.FloatAboardLead"), 1,
+		TEXT("Rio 09.10 (~10 fps walking aboard while the autopilot flew near a planet): 1: someone walking the decks of a ")
+		TEXT("ship faster than calm shifts the world by the seated pilot's rule (past what the ship flies in ")
+		TEXT("aps.WorldOrigin.FloatLeadSeconds). 0: every two seconds once past aps.WorldOrigin.FloatShipKm, as before (22 ")
+		TEXT("shifts in 67 s, ~3-6 ms game and ~5-8 ms render thread each; the 90-100 / 40-55 ms hitches of that flight were ")
+		TEXT("WorldScape's LOD publications, not the shifts)."));
 	TAutoConsoleVariable<int32> CVarMapShift(
 		TEXT("aps.WorldOrigin.MapShift"), 1,
 		TEXT("Rio 04.10 (from ~900 AU the home planet's layers slid apart on the map): 1 brings the strategic map's close ")
 		TEXT("view of something far (beyond 50 view distances and 1 AU from 0,0,0) near the origin, while the pilot flies a ")
 		TEXT("ship in open space; the pilot is the origin again as the map closes. 0: the map never shifts the world."));
+	TAutoConsoleVariable<float> CVarMapShiftMaxAU(
+		TEXT("aps.WorldOrigin.MapShiftMaxAU"), 1000.0f,
+		TEXT("Rio 09.10 (critical: after the map looked at systems ~550 ly out, every station and ship near the pilot lay in one ")
+		TEXT("heap): a shift of that size rounds every nearby position to ~650 m (doubles at 5e20 cm), there and back. The map ")
+		TEXT("shifts the world only for a view within this many AU of 0,0,0 (1000 AU: a round trip moves nothing by more than ")
+		TEXT("~2 cm; the 04.10 layers at ~900 AU stay fixed); farther views are drawn where they are. 0: no limit (as before)."));
 	TAutoConsoleVariable<float> CVarRealFloatDriftLy(
 		TEXT("aps.RealScale.FloatDriftLy"), 20.0f,
 		TEXT("Rio 05.10 (REAL SCALE, stage 2): a ship crossing a REAL SCALE world at light years a second shifts the world as ")
@@ -94,6 +107,23 @@ namespace APSWorldOrigin
 	TAutoConsoleVariable<int32> CVarShiftCameraJump(
 		TEXT("aps.WorldOrigin.ShiftCameraJump"), 1,
 		TEXT("Test: 1 tells the renderer the camera jumped on a shift (virtual shadow map panning off); 0 does not."));
+	// Rio 09.10 (a cheaper world shift; A/B switches, 0 = as before).
+	TAutoConsoleVariable<int32> CVarShiftRefileByTransform(
+		TEXT("aps.WorldOrigin.ShiftRefileByTransform"), 0,
+		TEXT("Rio 09.10 (cheaper world shift): 1 re-files a movable Nanite mesh after a shift by sending its transform again ")
+		TEXT("(past r.SkipRedundantTransformUpdate) instead of re-creating its render state: UE 5.4's scene culling re-files a ")
+		TEXT("primitive on any transform update (SceneCulling.cpp UpdateInstances), with no new proxy, Nanite material bins, ")
+		TEXT("Lumen cards or distance field entry. Static and stationary meshes, dirty ones, and all when the skip is set from ")
+		TEXT("the console are re-created as before. 0: every one re-created (as before)."));
+	TAutoConsoleVariable<int32> CVarShiftCarrySky(
+		TEXT("aps.WorldOrigin.ShiftCarrySky"), 0,
+		TEXT("Rio 09.10 (cheaper world shift): 1 carries the gameplay star catalogue through a shift without a carrier (the ")
+		TEXT("floating origin, the map, a far rebase) and moves it after by the same offset, as flows do (needs ")
+		TEXT("aps.Origin.FlowCarrySky 1, same rule): its instanced catalogues keep their render state instead of being ")
+		TEXT("re-created (~1.8 ms of game thread and the re-upload of their instances per shift). 0: it shifts with the world and ")
+		TEXT("is re-created (as before)."));
+	/** The last RefileNanite's re-files by transform (aps.WorldOrigin.ShiftRefileByTransform), for the shift's log line. */
+	int32 LastRefileByTransform = 0;
 	// Rio 06.10 ("the star material smears at high speed"): on a flow or pay frame the view is told it moved only with the
 	// ship's own step, so the renderer moves every proxy's previous transform with the world and a star a few radii off
 	// gets no motion although it slides pixels on screen; TSR then drags its surface into streaks. Within a star's 1000
@@ -730,7 +760,27 @@ bool UAPSWorldOriginSubsystem::ShiftWorldBy(const FVector& Offset, const TCHAR* 
 	// put APSWorldOrigin::CarriedSky among AlsoCarried; the systems riding with the sky are never generators). Carried, it
 	// always takes the shift as its own move after the levels' steps, never left a whole shift behind.
 	AActor* CarriedSkyRoot = nullptr;
-	if (!Carried.IsEmpty() && AlsoCarried)
+	// Rio 09.10 (cheaper world shift, aps.WorldOrigin.ShiftCarrySky): a shift without a carrier carries the star catalogue
+	// too (the flows' rule, APSWorldOrigin::CarriedSky), so its instanced catalogues are moved after the levels' steps
+	// below instead of being re-created. The Nanite re-file stays a full one (bHasCarrier).
+	const bool bHasCarrier = !Carried.IsEmpty();
+	if (!bHasCarrier && APSWorldOrigin::CVarShiftCarrySky.GetValueOnGameThread() != 0)
+	{
+		if (AActor* Sky = APSWorldOrigin::CarriedSky(World))
+		{
+			Sky->GetAttachedActors(Carried, true, true);
+			Carried.Insert(Sky, 0);
+			CarriedSkyRoot = Sky;
+			static TWeakObjectPtr<AActor> LoggedShiftSky;
+			if (LoggedShiftSky.Get() != Sky)
+			{
+				LoggedShiftSky = Sky;
+				UE_LOG(LogTemp, Log, TEXT("[APS.WorldOrigin] shift carry sky: %s rides through the world shifts without a carrier, moved after them (aps.WorldOrigin.ShiftCarrySky 1)"),
+					*Sky->GetName());
+			}
+		}
+	}
+	if (bHasCarrier && AlsoCarried)
 	{
 		for (AActor* Root : *AlsoCarried)
 		{
@@ -798,7 +848,7 @@ bool UAPSWorldOriginSubsystem::ShiftWorldBy(const FVector& Offset, const TCHAR* 
 		CarriedSkyRoot->AddActorWorldOffset(Offset, false, nullptr, ETeleportType::TeleportPhysics);
 		APSWorldOrigin::KeepSkyMotionStill(*CarriedSkyRoot);
 		static TWeakObjectPtr<AActor> LoggedSky;
-		if (LoggedSky.Get() != CarriedSkyRoot)
+		if (bHasCarrier && LoggedSky.Get() != CarriedSkyRoot)
 		{
 			LoggedSky = CarriedSkyRoot;
 			UE_LOG(LogTemp, Log, TEXT("[APS.WorldOrigin] flow carry sky: %s rides through the flow and pay shifts, moved after them (aps.Origin.FlowCarrySky 1)"),
@@ -871,7 +921,7 @@ bool UAPSWorldOriginSubsystem::ShiftWorldBy(const FVector& Offset, const TCHAR* 
 	// Rio 05.10 afternoon (flight FPS at speed): a flow shift (every frame at drive speed) re-files only the meshes near the
 	// pawn; the far ones owe their re-file, paid once as the flow ends (UpdateFloatingOrigin).
 	const FVector NearPawn = Pawn ? Pawn->GetActorLocation() : FVector::ZeroVector;
-	const int32 NaniteMeshes = RefileNanite(Carried.IsEmpty() ? nullptr : &NearPawn, Carried);
+	const int32 NaniteMeshes = RefileNanite(bHasCarrier ? &NearPawn : nullptr, Carried);
 	Lap(4);
 	// Absolute world positions kept outside the components: WorldScape's observer override (re-read every tick, but a
 	// stale frame would rebuild the surface) and the flight model's fixed star centres.
@@ -938,21 +988,40 @@ bool UAPSWorldOriginSubsystem::ShiftWorldBy(const FVector& Offset, const TCHAR* 
 		}
 		return true;
 	}
+	// Rio 09.10 (aps.WorldOrigin.ShiftRefileByTransform, aps.WorldOrigin.ShiftCarrySky): what the cheaper shift did, only
+	// while one of them is on (the line is unchanged otherwise).
+	const FString CheapShift = APSWorldOrigin::CVarShiftRefileByTransform.GetValueOnGameThread() != 0
+		|| APSWorldOrigin::CVarShiftCarrySky.GetValueOnGameThread() != 0
+		? FString::Printf(TEXT(" | %d refiled by transform, sky %s"), APSWorldOrigin::LastRefileByTransform,
+			!bHasCarrier && CarriedSkyRoot ? TEXT("carried") : TEXT("shifted"))
+		: FString();
 	UE_LOG(LogTemp, Log,
-		TEXT("[APS.WorldOrigin] float shift reason=%s by %.3f km | pawn %.3f km -> %.2f m from 0,0,0 | generation offset %s | %d instanced and spline meshes resent, %d Nanite meshes refiled | %.1f ms"),
+		TEXT("[APS.WorldOrigin] float shift reason=%s by %.3f km | pawn %.3f km -> %.2f m from 0,0,0 | generation offset %s | %d instanced and spline meshes resent, %d Nanite meshes refiled | %.1f ms%s"),
 		Reason, Offset.Size() / 100000.0, PawnBefore.Size() / 100000.0,
 		Pawn ? Pawn->GetActorLocation().Size() / 100.0 : -1.0, *GetOriginOffset().ToCompactString(), InstancedMeshes,
-		NaniteMeshes, ShiftMs);
+		NaniteMeshes, ShiftMs, *CheapShift);
 	return true;
 }
 
 int32 UAPSWorldOriginSubsystem::RefileNanite(const FVector* NearOnly, const TArray<AActor*>& Carried)
 {
 	UWorld* World = GetWorld();
+	APSWorldOrigin::LastRefileByTransform = 0;
 	if (!World || APSWorldOrigin::CVarShiftRefileNanite.GetValueOnGameThread() == 0)
 	{
 		return 0;
 	}
+	// Rio 09.10 (cheaper world shift, aps.WorldOrigin.ShiftRefileByTransform): the scene shift already moved every proxy, its
+	// bounds and the octree; only the scene culling's cell is stale. A transform update re-files it (UE 5.4 SceneCulling.cpp
+	// UpdateInstances, from the shifted bounds) without a new proxy. It would be judged redundant on the game thread
+	// (RendererScene.cpp ~2142), so the check is off around the sends (as ForceRenderResend; never against a console value).
+	IConsoleVariable* SkipRedundant = APSWorldOrigin::SkipRedundantTransformUpdateVariable();
+	const bool bByTransform = APSWorldOrigin::CVarShiftRefileByTransform.GetValueOnGameThread() != 0 && World->Scene
+		&& APSWorldOrigin::CanForceRenderResend();
+	const bool bMayToggle = bByTransform && SkipRedundant && SkipRedundant->GetInt() != 0;
+	const EConsoleVariableFlags QuietCode = EConsoleVariableFlags(ECVF_SetByCode | ECVF_Set_NoSinkCall_Unsafe);
+	const int32 SavedSkip = bMayToggle ? SkipRedundant->GetInt() : 0;
+	bool bSkipOff = false;
 	int32 Refiled = 0;
 	for (TObjectIterator<UStaticMeshComponent> It; It; ++It)
 	{
@@ -969,12 +1038,37 @@ int32 UAPSWorldOriginSubsystem::RefileNanite(const FVector* NearOnly, const TArr
 			bNaniteRefileOwed = true;
 			continue;
 		}
+		// Rio 09.10 (aps.WorldOrigin.ShiftRefileByTransform): a movable mesh with a proxy and no pending re-creation; a static
+		// or stationary one would be re-created by the transform update itself, mid-tick (it keeps the end-of-frame way).
+		if (bByTransform && Mesh->SceneProxy && !Mesh->IsRenderStateDirty() && !Mesh->ShouldRecreateProxyOnUpdateTransform())
+		{
+			if (bMayToggle && !bSkipOff)
+			{
+				SkipRedundant->Set(0, QuietCode);
+				bSkipOff = true;
+			}
+			World->Scene->UpdatePrimitiveTransform(Mesh);
+			++APSWorldOrigin::LastRefileByTransform;
+			++Refiled;
+			continue;
+		}
 		Mesh->MarkRenderStateDirty();
 		++Refiled;
+	}
+	if (bSkipOff)
+	{
+		SkipRedundant->Set(SavedSkip, QuietCode);
 	}
 	if (!NearOnly)
 	{
 		bNaniteRefileOwed = false;
+	}
+	static bool bLoggedByTransform = false;
+	if (APSWorldOrigin::LastRefileByTransform > 0 && !bLoggedByTransform)
+	{
+		bLoggedByTransform = true;
+		UE_LOG(LogTemp, Log, TEXT("[APS.WorldOrigin] shift refile by transform: %d of %d Nanite meshes re-filed by their transform, the rest re-created (aps.WorldOrigin.ShiftRefileByTransform 1)"),
+			APSWorldOrigin::LastRefileByTransform, Refiled);
 	}
 	return Refiled;
 }
@@ -1880,9 +1974,13 @@ void UAPSWorldOriginSubsystem::UpdateFloatingOrigin(const float DeltaSeconds)
 	// stayed above 3 km/s down to 44 km over the surface, so its WorldScape surface, air and clouds were drawn 4.5e14 cm
 	// (30 AU) from 0,0,0 for half a minute, where float materials and planet centres lose kilometres (the flicker).
 	// Now a fast ship shifts once it is farther out than it flies in FloatLeadSeconds: every few seconds at most.
-	const double SpeedCm = Ship ? FMath::Max(Ship->GetKinematicVelocity().Size(), Ship->GetVelocity().Size())
+	// Rio 09.10: the deck under a walker moves with its ship, so a walker aboard keeps the pilot's rule
+	// (aps.WorldOrigin.FloatAboardLead).
+	const ASpaceship* Mover = Ship ? Ship
+		: bAboard && APSWorldOrigin::CVarFloatAboardLead.GetValueOnGameThread() != 0 ? Cast<ASpaceship>(Carrier) : nullptr;
+	const double SpeedCm = Mover ? FMath::Max(Mover->GetKinematicVelocity().Size(), Mover->GetVelocity().Size())
 		: Pawn->GetVelocity().Size();
-	const bool bFast = bFlying && SpeedCm > APSWorldOrigin::CVarFloatCalmKmPerS.GetValueOnGameThread() * 1.0e5;
+	const bool bFast = (bFlying || Mover) && SpeedCm > APSWorldOrigin::CVarFloatCalmKmPerS.GetValueOnGameThread() * 1.0e5;
 	if (bFast)
 	{
 		const double LeadSeconds = APSWorldOrigin::CVarFloatLeadSeconds.GetValueOnGameThread();
@@ -1910,7 +2008,8 @@ void UAPSWorldOriginSubsystem::UpdateFloatingOrigin(const float DeltaSeconds)
 			FMath::RoundToDouble(Offset.Z / Grain) * Grain);
 	}
 	ShiftWorldBy(Offset, bFreeFlight ? (bFast ? TEXT("a fast free-flight camera far out") : TEXT("a calm free-flight camera far out"))
-		: bFlying ? (bFast ? TEXT("a fast ship far out") : TEXT("a slow ship far out")) : TEXT("on foot far out"));
+		: bFlying ? (bFast ? TEXT("a fast ship far out") : TEXT("a slow ship far out"))
+		: bFast ? TEXT("aboard a fast ship far out") : TEXT("on foot far out"));
 }
 
 void UAPSWorldOriginSubsystem::RequestMapView(const FVector& FocusLocation, const double ViewDistanceCm)
@@ -1929,6 +2028,18 @@ bool UAPSWorldOriginSubsystem::TryMapShift()
 		|| MapFocusLocation.SizeSquared() <= FMath::Square(FMath::Max(MapViewDistanceCm * 50.0, AstronomicalUnitCm))
 		|| IsStellarCatalogueSettling())
 	{
+		return false;
+	}
+	// Rio 09.10 (critical): never a shift that rounds the world near the pilot (aps.WorldOrigin.MapShiftMaxAU).
+	if (const double MaxAU = APSWorldOrigin::CVarMapShiftMaxAU.GetValueOnGameThread();
+		MaxAU > 0.0 && MapFocusLocation.SizeSquared() > FMath::Square(MaxAU * AstronomicalUnitCm))
+	{
+		if (const double Now = FPlatformTime::Seconds(); Now - LastMapShiftCapLogSeconds > 10.0)
+		{
+			LastMapShiftCapLogSeconds = Now;
+			UE_LOG(LogTemp, Log, TEXT("[APS.WorldOrigin] the map looks %.0f AU out, beyond aps.WorldOrigin.MapShiftMaxAU %.0f: the world stays put"),
+				MapFocusLocation.Size() / AstronomicalUnitCm, MaxAU);
+		}
 		return false;
 	}
 	// The world keeps running under the map, and the pilot ends up as far from 0,0,0 as the view was, beyond the engine's

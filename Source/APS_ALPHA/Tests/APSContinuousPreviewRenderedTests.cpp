@@ -116,6 +116,24 @@ FString SystemStellarPhysics(UWorld* World, const FGuid& SystemId, const int32 E
 	return TEXT("missing-system");
 }
 
+/** Rio 09.10 (A23): what makes a world itself when HOME START PLANET INDEX moves the home (name|type|km|seed|moons|K). */
+FString HomeStartIdentity(const APlanet* Planet)
+{
+	if (!IsValid(Planet)) return TEXT("missing-planet");
+	return FString::Printf(TEXT("%s|%d|%d|%d|%d|%d"), *Planet->AstroName.ToString(), static_cast<int32>(Planet->PlanetType),
+		FMath::RoundToInt(Planet->RadiusKM), Planet->WorldScapeSeed, Planet->Moons.Num(),
+		Planet->PlanetData.PlanetModel.IsValid() ? Planet->PlanetData.PlanetModel->Temperature : 0);
+}
+
+const APlanet* HomeFamilyWorld(const AAstroGenerator* Generator, const int32 StartIndex)
+{
+	const AStarSystem* Home = Generator ? Generator->GetPreviewHomeSystem() : nullptr;
+	const AStar* Sun = IsValid(Home) ? Home->MainStar : nullptr;
+	const APlanetarySystem* Family = IsValid(Sun) ? Sun->PlanetarySystem : nullptr;
+	return IsValid(Family) && Family->PlanetsActorsList.IsValidIndex(StartIndex - 1)
+		? Family->PlanetsActorsList[StartIndex - 1] : nullptr;
+}
+
 FString HierarchyPhysics(const AStarSystem* System, const AAstroGenerator* Generator)
 {
 	FString Result;
@@ -1421,6 +1439,10 @@ public:
 				Test->TestEqual(TEXT("Home start index range comes from actual primary family"), VM->GetHomeStartPlanetCount(), 3);
 				VM->SetPreviewFocus(EAstroPreviewFocus::HomePlanet);
 				StartInspectionKey = Generator->GetPreviewBodyStableKey(Cast<APlanet>(Generator->GetSelectedPreviewBodyActor()));
+				// Rio 09.10 (A23): both worlds keep themselves; only the home mark moves.
+				StartOldHomeIndex = VM->GeneratedWorld->StartPlanetIndex;
+				StartOldHomeIdentity = HomeStartIdentity(HomeFamilyWorld(Generator.Get(), StartOldHomeIndex));
+				StartNewHomeIdentity = HomeStartIdentity(HomeFamilyWorld(Generator.Get(), 3));
 				VM->SetStartPlanetIndex(3);
 			}
 			else if (Step == 28)
@@ -1429,6 +1451,13 @@ public:
 				const FObjectPropertyBase* HomeProperty = FindFProperty<FObjectPropertyBase>(AAstroGenerator::StaticClass(), TEXT("HomePlanet"));
 				const APlanet* StartPlanet = HomeProperty ? Cast<APlanet>(HomeProperty->GetObjectPropertyValue_InContainer(Generator.Get())) : nullptr;
 				Test->TestTrue(TEXT("Home start assignment resolves its actual third orbit"), StartPlanet && Generator->GetPreviewBodyStableKey(StartPlanet) == TEXT("SYS0/S0/P2"));
+				Test->TestEqual(TEXT("A23: the world on the new start orbit becomes the home as it was"),
+					HomeStartIdentity(StartPlanet), StartNewHomeIdentity);
+				if (StartOldHomeIndex != 3)
+				{
+					Test->TestEqual(TEXT("A23: the old home stays on its orbit as the world it was"),
+						HomeStartIdentity(HomeFamilyWorld(Generator.Get(), StartOldHomeIndex)), StartOldHomeIdentity);
+				}
 				Test->TestEqual(TEXT("Changing home start assignment cannot replace the inspected planet"),
 					Generator->GetPreviewBodyStableKey(Cast<APlanet>(Generator->GetSelectedPreviewBodyActor())), StartInspectionKey);
 				VM->SetSelectedSystemPlanetCount(0);
@@ -2646,6 +2675,9 @@ private:
 	FString RemoteUneditedStellarPhysics;
 	FString RemoteUneditedPrimaryPhysics;
 	FString StartInspectionKey;
+	int32 StartOldHomeIndex{0};
+	FString StartOldHomeIdentity;
+	FString StartNewHomeIdentity;
 	TWeakObjectPtr<AStarSystem> CacheOriginalSystem;
 	TWeakObjectPtr<UProceduralMeshComponent> CacheOriginalTerrain;
 	FString CacheOriginalPhysics;

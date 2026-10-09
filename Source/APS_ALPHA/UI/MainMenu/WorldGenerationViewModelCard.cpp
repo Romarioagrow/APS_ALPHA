@@ -142,11 +142,9 @@ void UWorldGenerationViewModel::GetPreviewModelCard(FAPSModelCard& OutCard) cons
 		// catalogue size behind them stays internal (seeds and saves).
 		// Rio 04.10 ("the labels lie: no more than 47 thousand, and a million points on screen"): every drawn star, the
 		// placed ones and the GPU points beside them once that layer is built.
-		const int32 PlacedStars = Generator ? Generator->GetPreviewGalaxyRenderedStarCount()
-			: (GeneratedWorld->GalaxyPlacedStarCount > 0 ? GeneratedWorld->GalaxyPlacedStarCount
-				: APSGalaxyMorphology::PreviewReferenceBudget);
-		const double DrawnStars = static_cast<double>(PlacedStars)
-			+ (Generator ? APSGalaxyGpuStars::GetDrawnPointCount(Generator->GetWorld()) : 0);
+		// Rio 09.10 (playtest 17: "first ~11 thousand, then 8 MILLION once the GPU render loads"): the count the galaxy
+		// draws once its GPU layer is built, from the first frame (UWorldGenerationViewModel::GetGalaxyDrawnStarTarget).
+		const double DrawnStars = static_cast<double>(GetGalaxyDrawnStarTarget());
 		FText Value, Unit;
 		Count(DrawnStars, Value, Unit, LOCTEXT("StarsNoun", "STARS"));
 		Add(OutCard, EAPSModelGlyph::Star, LOCTEXT("PlacedStars", "STARS"), Value, Unit, FText::GetEmpty(), true);
@@ -234,8 +232,11 @@ void UWorldGenerationViewModel::GetPreviewModelCard(FAPSModelCard& OutCard) cons
 			IsValid(Family) ? Enum(Family->OrbitDistributionType) : Enum(GeneratedWorld->OrbitDistributionType));
 		if (bHome)
 		{
+			// Rio 09.10 (A23): and which world that is (its own name stays with it when the index moves).
+			const APlanet* HomeWorld = Generator ? Generator->HomePlanet : nullptr;
 			Add(OutCard, EAPSModelGlyph::Home, LOCTEXT("SystemStart", "START PLANET"),
-				Number(GeneratedWorld->StartPlanetIndex));
+				Number(GeneratedWorld->StartPlanetIndex), FText::GetEmpty(),
+				IsValid(HomeWorld) ? Upper(HomeWorld->AstroName, FText::GetEmpty()) : FText::GetEmpty());
 		}
 		return;
 	}

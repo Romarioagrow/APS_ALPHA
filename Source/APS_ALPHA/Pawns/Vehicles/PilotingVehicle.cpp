@@ -4,8 +4,10 @@
 #include "PilotingVehicle.h"
 #include "APS_ALPHA/Core/World/APSWorldOriginSubsystem.h"
 #include "APS_ALPHA/Pawns/Characters/CustomGravityCharacter.h"
+#include "APS_ALPHA/Pawns/Characters/GravityDetectorComponent.h"
 
 #include "Components/PrimitiveComponent.h"
+#include "HAL/IConsoleManager.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -28,6 +30,15 @@ namespace
 			Player->PlayerCameraManager->SetGameCameraCutThisFrame();
 		}
 	}
+
+	// Rio 09.10 (playtest 08.10 item 3, "sometimes no gravity"): the seated pilot's gravity detector kept ticking with its
+	// collision off, found no local source and pinned the pilot to the nearest world or to zero-G while seated ("Select
+	// reason=FullScaleFallback character=<the seated pilot>" right after "is now piloted"); a stand-up from a weightless seat then
+	// latched zero-G at the first missed floor probe. SettleAfterVehicleExit runs its own check when the pilot gets up.
+	TAutoConsoleVariable<int32> CVarPauseSeatedDetector(
+		TEXT("aps.Seat.PauseGravityDetector"), 1,
+		TEXT("Rio 09.10 (playtest 08.10 item 3): 1 pauses a seated pilot's gravity detector (its collision is off, so it retargeted ")
+		TEXT("the pilot to a planet or to zero-G while seated); getting up runs its own check. 0: it keeps ticking in the seat, as before."));
 }
 
 void APilotingVehicle::TakeControl(APawn* Pawn)
@@ -131,6 +142,14 @@ bool APilotingVehicle::BeginVehicleControl(APawn* RequestingPawn)
 			SpringArm->bDoCollisionTest = false;
 		}
 	}
+	bPilotDetectorPaused = false;
+	if (const ACustomGravityCharacter* GravityPilot = Cast<ACustomGravityCharacter>(RequestingPawn);
+		GravityPilot && GravityPilot->GravityDetector && CVarPauseSeatedDetector.GetValueOnGameThread() != 0)
+	{
+		bPilotDetectorWasTicking = GravityPilot->GravityDetector->IsComponentTickEnabled();
+		GravityPilot->GravityDetector->SetComponentTickEnabled(false);
+		bPilotDetectorPaused = true;
+	}
 	if (bHidePilotDuringControl)
 	{
 		RequestingPawn->SetActorHiddenInGame(true);
@@ -181,8 +200,11 @@ bool APilotingVehicle::EndVehicleControl()
 
 	PreviousPilot->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
 
-	FVector ExitLocation = ExitTransform.GetLocation();
-	const FRotator ExitRotation = ExitTransform.Rotator();
+	// Rio 09.10 (playtest 08.10 items 1-2): the place is settled now, with the vehicle's own collision back (UnPossessed above);
+	// the base and aps.Ship.SafeStandUp 0 keep ExitTransform, taken before the release as before.
+	const FTransform StandUpTransform = ResolvePilotExitTransform(*PreviousPilot, ExitTransform);
+	FVector ExitLocation = StandUpTransform.GetLocation();
+	const FRotator ExitRotation = StandUpTransform.Rotator();
 	if (UWorld* World = GetWorld())
 	{
 		World->FindTeleportSpot(PreviousPilot, ExitLocation, ExitRotation);
@@ -232,6 +254,15 @@ bool APilotingVehicle::EndVehicleControl()
 	{
 		ControllerToRestore->Possess(PreviousPilot);
 		MarkViewSwitch(ControllerToRestore);
+	}
+	if (bPilotDetectorPaused)
+	{
+		if (const ACustomGravityCharacter* GravityPilot = Cast<ACustomGravityCharacter>(PreviousPilot);
+			GravityPilot && GravityPilot->GravityDetector)
+		{
+			GravityPilot->GravityDetector->SetComponentTickEnabled(bPilotDetectorWasTicking);
+		}
+		bPilotDetectorPaused = false;
 	}
 	if (ACustomGravityCharacter* Character = Cast<ACustomGravityCharacter>(PreviousPilot))
 	{

@@ -7,6 +7,7 @@
 #include "APS_ALPHA/Core/Instances/MainGameplayInstance.h"
 #include "APS_ALPHA/Core/Model/GeneratedWorld.h"
 #include "APS_ALPHA/Core/Model/SpawnParameters.h"
+#include "APS_ALPHA/Core/Rendering/APSGalaxyGpuStars.h"
 #include "APS_ALPHA/Core/Planetary/APSPlanetSurfaceProfile.h"
 #include "APS_ALPHA/Core/Enums/CharSpawnPlace.h"
 #include "APS_ALPHA/Core/Enums/OrbitHeight.h"
@@ -34,10 +35,68 @@
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
+#include "HAL/IConsoleManager.h"
 #include "Kismet/GameplayStatics.h"
 #include "TimerManager.h"
 
 #define LOCTEXT_NAMESPACE "WorldGenerationViewModel"
+
+/**
+ * Rio 09.10 (playtest 17, STARS): the menu galaxy's GPU points after its placed stars are aps.Galaxy.GpuStars (default
+ * 8,000,000; a change rebuilds the menu layer, APSGalaxyGpuStars). The slider writes it at its current priority and
+ * remembers what it replaced: the next menu session puts that back unless somebody (console, bench) set another value
+ * meanwhile, and the slider never asks for more points than that value.
+ */
+namespace APSMenuGpuStars
+{
+	int32 GWritten = INDEX_NONE;
+	int32 GReplaced = INDEX_NONE;
+
+	IConsoleVariable* CountVariable()
+	{
+		return IConsoleManager::Get().FindConsoleVariable(TEXT("aps.Galaxy.GpuStars"));
+	}
+
+	/** The menu layer draws GPU points: aps.Stars.GpuPoints is on and the plugin shaders exist. */
+	bool PointsOn()
+	{
+		const IConsoleVariable* Points = IConsoleManager::Get().FindConsoleVariable(TEXT("aps.Stars.GpuPoints"));
+		return Points && Points->GetInt() != 0 && APSGalaxyGpuStars::IsRequested();
+	}
+
+	int32 Current()
+	{
+		const IConsoleVariable* Count = CountVariable();
+		return Count ? FMath::Max(Count->GetInt(), 0) : 0;
+	}
+
+	/** The session's ceiling: the value the slider replaced, else the current one. */
+	int32 Ceiling()
+	{
+		return GWritten != INDEX_NONE && GReplaced != INDEX_NONE ? FMath::Max(GReplaced, 0) : Current();
+	}
+
+	void Write(const int32 Value)
+	{
+		IConsoleVariable* Count = CountVariable();
+		if (!Count) return;
+		if (GWritten == INDEX_NONE || Count->GetInt() != GWritten) GReplaced = Count->GetInt();
+		GWritten = Value;
+		Count->SetWithCurrentPriority(Value);
+	}
+
+	void RestoreForNewSession()
+	{
+		IConsoleVariable* Count = CountVariable();
+		if (Count && GWritten != INDEX_NONE && GReplaced != INDEX_NONE && Count->GetInt() == GWritten
+			&& GWritten != GReplaced)
+		{
+			Count->SetWithCurrentPriority(GReplaced);
+			UE_LOG(LogTemp, Log, TEXT("[APS.WorldGeneration] STARS: a new menu session draws %d GPU points again"), GReplaced);
+		}
+		GWritten = GReplaced = INDEX_NONE;
+	}
+}
 
 namespace APSCivilizationPilot
 {
@@ -115,6 +174,11 @@ void UWorldGenerationViewModel::Initialize(UObject* InWorldContext, UGeneratedWo
 		}
 	}
 	SetPreviewStatus(LOCTEXT("PreviewPending", "PREVIEW PENDING"), false);
+	// Rio 08.10 (STAR BRIGHTNESS): a new menu session starts at today's brightness, whatever an older one left.
+	ApplyPreviewStarBrightness();
+	// Rio 09.10 (STARS): and at the GPU point count an earlier session's slider replaced.
+	PendingMenuGpuStars = INDEX_NONE;
+	APSMenuGpuStars::RestoreForNewSession();
 }
 
 void UWorldGenerationViewModel::Shutdown()
@@ -124,8 +188,14 @@ void UWorldGenerationViewModel::Shutdown()
 		World->GetTimerManager().ClearTimer(PreviewTimerHandle);
 		World->GetTimerManager().ClearTimer(PlanetAppearanceTimerHandle);
 		World->GetTimerManager().ClearTimer(PreviewTravelTimerHandle);
+		World->GetTimerManager().ClearTimer(MenuGpuStarsTimerHandle);
 	}
+	// Rio 09.10 (STARS): a count still waiting for its drag to rest is dropped; the gameplay sky has its own count.
+	PendingMenuGpuStars = INDEX_NONE;
 	bPendingSurfaceAppearanceRefresh = false;
+	// Rio 08.10 (STAR BRIGHTNESS): the viewing aid ends with the session; the preview generator and the GPU layer return to 1.
+	PreviewStarBrightness = 1.0;
+	ApplyPreviewStarBrightness();
 	WorldContext.Reset();
 	PreviewGenerator.Reset();
 }
@@ -587,6 +657,97 @@ void UWorldGenerationViewModel::SetGalaxyPlacedStarCount(const double Value)
 	}
 }
 
+int32 UWorldGenerationViewModel::GetGalaxyPlacedStars() const
+{
+	return GeneratedWorld && GeneratedWorld->GalaxyPlacedStarCount > 0
+		? FMath::Clamp(GeneratedWorld->GalaxyPlacedStarCount, APSGalaxyMorphology::PreviewReferenceBudget,
+			APSGalaxyMorphology::MaxPlacedStars)
+		: APSGalaxyMorphology::PreviewReferenceBudget;
+}
+
+int32 UWorldGenerationViewModel::GetMenuGpuStars() const
+{
+	return PendingMenuGpuStars != INDEX_NONE ? PendingMenuGpuStars : APSMenuGpuStars::Current();
+}
+
+int64 UWorldGenerationViewModel::GetGalaxyDrawnStarTarget() const
+{
+	const int64 Placed = GetGalaxyPlacedStars();
+	if (!APSMenuGpuStars::PointsOn()) return Placed;
+	int64 Gpu = GetMenuGpuStars();
+	// The layer draws at most the catalogue after the placed prefix (APSGalaxyGpuStars::RebuildLayer).
+	if (const AAstroGenerator* Generator = PreviewGenerator.Get(); Generator && Generator->GetPreviewGalaxyModeledStarCount() > 0)
+	{
+		Gpu = FMath::Min(Gpu, FMath::Max<int64>(Generator->GetPreviewGalaxyModeledStarCount() - Placed, 0));
+	}
+	return Placed + Gpu;
+}
+
+int32 UWorldGenerationViewModel::GetGalaxyDrawnStarCeiling() const
+{
+	return APSGalaxyMorphology::MaxPlacedStars + (APSMenuGpuStars::PointsOn() ? APSMenuGpuStars::Ceiling() : 0);
+}
+
+void UWorldGenerationViewModel::SetGalaxyDrawnStars(const double Value)
+{
+	if (!GeneratedWorld || !FMath::IsFinite(Value))
+	{
+		return;
+	}
+	if (!APSMenuGpuStars::PointsOn())
+	{
+		// No GPU layer: STARS is the placed-stars slider it always was.
+		SetGalaxyPlacedStarCount(Value);
+		return;
+	}
+	// Rio 09.10 (playtest 17): the placed stars stay as the world rolled them while the GPU points come and go; only a total
+	// below them lowers the placed count (no GPU points then), as the old slider did.
+	const int32 Placed = GetGalaxyPlacedStars();
+	const double Total = FMath::Clamp(Value, static_cast<double>(APSGalaxyMorphology::PreviewReferenceBudget),
+		static_cast<double>(Placed) + APSMenuGpuStars::Ceiling());
+	int32 Gpu = 0;
+	if (Total < Placed)
+	{
+		SetGalaxyPlacedStarCount(Total);
+	}
+	else
+	{
+		Gpu = FMath::RoundToInt(Total - Placed);
+	}
+	if (Gpu == GetMenuGpuStars())
+	{
+		return;
+	}
+	PendingMenuGpuStars = Gpu;
+	// Every write rebuilds the GPU layer (~0.8 s for 8 million points): written once the drag rests, like RequestPreview.
+	if (UWorld* World = WorldContext.IsValid() ? WorldContext->GetWorld() : nullptr)
+	{
+		World->GetTimerManager().SetTimer(MenuGpuStarsTimerHandle, this, &UWorldGenerationViewModel::ApplyMenuGpuStars,
+			0.35f, false);
+	}
+	else
+	{
+		ApplyMenuGpuStars();
+	}
+}
+
+void UWorldGenerationViewModel::ApplyMenuGpuStars()
+{
+	if (PendingMenuGpuStars == INDEX_NONE)
+	{
+		return;
+	}
+	const int32 Gpu = PendingMenuGpuStars;
+	PendingMenuGpuStars = INDEX_NONE;
+	if (Gpu == APSMenuGpuStars::Current())
+	{
+		return;
+	}
+	APSMenuGpuStars::Write(Gpu);
+	UE_LOG(LogTemp, Log, TEXT("[APS.WorldGeneration] STARS %lld: %d placed + %d GPU points (aps.Galaxy.GpuStars %d, session ceiling %d)"),
+		GetGalaxyDrawnStarTarget(), GetGalaxyPlacedStars(), Gpu, APSMenuGpuStars::Current(), APSMenuGpuStars::Ceiling());
+}
+
 void UWorldGenerationViewModel::SetGalaxyStarPopulation(const int32 Value)
 {
 	// Rio 03.10: the cluster's POPULATION presets for the galaxy (sizes); the enum row cannot share SetEnumValue,
@@ -636,6 +797,48 @@ void UWorldGenerationViewModel::SetGalaxyStarDensity(double Value)
 	{
 		GeneratedWorld->GalaxyStarDensity = NewValue;
 		RequestPreview();
+	}
+}
+
+void UWorldGenerationViewModel::SetStarClusterDensity(const double Value)
+{
+	if (!GeneratedWorld || !FMath::IsFinite(Value))
+	{
+		return;
+	}
+	// Rio 08.10 (CLUSTER DENSITY): a world value (saved; part of the dataset input unless 1). A value next to 1 lands on
+	// exactly 1, so the slider always finds the cluster as generated again.
+	const double Clamped = FMath::Clamp(Value, 0.05, 20.0);
+	const double NewValue = FMath::IsNearlyEqual(Clamped, 1.0, 1.0e-6) ? 1.0 : Clamped;
+	if (GeneratedWorld->StarClusterDensity != NewValue)
+	{
+		GeneratedWorld->StarClusterDensity = NewValue;
+		RequestPreview();
+	}
+}
+
+void UWorldGenerationViewModel::SetPreviewStarBrightness(const double Value)
+{
+	if (!FMath::IsFinite(Value))
+	{
+		return;
+	}
+	// Rio 08.10 (STAR BRIGHTNESS): live, no rebuild. A value next to 1 lands on exactly 1 (today's look, nothing applied).
+	const double Clamped = FMath::Clamp(Value, 0.1, 2.0);
+	const double NewValue = FMath::IsNearlyEqual(Clamped, 1.0, 1.0e-3) ? 1.0 : Clamped;
+	if (NewValue != PreviewStarBrightness)
+	{
+		PreviewStarBrightness = NewValue;
+		ApplyPreviewStarBrightness();
+	}
+}
+
+void UWorldGenerationViewModel::ApplyPreviewStarBrightness() const
+{
+	APSGalaxyGpuStars::SetMenuStarBrightness(static_cast<float>(PreviewStarBrightness));
+	if (AAstroGenerator* Generator = PreviewGenerator.Get())
+	{
+		Generator->SetPreviewStarBrightness(static_cast<float>(PreviewStarBrightness));
 	}
 }
 
@@ -714,6 +917,9 @@ void UWorldGenerationViewModel::SetSelectedPlanetOrbitDistanceAu(const double Va
 	if (const auto* Existing = GeneratedWorld->FindPlanetOrbitEdit(Address)) Edit = *Existing;
 	Edit.bOverrideDistance = true;
 	Edit.DistanceAu = Clamped;
+	// Rio 09.10 (playtest 32): REAL SCALE ignored the home system's manual distances (the slider snapped back). The player's
+	// own distance now applies there too; the roll's edits and older saves keep today's layout.
+	Edit.bAppliesAtRealScale = true;
 	GeneratedWorld->SetPlanetOrbitEdit(Address, Edit);
 	RequestPreview();
 }
@@ -905,45 +1111,99 @@ void UWorldGenerationViewModel::SetStartPlanetIndex(double Value)
 		Value, 1.0, static_cast<double>(MaxPlanetIndex)));
 	const int32 OldIndex = GeneratedWorld->StartPlanetIndex;
 	if (OldIndex == NewIndex) return;
-	// Rio 02.10 ("the start planet does not change its index when changed in the menu"): the designed home world is
-	// kept as edits of its orbit address (captured automatically on focus changes) and generated names belong to
-	// addresses too, so after the rebuild the home stayed on its old orbit and the new start orbit got a copy of the
-	// editor buffer. The home's edits, moons and names now swap places with the world on the new start orbit.
+	// Rio 09.10 (A23: "HOME START PLANET INDEX does nothing"): the 02.10 version swapped the home's edits and names with
+	// the world on the new orbit, and the generator rebuilds the start slot from the HOME recipe, so the same home only
+	// changed its orbit. Rio: the world now on orbit N (its type, size, look, moons, name) becomes the home; every other
+	// world keeps its design; the old home stays an ordinary world with its own. Both worlds are pinned as body edits of
+	// their own addresses (generated climate included: FAPSPreviewBodyGeneratedPin); names stay with their addresses.
 	PreserveSelectedPreviewBodyEdit(true);
-	const FString From = FString::Printf(TEXT("SYS0/S0/P%d"), OldIndex - 1);
-	const FString To = FString::Printf(TEXT("SYS0/S0/P%d"), NewIndex - 1);
-	const auto Swapped = [&From, &To](const FString& Key)
+	AAstroGenerator* Generator = PreviewGenerator.Get();
+	const AStarSystem* HomeSystem = IsValid(Generator) ? Generator->GetPreviewHomeSystem() : nullptr;
+	const AStar* HomeSun = IsValid(HomeSystem) ? HomeSystem->MainStar : nullptr;
+	const APlanetarySystem* HomeFamily = IsValid(HomeSun) ? HomeSun->PlanetarySystem : nullptr;
+	const auto WorldAt = [HomeFamily](const int32 Index) -> APlanet*
 	{
-		if (Key == From || Key.StartsWith(From + TEXT("/"))) return To + Key.RightChop(From.Len());
-		if (Key == To || Key.StartsWith(To + TEXT("/"))) return From + Key.RightChop(To.Len());
-		return Key;
+		return IsValid(HomeFamily) && HomeFamily->PlanetsActorsList.IsValidIndex(Index - 1)
+			&& IsValid(HomeFamily->PlanetsActorsList[Index - 1]) ? HomeFamily->PlanetsActorsList[Index - 1] : nullptr;
 	};
-	// The live names of both worlds and their moons, so each keeps its name on its new orbit.
-	TMap<FString, FString> LiveNames;
-	if (const AAstroGenerator* Generator = PreviewGenerator.Get(); IsValid(Generator) && Generator->GetWorld())
+	APlanet* OldHome = WorldAt(OldIndex);
+	APlanet* NewHome = WorldAt(NewIndex);
+	if (!IsValid(NewHome))
 	{
-		for (TActorIterator<APlanetaryBody> It(Generator->GetWorld()); It; ++It)
+		// No live family yet (before the first preview): the index is all there is to keep.
+		GeneratedWorld->StartPlanetIndex = NewIndex;
+		RequestPreview();
+		return;
+	}
+	const auto Describe = [Generator](const APlanet* Planet)
+	{
+		return FString::Printf(TEXT("%s '%s' %s %.0f km moons=%d T=%d"), *Generator->GetPreviewBodyStableKey(Planet),
+			*Planet->AstroName.ToString(), *UEnum::GetValueAsString(Planet->PlanetType), Planet->RadiusKM, Planet->Moons.Num(),
+			Planet->PlanetData.PlanetModel.IsValid() ? Planet->PlanetData.PlanetModel->Temperature : 0);
+	};
+	const FString NewHomeText = Describe(NewHome);
+	const FString OldHomeText = IsValid(OldHome) ? Describe(OldHome) : FString(TEXT("(none)"));
+	const auto PinWorld = [this, Generator](APlanet* Planet)
+	{
+		for (AMoon* Moon : Planet->Moons)
 		{
-			const FString Key = Generator->GetPreviewBodyStableKey(*It);
-			if (!Key.IsEmpty() && Swapped(Key) != Key) LiveNames.Add(Key, It->AstroName.ToString());
+			if (!IsValid(Moon)) continue;
+			HydratePreviewBodyEditorBuffer(Moon);
+			Generator->SavePreviewBodyEditOverride(GeneratedWorld, Moon);
 		}
-	}
-	const auto SwapAddresses = [&Swapped](auto& Map)
-	{
-		auto Old = MoveTemp(Map);
-		Map.Reset();
-		for (auto& Pair : Old) Map.Add(Swapped(Pair.Key), MoveTemp(Pair.Value));
+		HydratePreviewBodyEditorBuffer(Planet);
+		Generator->SavePreviewBodyEditOverride(GeneratedWorld, Planet);
+		const FString Key = Generator->GetPreviewBodyStableKey(Planet);
+		if (const FAPSPreviewBodyEditOverride* Saved = GeneratedWorld->FindPreviewBodyEditOverride(Key);
+			Saved && Planet->PlanetData.PlanetModel.IsValid())
+		{
+			const FPlanetModel& Model = *Planet->PlanetData.PlanetModel;
+			FAPSPreviewBodyEditOverride Pinned = *Saved;
+			Pinned.Generated.bPinned = true;
+			Pinned.Generated.TemperatureK = Model.Temperature;
+			Pinned.Generated.Zone = Model.PlanetZone;
+			Pinned.Generated.Density = Model.PlanetDensity;
+			Pinned.Generated.Mass = Model.Mass;
+			Pinned.Generated.GravityStrength = Model.PlanetGravityStrength;
+			GeneratedWorld->SetPreviewBodyEditOverride(Key, Pinned);
+		}
 	};
-	SwapAddresses(GeneratedWorld->PreviewBodyEditOverrides);
-	SwapAddresses(GeneratedWorld->PreviewDisplayNameOverrides);
-	for (const TPair<FString, FString>& Name : LiveNames)
-	{
-		GeneratedWorld->SetPreviewDisplayNameOverride(Swapped(Name.Key), Name.Value);
-	}
+	if (IsValid(OldHome) && OldHome != NewHome) PinWorld(OldHome);
+	// Last: the editor buffer, which is also the HOME recipe of the start slot, now holds the new home.
+	PinWorld(NewHome);
 	GeneratedWorld->StartPlanetIndex = NewIndex;
-	// The buffer now belongs to the moved home: do not pin it back onto the old address.
-	bSkipBodyOverrideSnapshotOnce = true;
+	// The panel's own body takes its own values back into the buffer, so RequestPreview's snapshot of the panel's body
+	// writes that body's values, never the new home's, onto another address.
+	APlanetaryBody* PanelBody = Generator->GetActivePreviewWorldScapeBody();
+	if (!IsValid(PanelBody)) PanelBody = Cast<APlanetaryBody>(SelectedPreviewBody.Get());
+	if (IsValid(PanelBody) && PanelBody != NewHome) HydratePreviewBodyEditorBuffer(PanelBody);
+	UE_LOG(LogTemp, Log, TEXT("[APS.WorldGeneration] HOME START PLANET %d -> %d: home %s; %s stays an ordinary world"),
+		OldIndex, NewIndex, *NewHomeText, *OldHomeText);
 	RequestPreview();
+}
+
+void UWorldGenerationViewModel::LogHomeFamily(const TCHAR* Context) const
+{
+	const AAstroGenerator* Generator = PreviewGenerator.Get();
+	const AStarSystem* HomeSystem = IsValid(Generator) ? Generator->GetPreviewHomeSystem() : nullptr;
+	const AStar* HomeSun = IsValid(HomeSystem) ? HomeSystem->MainStar : nullptr;
+	const APlanetarySystem* HomeFamily = IsValid(HomeSun) ? HomeSun->PlanetarySystem : nullptr;
+	if (!IsValid(HomeFamily))
+	{
+		UE_LOG(LogTemp, Log, TEXT("[APS.WorldGeneration] home family %s: none"), Context);
+		return;
+	}
+	UE_LOG(LogTemp, Log, TEXT("[APS.WorldGeneration] home family %s: start planet %d of %d"), Context,
+		GeneratedWorld ? GeneratedWorld->StartPlanetIndex : 0, HomeFamily->PlanetsActorsList.Num());
+	for (const APlanet* Planet : HomeFamily->PlanetsActorsList)
+	{
+		if (!IsValid(Planet)) continue;
+		UE_LOG(LogTemp, Log, TEXT("[APS.WorldGeneration]   %s '%s' %s %.0f km moons=%d T=%d%s"),
+			*Generator->GetPreviewBodyStableKey(Planet), *Planet->AstroName.ToString(),
+			*UEnum::GetValueAsString(Planet->PlanetType), Planet->RadiusKM, Planet->Moons.Num(),
+			Planet->PlanetData.PlanetModel.IsValid() ? Planet->PlanetData.PlanetModel->Temperature : 0,
+			Planet == Generator->HomePlanet ? TEXT("  HOME") : TEXT(""));
+	}
 }
 
 void UWorldGenerationViewModel::PreserveSelectedPreviewBodyEdit(const bool bFlushPendingActor)
@@ -1917,12 +2177,11 @@ FText UWorldGenerationViewModel::GetPreviewScopeSummary() const
 	{
 	case EAstroPreviewFocus::Galaxy:
 		// Rio 03.10 ("MODELED 100 MILLION but visually few"): show what is placed; the catalogue size stays internal.
+		// Rio 09.10 (playtest 17): every star drawn, the GPU points included, from the first frame (not 11k, then 8M).
 		return FText::FromString(FString::Printf(
-			TEXT("GALAXY TYPE  %s\nCLASS  %s\nSTARS  %d\nSIZE  %d  /  DENSITY  %.2f\nPOPULATION  %s\nCOMPOSITION  %s"),
+			TEXT("GALAXY TYPE  %s\nCLASS  %s\nSTARS  %lld\nSIZE  %d  /  DENSITY  %.2f\nPOPULATION  %s\nCOMPOSITION  %s"),
 			*EnumText(GeneratedWorld->GalaxyType), *EnumText(GeneratedWorld->GalaxyClass),
-			Generator ? Generator->GetPreviewGalaxyRenderedStarCount()
-				: (GeneratedWorld->GalaxyPlacedStarCount > 0 ? GeneratedWorld->GalaxyPlacedStarCount
-					: APSGalaxyMorphology::PreviewReferenceBudget),
+			GetGalaxyDrawnStarTarget(),
 			GeneratedWorld->GalaxySize, GeneratedWorld->GalaxyStarDensity,
 			*EnumText(GeneratedWorld->GalaxyStarPopulation), *EnumText(GeneratedWorld->GalaxyStarComposition))
 			+ (bRealScaleSizes ? TEXT("\nREAL DISTANCES  ") + LightYears(2.0 * RealGalaxyRadiusCm) + TEXT(" ACROSS") : FString()));
@@ -2236,6 +2495,7 @@ AAstroGenerator* UWorldGenerationViewModel::FindOrCreatePreviewGenerator()
 			InitializeSpawnDefaultsFromGenerator(ExistingGenerator);
 			ExistingGenerator->WarmPreviewMaterialAssets();
 			PreviewGenerator = ExistingGenerator;
+			ApplyPreviewStarBrightness();
 			return ExistingGenerator;
 		}
 	}
@@ -2272,6 +2532,7 @@ AAstroGenerator* UWorldGenerationViewModel::FindOrCreatePreviewGenerator()
 		NewGenerator->WarmPreviewMaterialAssets();
 		InitializeSpawnDefaultsFromGenerator(NewGenerator);
 		PreviewGenerator = NewGenerator;
+		ApplyPreviewStarBrightness();
 	}
 	return NewGenerator;
 }
@@ -2408,6 +2669,18 @@ void UWorldGenerationViewModel::CommitAndOpenLevel(FName LevelName)
 				bClassesReady ? TEXT("OK") : TEXT("INCOMPLETE"),
 				bHierarchyReady ? TEXT("OK") : TEXT("INCOMPLETE"),
 				GeneratedWorld->PlanetsAmount, GeneratedWorld->StartPlanetIndex);
+			return;
+		}
+		// Rio 09.10 (A23): HOME START PLANET INDEX may now pick any world of the family as it is, a gas giant included
+		// (it is not blocked there); the game itself starts only on a world with a surface.
+		const APlanet* StartWorld = ReadyPreviewGenerator->HomePlanet;
+		if (IsValid(StartWorld) && !UAPSPlanetSurfaceProfileResolver::SupportsWorldScape(StartWorld->PlanetType))
+		{
+			UE_LOG(LogTemp, Warning,
+				TEXT("[APS.Civilization] Commit rejected: start planet %d %s '%s' (%s) has no surface"),
+				GeneratedWorld->StartPlanetIndex, *ReadyPreviewGenerator->GetPreviewBodyStableKey(StartWorld),
+				*StartWorld->AstroName.ToString(), *UEnum::GetValueAsString(StartWorld->PlanetType));
+			SetPreviewStatus(LOCTEXT("StartPlanetGasGiant", "START PLANET IS A GAS GIANT: PICK A SOLID WORLD AS HOME"), true);
 			return;
 		}
 	}

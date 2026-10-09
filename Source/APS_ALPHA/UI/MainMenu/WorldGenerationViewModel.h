@@ -53,6 +53,17 @@ public:
 
 	/** Rio 03.10: STARS slider, galaxy stars actually placed (1,800..1,000,000; 0 keeps the historic budgets). */
 	void SetGalaxyPlacedStarCount(double Value);
+	/**
+	 * Rio 09.10 (playtest 17: "STARS does not react; the counter shows ~11 thousand, then 8 MILLION"): STARS counts every
+	 * star the menu galaxy draws: the placed catalogue stars (UGeneratedWorld::GalaxyPlacedStarCount, saved with the world)
+	 * and the GPU points after them (aps.Galaxy.GpuStars, this menu session, never above its value at the session's start).
+	 * The target is the count once the GPU layer is built, so the card shows it at once. Without GPU points the row is the
+	 * old placed-stars slider.
+	 */
+	int64 GetGalaxyDrawnStarTarget() const;
+	void SetGalaxyDrawnStars(double Value);
+	/** The STARS row's top: the most placed stars plus the session's GPU points (MaxPlacedStars without GPU points). */
+	int32 GetGalaxyDrawnStarCeiling() const;
 	/** Rio 03.10: the galaxy's POPULATION / COMPOSITION rows (EStarClusterPopulation / EStarClusterComposition values). */
 	void SetGalaxyStarPopulation(int32 Value);
 	void SetGalaxyStarComposition(int32 Value);
@@ -63,6 +74,13 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "World Generation")
 	void SetGalaxyStarDensity(double Value);
+
+	/** Rio 08.10: CLUSTER DENSITY (UGeneratedWorld::StarClusterDensity, 0.05..20, 1 = the cluster as generated). */
+	void SetStarClusterDensity(double Value);
+	/** Rio 08.10: STAR BRIGHTNESS of GALAXY / CLUSTER (0.1..2, 1 = today): a viewing aid of this menu session only, applied
+	 * to the preview's catalogue points, GPU points and glow; never in the world model, its seeds or a save. */
+	void SetPreviewStarBrightness(double Value);
+	double GetPreviewStarBrightness() const { return PreviewStarBrightness; }
 
 	UFUNCTION(BlueprintCallable, Category = "World Generation")
 	void SetPlanetRadius(double Value);
@@ -121,6 +139,8 @@ public:
 
 	UFUNCTION(BlueprintCallable, Category = "World Generation")
 	void SetStartPlanetIndex(double Value);
+	/** Rio 09.10 (A23, test runs): logs every world of the home family (key, name, type, size, moons, HOME mark). */
+	void LogHomeFamily(const TCHAR* Context) const;
 
 	UFUNCTION(BlueprintCallable, Category = "World Generation")
 	void RequestPreview();
@@ -274,4 +294,14 @@ private:
 	void RollWorld(const TCHAR* Reason);
 	bool bPreviewMarksHidden{false};
 	bool bFreshWorldRollConsidered{false};
+	/** Rio 08.10 (SetPreviewStarBrightness): this session's value, pushed to the GPU layer and to the preview generator. */
+	double PreviewStarBrightness{1.0};
+	void ApplyPreviewStarBrightness() const;
+	/** Rio 09.10 (STARS, SetGalaxyDrawnStars): the GPU point count a slider drag asked for, written to aps.Galaxy.GpuStars
+	 * once the drag rests (each write rebuilds the GPU layer); INDEX_NONE when nothing waits. */
+	int32 PendingMenuGpuStars{INDEX_NONE};
+	FTimerHandle MenuGpuStarsTimerHandle;
+	int32 GetGalaxyPlacedStars() const;
+	int32 GetMenuGpuStars() const;
+	void ApplyMenuGpuStars();
 };

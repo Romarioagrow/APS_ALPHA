@@ -21,11 +21,17 @@ DEFINE_LOG_CATEGORY_STATIC(LogAPSObjectLighting, Log, All);
 
 namespace APSObjectLighting
 {
+	// Rio 09.10 ("near the home station the ships look right; a little away they all turn white, no shadows, nothing"):
+	// inside a station zone this fill is off; past its edge it switched on in one frame as a headlight at the camera,
+	// lit exactly what the camera sees (every shadow filled), grew x4 facing the star (up to 75% of the star's key) and
+	// had a specular sheen. Now weaker, from above and aside the view (the form reads), no sheen, eased in.
+	// Old look: aps.Lighting.ObjectFill 1.8, ObjectFillBacklit 3, ObjectFillSpecular 0.35, ObjectFillPitchDeg 0,
+	// ObjectFillYawDeg 0, ObjectFillBlendRate 0.
 	TAutoConsoleVariable<float> CVarObjectFill(
-		TEXT("aps.Lighting.ObjectFill"), 1.8f,
+		TEXT("aps.Lighting.ObjectFill"), 0.8f,
 		TEXT("Camera-aligned fill (lux) on lighting channel 1 for ships, stations and pilots, so their shadow side stays readable. 0 disables."));
 	TAutoConsoleVariable<float> CVarObjectFillBacklit(
-		TEXT("aps.Lighting.ObjectFillBacklit"), 3.0f,
+		TEXT("aps.Lighting.ObjectFillBacklit"), 1.0f,
 		TEXT("Rio 04.10: extra object fill while the camera faces the star (the hull's night side in view), as a multiple of the ")
 		TEXT("plain fill: 3 makes it four times as bright looking straight at the star. 0 keeps it even."));
 	TAutoConsoleVariable<float> CVarObjectFillInStation(
@@ -54,6 +60,32 @@ namespace APSObjectLighting
 	TAutoConsoleVariable<float> CVarStationFill(
 		TEXT("aps.Lighting.StationFill"), 8.0f,
 		TEXT("Camera-local readability fill inside stations (was 28)."));
+	// 08.10 (Rio, item 43 "white plastic ships"): both camera fills lit the near-white 0.55-metallic M hulls with a
+	// specular sheen centred on the view; the night fill and the menu preview fill already use no specular.
+	TAutoConsoleVariable<float> CVarObjectFillPitchDeg(
+		TEXT("aps.Lighting.ObjectFillPitchDeg"), 35.0f,
+		TEXT("Rio 09.10: the object fill comes from this many degrees above the view (0: a headlight at the camera)."));
+	TAutoConsoleVariable<float> CVarObjectFillYawDeg(
+		TEXT("aps.Lighting.ObjectFillYawDeg"), 25.0f,
+		TEXT("Rio 09.10: and this many degrees beside it (0: straight along the view)."));
+	// Rio 09.10 ("inside a system strictly normal lighting from the star, in the star's colour; that washed-out look only
+	// between the systems"): the object fill is off within SystemAU of the star that lights the ship and fades in out to
+	// SystemFadeAU. 0 / 0: everywhere, as before.
+	TAutoConsoleVariable<float> CVarObjectFillSystemAU(
+		TEXT("aps.Lighting.ObjectFillSystemAU"), 30.0f,
+		TEXT("Rio 09.10: no object fill within this many AU of the star lighting the ship (0: the fill everywhere)."));
+	TAutoConsoleVariable<float> CVarObjectFillSystemFadeAU(
+		TEXT("aps.Lighting.ObjectFillSystemFadeAU"), 60.0f,
+		TEXT("Rio 09.10: the object fill reaches full strength this far from that star, AU (fades in from SystemAU)."));
+	TAutoConsoleVariable<float> CVarObjectFillBlendRate(
+		TEXT("aps.Lighting.ObjectFillBlendRate"), 1.5f,
+		TEXT("Rio 09.10: how fast the object fill eases to its target, 1/s (0: at once, as before)."));
+	TAutoConsoleVariable<float> CVarObjectFillSpecular(
+		TEXT("aps.Lighting.ObjectFillSpecular"), 0.0f,
+		TEXT("Specular scale of the camera-aligned object fill (0.35 as before; 0: diffuse readability only, no sheen)."));
+	TAutoConsoleVariable<float> CVarStationFillSpecular(
+		TEXT("aps.Lighting.StationFillSpecular"), 1.0f,
+		TEXT("Specular scale of the camera-local station fill (1 as before; 0: diffuse readability only, no sheen)."));
 
 	const FName ObjectFillTag(TEXT("APSObjectFillLight"));
 	const FLinearColor ObjectFillColor(0.86f, 0.9f, 1.0f, 1.0f);
@@ -115,14 +147,14 @@ void UAPSObjectLightingSubsystem::Tick(float DeltaTime)
 		RefreshElapsed = 0.0f;
 		RefreshObjects();
 	}
-	UpdateObjectFill(CameraLocation, CameraRotation, bInsideStation);
+	UpdateObjectFill(CameraLocation, CameraRotation, bInsideStation, DeltaTime);
 	UpdateNightFill(DeltaTime);
 	ApplyStationLightScale();
 	UpdateExposure();
 }
 
 void UAPSObjectLightingSubsystem::UpdateObjectFill(
-	const FVector& CameraLocation, const FRotator& CameraRotation, bool bInsideStation)
+	const FVector& CameraLocation, const FRotator& CameraRotation, bool bInsideStation, const float DeltaTime)
 {
 	float Intensity = FMath::Max(0.0f, bInsideStation
 		? APSObjectLighting::CVarObjectFillInStation.GetValueOnGameThread()
@@ -137,7 +169,32 @@ void UAPSObjectLightingSubsystem::UpdateObjectFill(
 		const float Backlit = FMath::Clamp(static_cast<float>(FVector::DotProduct(CameraRotation.Vector(),
 			(StarLocation - CameraLocation).GetSafeNormal())), 0.0f, 1.0f);
 		Intensity *= 1.0f + FMath::Max(APSObjectLighting::CVarObjectFillBacklit.GetValueOnGameThread(), 0.0f) * Backlit;
+		// Inside a system the star alone lights the ships (its own colour); the fill only between systems.
+		const float SystemAU = FMath::Max(APSObjectLighting::CVarObjectFillSystemAU.GetValueOnGameThread(), 0.0f);
+		if (SystemAU > 0.0f)
+		{
+			const double StarAU = FVector::Dist(CameraLocation, StarLocation) / 1.495978707e13;
+			const double FadeAU = FMath::Max(static_cast<double>(APSObjectLighting::CVarObjectFillSystemFadeAU.GetValueOnGameThread()),
+				SystemAU * 1.01);
+			const float Between = static_cast<float>(FMath::SmoothStep(static_cast<double>(SystemAU), FadeAU, StarAU));
+			Intensity *= Between;
+			const bool bBetween = Between > 0.5f;
+			if (bBetween != bFillBetweenSystems)
+			{
+				bFillBetweenSystems = bBetween;
+				UE_LOG(LogAPSObjectLighting, Log, TEXT("[APS.Lighting] object fill %s: %.1f AU from %s"),
+					bBetween ? TEXT("on (between systems)") : TEXT("off (inside a system: the star alone)"), StarAU, *StarIdentity);
+			}
+		}
 	}
+	// Eased to the target; a camera jump (a cut, a world shift, the first frame) snaps.
+	const float BlendRate = FMath::Max(APSObjectLighting::CVarObjectFillBlendRate.GetValueOnGameThread(), 0.0f);
+	const bool bCameraJump = SmoothedObjectFill < 0.0f
+		|| FVector::DistSquared(CameraLocation, LastFillCameraLocation) > FMath::Square(5000000.0);
+	LastFillCameraLocation = CameraLocation;
+	SmoothedObjectFill = BlendRate <= 0.0f || bCameraJump ? Intensity
+		: FMath::FInterpTo(SmoothedObjectFill, Intensity, DeltaTime, BlendRate);
+	Intensity = SmoothedObjectFill < 0.001f ? 0.0f : SmoothedObjectFill;
 	ADirectionalLight* Fill = ObjectFillLight.Get();
 	UDirectionalLightComponent* Component = Fill ? Cast<UDirectionalLightComponent>(Fill->GetLightComponent()) : nullptr;
 	if (Intensity <= 0.0f)
@@ -169,7 +226,6 @@ void UAPSObjectLightingSubsystem::UpdateObjectFill(
 		Component->SetCastShadows(false);
 		Component->SetVolumetricScatteringIntensity(0.0f);
 		Component->SetAffectTranslucentLighting(false);
-		Component->SetSpecularScale(0.35f);
 		Component->SetLightColor(APSObjectLighting::ObjectFillColor);
 		ObjectFillLight = Fill;
 		UE_LOG(LogAPSObjectLighting, Log, TEXT("[APS.Lighting] object fill created intensity=%.2f lux"), Intensity);
@@ -178,10 +234,23 @@ void UAPSObjectLightingSubsystem::UpdateObjectFill(
 	{
 		Component->SetVisibility(true);
 	}
-	// Light travels along the view direction: whatever the camera looks at is lit from the front.
-	if (!Fill->GetActorRotation().Equals(CameraRotation, 0.5f))
+	// Re-applied live (it was set only at spawn): a console change takes effect at once.
+	const float FillSpecular = FMath::Max(0.0f, APSObjectLighting::CVarObjectFillSpecular.GetValueOnGameThread());
+	if (!FMath::IsNearlyEqual(Component->SpecularScale, FillSpecular, 0.001f))
 	{
-		Fill->SetActorRotation(CameraRotation);
+		Component->SetSpecularScale(FillSpecular);
+	}
+	// Light travels along the view direction, turned down (from above) and aside by the CVars: the camera's side of the
+	// object is lit, but with a direction, so the form and the shadow side read.
+	const FQuat View = CameraRotation.Quaternion();
+	const double Pitch = FMath::DegreesToRadians(FMath::Clamp(APSObjectLighting::CVarObjectFillPitchDeg.GetValueOnGameThread(), -80.0f, 80.0f));
+	const double Yaw = FMath::DegreesToRadians(FMath::Clamp(APSObjectLighting::CVarObjectFillYawDeg.GetValueOnGameThread(), -80.0f, 80.0f));
+	const FVector Down = View.GetForwardVector() * FMath::Cos(Pitch) - View.GetUpVector() * FMath::Sin(Pitch);
+	const FVector Travel = (Down * FMath::Cos(Yaw) + View.GetRightVector() * FMath::Sin(Yaw)).GetSafeNormal(UE_SMALL_NUMBER, View.GetForwardVector());
+	const FRotator FillRotation = FRotationMatrix::MakeFromXZ(Travel, View.GetUpVector()).Rotator();
+	if (!Fill->GetActorRotation().Equals(FillRotation, 0.5f))
+	{
+		Fill->SetActorRotation(FillRotation);
 	}
 	if (!FMath::IsNearlyEqual(Component->Intensity, Intensity, 0.001f))
 	{

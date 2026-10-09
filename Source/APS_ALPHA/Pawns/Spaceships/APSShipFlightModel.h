@@ -547,6 +547,83 @@ private:
 	FVector AutopilotLevelUp{FVector::ZeroVector};
 	double AutopilotBankDegrees{0.0};
 	double AutopilotSpeedCapCm{TNumericLimits<double>::Max()};
+	/** Rio 08.10 night (0.6.1: the autopilot wedged on the HQ pad, a course below the deck): engaged next to a structure,
+	 * the ship first lifts along its own up until the hull clears the deck (no turn, no bank), then, for a course below
+	 * that deck, leaves level and slightly up before it turns down (aps.Autopilot.Depart*). */
+	bool bAutopilotDeparting{false};
+	bool bAutopilotLeaving{false};
+	FVector AutopilotDepartUp{FVector::ZeroVector};
+	FVector AutopilotDepartStart{FVector::ZeroVector};
+	double AutopilotDepartClearCm{0.0};
+	double AutopilotDepartBestRiseCm{0.0};
+	float AutopilotDepartSeconds{0.0f};
+	float AutopilotDepartStallSeconds{0.0f};
+	float DebugVerticalInput{0.0f};
+	/** Rio 08.10 sweep (aps.Autopilot.DepartExit): the structure the ship lifted from, its bounds centre as an offset from
+	 * its pivot and the radius to clear; seconds at full thrust on course under 1 m/s (aps.Autopilot.BlockedSeconds). */
+	TWeakObjectPtr<const AActor> AutopilotDepartFrom;
+	FVector AutopilotDepartFromOffset{FVector::ZeroVector};
+	double AutopilotDepartFromRadiusCm{0.0};
+	bool bAutopilotExitLogged{false};
+	float AutopilotStuckSeconds{0.0f};
+	/**
+	 * Rio 08.10 (playtest item 46, "the autopilot's tempo is inverted: ages to gain speed, the main distance in seconds,
+	 * ages to slow down"): a trip planned at engage (aps.Autopilot.Tempo): one log-speed rate up and down, a main leg of
+	 * Trip / T_main with T_main growing with the log of the distance, and a stop in finite time. Fixed per trip.
+	 */
+	bool TempoCapActive() const;
+	bool IsAutopilotTempo() const;
+	double TempoRate() const;
+	double TempoCapCm(double RemainingCm, double SpeedCm, float DeltaTime);
+	void LogAutopilotTrip(const TCHAR* Reason);
+	bool bTempoTrip{false};
+	bool bTempoOnLaw{false};
+	bool bTempoLanding{false};
+	bool bTempoGuardCut{false};
+	double TempoTripCm{0.0};
+	double TempoMainSeconds{0.0};
+	double TempoCruiseCapCm{0.0};
+	double TempoTargetRadiusCm{0.0};
+	double TempoStarCm{-1.0};
+	double TempoLogRate{0.0};
+	double TempoStopZoneCm{0.0};
+	double TempoFrameCapCm{0.0};
+	double TempoLastCapCm{0.0};
+	double TempoPrevRemainingCm{-1.0};
+	float TempoPrevDeltaTime{0.0f};
+	double TempoLastLogSpeedCm{0.0};
+	/** One autopilot trip's numbers for its summary line (aps.Autopilot.TripLog), whatever the tempo. */
+	struct FAutopilotTripSample
+	{
+		float T{0.0f};
+		double SpeedCm{0.0};
+		double RemainingCm{0.0};
+		uint8 Band{0};
+	};
+	struct FAutopilotTrip
+	{
+		bool bActive{false};
+		bool bSamples{false};
+		bool bTruncated{false};
+		int32 Tempo{0};
+		double Elapsed{0.0};
+		double SampleAccum{0.0};
+		double LiftSeconds{-1.0};
+		double CruiseAt{-1.0};
+		double BandSeconds[5]{0.0, 0.0, 0.0, 0.0, 0.0};
+		double MaxFrame{0.0};
+		double LandSpeedCm{-1.0};
+		double StopSurfaceCm{-1.0};
+		double StartRemainingCm{-1.0};
+		int32 Frames{0};
+		int32 GuardCuts{0};
+		int32 GuardLong{0};
+		int32 Resumes{0};
+		int32 XJumps{0};
+		const TCHAR* LandKind{TEXT("-")};
+		TArray<FAutopilotTripSample> Samples;
+	};
+	FAutopilotTrip Trip;
 	/** Star drive: moves the ship for one frame (false: the drive dropped out and the bands fly this frame). */
 	bool ApplyStarDrive(const FVector& LocalInput, float DeltaTime);
 	/** The drive's speed without input: the median star spacing in aps.Ship.Drive.CrossSeconds. */

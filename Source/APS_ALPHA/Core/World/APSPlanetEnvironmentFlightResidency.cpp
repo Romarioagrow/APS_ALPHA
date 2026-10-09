@@ -6,6 +6,9 @@
 #include "GameFramework/Pawn.h"
 #include "HAL/IConsoleManager.h"
 
+// APSPlanetEnvironmentFirstBuild.cpp (aps.Surface.FirstWaveAckNoise): the hidden replacement is a fresh sliced root too.
+namespace APSFirstBuildPrivate { void AcknowledgeFirstWaveNoise(AWorldScapeRoot* Root, const TCHAR* Path); }
+
 namespace
 {
     TAutoConsoleVariable<int32> CVarFlightResidency(TEXT("aps.Surface.FlightResidency"), 0,
@@ -113,7 +116,10 @@ void UAPSPlanetEnvironmentStreamingSubsystem::UpdateFlightResidency(float DeltaT
             Candidate->PlanetLocation = Candidate->GetActorLocation();
             Candidate->PlanetScaleCode = Candidate->PlanetScale;
             if (Candidate->AdvanceBaseMeshInitialization(FMath::Clamp(CVarFlightBaseLodsPerFrame.GetValueOnGameThread(), 1, 4)))
+            {
+                APSFirstBuildPrivate::AcknowledgeFirstWaveNoise(Candidate, TEXT("flight residency"));
                 Candidate->SetActorTickEnabled(true);
+            }
             return; // full payload/coverage still has to settle after native Tick.
         }
         if (!Candidate->WorldScapeLodInGeneration.IsEmpty()) Candidate->CheckForLodGeneration();

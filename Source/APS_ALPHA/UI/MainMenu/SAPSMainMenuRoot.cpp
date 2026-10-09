@@ -5144,7 +5144,15 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 				+ SVerticalBox::Slot().AutoHeight()
 				[SNew(STextBlock).Text(Label).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::White)]
 				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f, 0.0f, 0.0f)
-				[SNew(STextBlock).Text(LOCTEXT("EnumControlType", "SELECTED PROFILE")).Font(APSMenu::Font("Regular", 9)).ColorAndOpacity(APSMenu::Muted)]
+				// Rio 09.10 (playtest 26): where the value stands among the ones the arrows step through ("SELECTED PROFILE  3 / 7").
+				[SNew(STextBlock).Text_Lambda([Enum, Getter]()
+				{
+					const int32 Count = Enum ? FMath::Max(1, Enum->NumEnums() - 1) : 0;
+					const int32 Value = Getter();
+					return Count > 0 && Value >= 0 && Value < Count
+						? FText::Format(LOCTEXT("EnumControlTypePosition", "SELECTED PROFILE  {0} / {1}"), FText::AsNumber(Value + 1), FText::AsNumber(Count))
+						: LOCTEXT("EnumControlType", "SELECTED PROFILE");
+				}).Font(APSMenu::Font("Regular", 9)).ColorAndOpacity(APSMenu::Muted)]
 			]
 			+ SHorizontalBox::Slot().FillWidth(0.60f).VAlign(VAlign_Center).Padding(10.0f, 0.0f, 0.0f, 0.0f)
 			[

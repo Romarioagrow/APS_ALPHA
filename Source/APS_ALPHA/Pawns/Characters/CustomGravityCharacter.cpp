@@ -52,6 +52,13 @@ namespace APSCharacterQueryThrottle
 		TEXT("Only a found floor is reused: a miss, zero-G, another gravity source, a turn of the down in the source's frame ")
 		TEXT("or a 5 m teleport of the walker sweep fresh. Keep it below the 0.2 s support-loss grace. <= 0: every frame (before 06.10)."),
 		ECVF_Default);
+	// Rio 09.10 (playtest 08.10 item 3, "sometimes no gravity"): a pilot who sat weightless stood up into
+	// UpdateGravityDirection's zero-G branch, which keeps zero-G at the first missed floor probe without the 0.2 s grace.
+	TAutoConsoleVariable<int32> CVarExitClearsZeroG(
+		TEXT("aps.Character.ExitClearsZeroG"), 1,
+		TEXT("Rio 09.10 (playtest 08.10 item 3): 1: getting up aboard a ship clears a zero-G the pilot carried from the seat (never ")
+		TEXT("the G override), so the deck's 0.2 s support grace applies. 0: that zero-G stays until a floor is found, as before."),
+		ECVF_Default);
 
 	// The character header is a shared zone (06.10 night: one writer per file), so the throttle's timestamps live here,
 	// one entry per character, dropped on EndPlay, UnPossessed and a vehicle exit. Move them into the class when the
@@ -63,6 +70,8 @@ namespace APSCharacterQueryThrottle
 		TWeakObjectPtr<const AActor> SupportSource;
 		FVector SupportLocalStart = FVector::ZeroVector;
 		FVector SupportLocalDirection = FVector::ZeroVector;
+		/** Rio 09.10: the "[APS.Seat] stood up 1 s ago" line was written for the latest vehicle exit. */
+		bool bStandUpAudited = false;
 	};
 	TMap<FObjectKey, FQueryTimes> QueryTimes;
 
@@ -249,6 +258,29 @@ void ACustomGravityCharacter::Tick(float DeltaTime)
 				Movement ? static_cast<int32>(Movement->MovementMode.GetValue()) : -1,
 				Movement && Movement->GetMovementBase() ? *GetNameSafe(Movement->GetMovementBase()->GetOwner()) : TEXT("-"),
 				bSurfaceHandoffSuspended ? 1 : 0);
+		}
+	}
+	// Rio 09.10 (playtest 08.10 items 1-3): one line a second after getting up says where the walker stands (the stand-up
+	// checks' proof: on a deck of the ship it left, near the seat, under the ship's gravity).
+	if (const double SinceExit = GetWorld() ? GetWorld()->GetTimeSeconds() - VehicleExitSeconds : -1.0;
+		SinceExit >= 1.0 && SinceExit < 8.0)
+	{
+		APSCharacterQueryThrottle::FQueryTimes& Times = APSCharacterQueryThrottle::QueryTimes.FindOrAdd(FObjectKey(this));
+		if (!Times.bStandUpAudited)
+		{
+			Times.bStandUpAudited = true;
+			const ASpaceship* Ship = AboardShip.Get();
+			const UCharacterMovementComponent* Movement = GetCharacterMovement();
+			const FVector Local = Ship ? Ship->GetActorTransform().InverseTransformPosition(GetActorLocation()) : FVector::ZeroVector;
+			const FVector SeatLocal = Ship && Ship->PilotChair
+				? Ship->GetActorTransform().InverseTransformPosition(Ship->PilotChair->GetComponentLocation()) : FVector::ZeroVector;
+			UE_LOG(LogTemp, Log,
+				TEXT("[APS.Seat] stood up 1 s ago: ship=%s local=%s cm seatLocal=%s cm fromSeat=%.0f cm onGround=%d zeroG=%d gravity=%s source=%s attached=%d"),
+				*GetNameSafe(Ship), *Local.ToCompactString(), *SeatLocal.ToCompactString(),
+				Ship ? FVector::Dist(Local, SeatLocal) : -1.0, Movement && Movement->IsMovingOnGround() ? 1 : 0, bIsZeroG ? 1 : 0,
+				*UEnum::GetValueAsString(CurrentGravityType),
+				*GetNameSafe(GravityDetector ? GravityDetector->GravityTargetActor : nullptr),
+				Ship && GetAttachParentActor() == Ship ? 1 : 0);
 		}
 	}
 
@@ -1799,6 +1831,14 @@ void ACustomGravityCharacter::SettleAfterVehicleExit(const FVector& Facing, AAct
 			<= FMath::Square(LeftShip->SphereCollisionComponent->GetScaledSphereRadius()))
 	{
 		BoardShip(*LeftShip);
+	}
+	// Rio 09.10 (playtest 08.10 item 3, aps.Character.ExitClearsZeroG): a pilot who sat weightless (it floated into the seat, or
+	// its detector lost every source while it sat) stands up on the deck with the normal 0.2 s support grace instead of
+	// UpdateGravityDirection's at-once zero-G; the G override is never touched.
+	if (AboardShip.IsValid() && bIsZeroG && !bManualZeroGOverride
+		&& APSCharacterQueryThrottle::CVarExitClearsZeroG.GetValueOnGameThread() != 0)
+	{
+		SetZeroGravityEnabled(false);
 	}
 	// While seated the character did not tick: its gravity frame is the one it boarded in, possibly another body.
 	if (GravityDetector)

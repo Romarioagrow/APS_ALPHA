@@ -5,6 +5,7 @@
 #include "APS_ALPHA/Actors/Astro/Moon.h"
 #include "APS_ALPHA/Actors/Astro/Planet.h"
 #include "APS_ALPHA/Actors/Astro/PlanetaryBody.h"
+#include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
 #include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
 #include "APS_ALPHA/Core/Planetary/APSPlanetSurfaceProfile.h"
 #include "APS_ALPHA/Core/Planetary/APSWorldScapeStreamingPolicy.h"
@@ -141,6 +142,19 @@ namespace APSSurfacePolicyPrivate
 		TEXT("observer is held during a wave's generation and for up to this many frames after it (at most 30). 0: off (as before)."),
 		ECVF_Default);
 
+	TAutoConsoleVariable<float> CVarFastObserverKmPerS(
+		TEXT("aps.Surface.FastObserverKmPerS"), 0.0f,
+		TEXT("Rio 09.10 (4K, autopilot 80-650 km over a planet at 300-800 km/s: a 90-105 ms render-thread and a 40-55 ms ")
+		TEXT("game-thread hitch about every second, the LOD waves of an observer moved every frame): above ")
+		TEXT("aps.Surface.NearObserverAltitudeKm an observer faster than this (km/s; its ship's speed when aboard) moves at most ")
+		TEXT("every aps.Surface.FastObserverSeconds. 0: off, it follows every frame (as before)."),
+		ECVF_Default);
+
+	TAutoConsoleVariable<float> CVarFastObserverSeconds(
+		TEXT("aps.Surface.FastObserverSeconds"), 0.5f,
+		TEXT("See aps.Surface.FastObserverKmPerS: the shortest time between two moves of a fast observer."),
+		ECVF_Default);
+
 	TAutoConsoleVariable<int32> CVarMapKeepObserverOnPass(
 		TEXT("aps.Map.KeepObserverOnPass"), 1,
 		TEXT("Rio 06.10 review: while the F10 map camera is the WorldScape observer (aps.Map.WorldScapeObserver/Radii), the ")
@@ -193,6 +207,11 @@ namespace APSSurfacePolicyPrivate
 		int32 StepMoves{0};
 		double StepLogSeconds{0.0};
 		double StepLastCountSeconds{0.0};
+		// Rio 09.10 fast observer step (aps.Surface.FastObserverKmPerS): the last move, and the counts logged every 10 s.
+		double FastMoveSeconds{0.0};
+		int32 FastKeptFrames{0};
+		int32 FastMoves{0};
+		double FastLogSeconds{0.0};
 	};
 	TMap<const void*, FPolicyState> GPolicyStates;
 
@@ -351,6 +370,50 @@ namespace APSSurfacePolicyPrivate
 			State.StepMoves = 0;
 			State.StepLogSeconds = Now;
 		}
+	}
+
+	/** Fast observer step (aps.Surface.FastObserverKmPerS): true while a fast observer high over the ground keeps its place. */
+	bool FastStepHolds(FPolicyState& State, const AWorldScapeRoot* Root, const APawn* Observer, const FVector& Candidate)
+	{
+		const double FastCm = CVarFastObserverKmPerS.GetValueOnGameThread() * 1.0e5;
+		const double MinSeconds = CVarFastObserverSeconds.GetValueOnGameThread();
+		if (!(FastCm > 0.0) || !(MinSeconds > 0.0) || !(State.DeltaSeconds > 0.0f) || !Root->init
+			|| !Root->bOverridePlayerPosition || Root->OverridedPlayerPosition.ContainsNaN() || Candidate.ContainsNaN()
+			|| Root->PlayerDistanceToGround <= CVarNearObserverAltitudeKm.GetValueOnGameThread() * 1.0e5)
+		{
+			return false;
+		}
+		const AActor* Mover = Observer->GetAttachParentActor() ? Observer->GetAttachParentActor() : Observer;
+		double SpeedCm = Mover->GetVelocity().Size();
+		if (const ASpaceship* Ship = Cast<ASpaceship>(Mover))
+		{
+			SpeedCm = FMath::Max(SpeedCm, Ship->GetKinematicVelocity().Size());
+		}
+		if (SpeedCm <= FastCm)
+		{
+			return false;
+		}
+		const double Now = FPlatformTime::Seconds();
+		const bool bHold = Now - State.FastMoveSeconds < MinSeconds;
+		bHold ? ++State.FastKeptFrames : ++State.FastMoves;
+		if (!bHold)
+		{
+			State.FastMoveSeconds = Now;
+		}
+		if (State.FastLogSeconds <= 0.0 || Now - State.FastLogSeconds > 30.0)
+		{
+			State.FastLogSeconds = Now;
+			State.FastKeptFrames = State.FastMoves = 0;
+		}
+		else if (Now - State.FastLogSeconds >= 10.0)
+		{
+			UE_LOG(LogAPSWorldScapeStreaming, Log, TEXT("[APS.Surface] fast observer step %.2f s: kept %d frames, moved %d times in %.0f s (%s, %.0f km above the ground, %.0f km/s)"),
+				MinSeconds, State.FastKeptFrames, State.FastMoves, Now - State.FastLogSeconds, *GetNameSafe(Root->GetOwner()),
+				Root->PlayerDistanceToGround / 1.0e5, SpeedCm / 1.0e5);
+			State.FastLogSeconds = Now;
+			State.FastKeptFrames = State.FastMoves = 0;
+		}
+		return bHold;
 	}
 
 	/** True when the half-second pass or a rebind must leave Root's observer where the per-frame rules keep it. */
@@ -616,6 +679,12 @@ void UAPSPlanetEnvironmentStreamingSubsystem::RefreshGameplayObserverPosition()
 			{
 				return;
 			}
+		}
+		// Rio 09.10 (autopilot low over a planet at hundreds of km/s): a fast observer above the near-step altitude moves at
+		// most every aps.Surface.FastObserverSeconds (aps.Surface.FastObserverKmPerS 0: off).
+		else if (APSSurfacePolicyPrivate::FastStepHolds(Policy, Root, Observer, VisualObserver))
+		{
+			return;
 		}
 	}
 	// Rio 06.10 (takeoff from an ocean world, 1-2 hitches a second): a land+ocean LOD wave nearly fills WorldScape's

@@ -21,6 +21,13 @@ namespace APSFirstBuildPrivate
 		TEXT("(0 = native single-frame build)."));
 	TAutoConsoleVariable<int32> CVarLodsPerFrame(TEXT("aps.Surface.FirstBuildLodsPerFrame"), 1,
 		TEXT("Base LOD components created per frame across all held roots (1..8)."));
+	// 08.10 (tr062 traces): a sliced root built every LOD twice. Its first enabled Tick launches the real wave anyway
+	// (GenerateBaseMeshBatch resets Prev_HeightMult to -1, so UpdatePosition forces every LOD), while the noise's
+	// Configure flag (bNeedPlanetRefresh) also turned into HMIForceUpdate and relaunched all LODs with the same noise
+	// and observer once the first wave landed: ~20 ms GameThread publish + ~190 MB churn + 10 worker jobs per body.
+	TAutoConsoleVariable<int32> CVarFirstWaveAckNoise(TEXT("aps.Surface.FirstWaveAckNoise"), 1,
+		TEXT("08.10: a sliced first build acknowledges its own fresh noise's refresh flag before the root's first Tick, so ")
+		TEXT("the first wave (forced by the new base meshes) is the only one. 0: the second full wave as before."));
 	TAutoConsoleVariable<int32> CVarProxyProbe(TEXT("aps.Surface.ProxyProbe"), 0,
 		TEXT("Diagnostic: log every frame in which a WorldScape root's terrain LOD meshes got new scene proxies."));
 	TMap<TWeakObjectPtr<const UPrimitiveComponent>, const FPrimitiveSceneProxy*> LastProxies;
@@ -34,6 +41,20 @@ namespace APSFirstBuildPrivate
 			*GetNameSafe(Material), Material, Mesh->IsVisible(), Mesh->bHiddenInGame, Mesh->CastShadow,
 			static_cast<int32>(Mesh->GetCollisionEnabled()), Mesh->bRenderCustomDepth, Mesh->GetNumMaterials(),
 			static_cast<int32>(Mesh->Mobility), *Mesh->GetComponentScale().ToCompactString(), *GetNameSafe(Mesh->GetAttachParent()));
+	}
+
+	/** The noise refresh of a root's own per-root noise (created with the root as its outer), only before any worker. */
+	void AcknowledgeFirstWaveNoise(AWorldScapeRoot* Root, const TCHAR* Path)
+	{
+		if (CVarFirstWaveAckNoise.GetValueOnGameThread() == 0 || !IsValid(Root) || !IsValid(Root->WorldScapeNoise)
+			|| Root->WorldScapeNoise->GetOuter() != Root || !Root->WorldScapeLodInGeneration.IsEmpty()
+			|| !Root->WorldScapeNoise->bNeedPlanetRefresh)
+		{
+			return;
+		}
+		Root->WorldScapeNoise->bNeedPlanetRefresh = false;
+		UE_LOG(LogTemp, Log, TEXT("[APS.WorldScape] %s root=%s: first wave only (noise refresh acknowledged)"),
+			Path, *GetNameSafe(Root->GetOwner()));
 	}
 
 	/** AdvanceBaseMeshInitialization's own preconditions, plus a live producer of a planet-type root. */
@@ -92,6 +113,7 @@ void UAPSPlanetEnvironmentStreamingSubsystem::AdvanceFirstBuilds()
 			UE_LOG(LogTemp, Log, TEXT("[APS.WorldScape] sliced first build root=%s lods=%d+%d frames=%d build %.1f ms"),
 				*GetNameSafe(Root->GetOwner()), Root->WorldScapeLod.Num(), Root->WorldScapeLodOcean.Num(),
 				Build.Frames, Build.Seconds * 1000.0);
+			AcknowledgeFirstWaveNoise(Root, TEXT("sliced first build"));
 			Root->SetActorTickEnabled(true);
 			FirstBuilds.RemoveAt(0);
 		}

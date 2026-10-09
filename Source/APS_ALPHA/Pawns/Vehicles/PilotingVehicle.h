@@ -49,6 +49,11 @@ public:
 protected:
 	virtual USceneComponent* GetPilotSeatComponent() const;
 	virtual FTransform GetPilotExitTransform() const;
+	/**
+	 * Rio 09.10 (playtest 08.10 items 1-2): the pilot's place, settled after UnPossess (the vehicle's own collision is back by
+	 * then). Proposed is GetPilotExitTransform() taken before the release, as before; the base keeps it.
+	 */
+	virtual FTransform ResolvePilotExitTransform(APawn& LeavingPilot, const FTransform& Proposed) const { return Proposed; }
 
 private:
 	bool BeginVehicleControl(APawn* RequestingPawn);
@@ -67,4 +72,7 @@ private:
 	/** Rio 05.10 evening (flight FPS): the seated pilot's camera booms, and whether each probed for collision. */
 	TArray<TWeakObjectPtr<class USpringArmComponent>> PilotSpringArms;
 	TArray<bool> PilotSpringArmProbes;
+	/** Rio 09.10 (aps.Seat.PauseGravityDetector): the seated pilot's gravity detector is paused, and whether it ticked. */
+	bool bPilotDetectorPaused{false};
+	bool bPilotDetectorWasTicking{false};
 };

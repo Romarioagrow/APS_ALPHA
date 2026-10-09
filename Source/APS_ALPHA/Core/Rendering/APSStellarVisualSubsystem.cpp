@@ -636,6 +636,14 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStationFillLight(
 	{
 		FillComponent->SetIntensity(DesiredFillIntensity);
 	}
+	// 08.10 (item 43): aps.Lighting.StationFillSpecular (APSObjectLightingSubsystem.cpp), 1 = as before.
+	static const IConsoleVariable* StationFillSpecular =
+		IConsoleManager::Get().FindConsoleVariable(TEXT("aps.Lighting.StationFillSpecular"));
+	const float DesiredFillSpecular = StationFillSpecular ? FMath::Max(0.0f, StationFillSpecular->GetFloat()) : 1.0f;
+	if (!FMath::IsNearlyEqual(FillComponent->SpecularScale, DesiredFillSpecular, 0.001f))
+	{
+		FillComponent->SetSpecularScale(DesiredFillSpecular);
+	}
 	const bool bStationChanged = GameplayFillStation.Get() != ContainingStation;
 	if (!FillComponent->IsVisible() || bStationChanged)
 	{

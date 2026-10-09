@@ -7,11 +7,16 @@
 #include "APS_ALPHA/Actors/Astro/Planet.h"
 #include "APS_ALPHA/Actors/Astro/PlanetaryBody.h"
 #include "APS_ALPHA/Actors/Astro/Star.h"
+#include "APS_ALPHA/Actors/Tech/AutonomousOutpost.h"
+#include "APS_ALPHA/Actors/Tech/Colony.h"
+#include "APS_ALPHA/Core/Interfaces/ItemInfoInterface.h"
 #include "APS_ALPHA/Core/Planetary/APSAtmosphereModel.h"
 #include "APS_ALPHA/Core/Planetary/APSPlanetSurfaceProfile.h"
 #include "APS_ALPHA/Core/Planetary/APSPlanetSurfaceRadius.h"
+#include "APS_ALPHA/Gameplay/Ancients/APSAncients.h"
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationIdentityComponent.h"
 #include "APS_ALPHA/Gameplay/Expansion/APSInfrastructure.h"
+#include "APS_ALPHA/Gameplay/Expansion/APSObjectActions.h"
 #include "APS_ALPHA/Gameplay/Fleet/APSFleetCommand.h"
 #include "APS_ALPHA/Generation/APSWorldScapePlanetNoise.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
@@ -25,6 +30,7 @@
 #include "Fonts/FontMeasure.h"
 #include "Framework/Application/SlateApplication.h"
 #include "GameFramework/PlayerController.h"
+#include "HAL/IConsoleManager.h"
 #include "InputCoreTypes.h"
 #include "Math/RandomStream.h"
 #include "Rendering/DrawElements.h"
@@ -62,6 +68,48 @@ namespace APSSurfaceMapPrivate
 	constexpr double ClickSlop = 4.0;
 	/** Auto-turn waits this long after the last touch. */
 	constexpr double IdleSeconds = 2.5;
+
+	/**
+	 * Rio 09.10 ("why are there only space stations on the surface map"): what stands higher above the reference sphere
+	 * than this is in orbit (or flying high), not on the ground: 1% of the radius (53 km on a world 5,300 km across, far
+	 * above the relief the profiles raise), at least 5 km on a small moon. The generator's home stations (1.08 radii), the
+	 * fleet's outposts (beside the builder in its orbit) and the planet outposts (1.8% of the radius up) are above it.
+	 */
+	constexpr double GroundBandShare = 0.01;
+	constexpr double GroundBandFloorCm = 500000.0;
+	/** At most this many orbit labels per view (a picked one always has its label): the surface's own come first. */
+	constexpr int32 MaxOrbitLabels = 4;
+	/** Orbit marks: one quiet steel, below the surface's marks. */
+	const FLinearColor OrbitMarkColour(0.70f, 0.78f, 0.84f, 0.55f);
+	const FLinearColor OrbitLabelColour(0.72f, 0.79f, 0.85f, 0.78f);
+	/** The ancient sites' pale cyan, as the system map, the strategic map and their pages mark them. */
+	const FLinearColor AncientSiteColour(0.25f, 0.9f, 1.0f, 1.0f);
+
+	TAutoConsoleVariable<int32> CVarSurfaceMapLog(TEXT("aps.UI.SurfaceMapLog"), 0,
+		TEXT("1: the surface map logs every marker it draws ([APS.SurfaceMap] lines: ground or orbit, kind, name, place) ")
+		TEXT("whenever that list changes. 0: one summary line per change."));
+
+	/**
+	 * The name the object pages and the HUD give an object: its own in-game name (a structure's, an outpost's, an ancient
+	 * site's), else the fallback, else APSObjectActions::NameOf (a body's or ship's name, the class made readable: never
+	 * the raw instance number of "SpaceStation_R2_2147478530").
+	 */
+	FString ObjectName(const AActor* Actor, const FText& Fallback = FText::GetEmpty())
+	{
+		if (!Actor)
+		{
+			return Fallback.ToString().ToUpper();
+		}
+		if (Actor->GetClass()->ImplementsInterface(UItemInfoInterface::StaticClass()))
+		{
+			const FText Name = IItemInfoInterface::Execute_GetInGameName(Actor);
+			if (!Name.IsEmpty())
+			{
+				return Name.ToString().ToUpper();
+			}
+		}
+		return (Fallback.IsEmpty() ? APSObjectActions::NameOf(Actor) : Fallback).ToString().ToUpper();
+	}
 
 	/** What one texel of a sampled window holds; colouring reads only this, so a new look never samples again. */
 	struct FTexel
@@ -728,23 +776,38 @@ void SAPSSurfaceMap::RefreshMarkers()
 	AnomalyNote = FText::GetEmpty();
 	const APlanetaryBody* LiveBody = Body.Get();
 	UWorld* LiveWorld = World.Get();
-	if (!LiveBody || !LiveWorld) return;
+	if (!LiveBody || !LiveWorld)
+	{
+		LogMarkers();
+		return;
+	}
 	UpdateKnown();
-	// Without a survey only what orbits the world is known, not what stands on it.
+	// Without a survey only what orbits the world is known, not what stands on it (the civilization's catalogue
+	// structures and its ships excepted, as before).
 	const bool bSurfaceKnown = Known != EKnown::Unknown;
 	const FVector Centre = LiveBody->GetActorLocation();
 	const FQuat Frame = LiveBody->GetActorQuat();
 	const double RadiusCm = FMath::Max(LiveBody->GetWorldScapeBodyRadiusCm(), 1.0);
+	const double GroundBandCm = FMath::Max(RadiusCm * GroundBandShare, GroundBandFloorCm);
 	if (const AStar* Star = StarOf(LiveBody))
 	{
 		SunDirection = Frame.UnrotateVector(Star->GetActorLocation() - Centre).GetSafeNormal();
 	}
+	// Rio 09.10: each object once (a catalogue structure is a fleet structure too, a fleet outpost an autonomous outpost,
+	// the colony's base a settlement); the first entry names it.
+	TSet<const AActor*> Seen;
+	// On the ground a marker of a world not surveyed yet is left out when it needs the survey; in orbit it always shows.
 	const auto Add = [&](const EMarker Kind, const FVector& WorldLocation, const FString& Label, const FLinearColor& Color,
-		const double MaxRadii, const AActor* Actor)
+		const double MaxRadii, const AActor* Actor, const bool bNeedsSurvey) -> FMarker*
 	{
+		const bool bOnce = Actor && Kind != EMarker::Pilot && Kind != EMarker::Anomaly;
+		if (bOnce && Seen.Contains(Actor)) return nullptr;
 		const FVector Local = Frame.UnrotateVector(WorldLocation - Centre);
 		const double Distance = Local.Size();
-		if (Distance <= 1.0 || Distance > RadiusCm * MaxRadii) return;
+		if (Distance <= 1.0 || Distance > RadiusCm * MaxRadii) return nullptr;
+		const bool bOrbit = Kind != EMarker::Pilot && Distance - RadiusCm > GroundBandCm;
+		if (!bOrbit && bNeedsSurvey && !bSurfaceKnown) return nullptr;
+		if (bOnce) Seen.Add(Actor);
 		FMarker& Marker = Markers.AddDefaulted_GetRef();
 		Marker.Kind = Kind;
 		Marker.Actor = const_cast<AActor*>(Actor);
@@ -752,67 +815,50 @@ void SAPSSurfaceMap::RefreshMarkers()
 		Marker.Label = Label;
 		Marker.Color = Color;
 		Marker.AltitudeKm = (Distance - RadiusCm) / 100000.0;
+		Marker.bOrbit = bOrbit;
+		return &Marker;
 	};
-	if (bSurfaceKnown)
+	// The ship the player flies: the pawn itself or the ship it sits in; on foot, the home ship (the terminal's course ship).
+	const APlayerController* Controller = LiveWorld->GetFirstPlayerController();
+	const APawn* Pawn = Controller ? Controller->GetPawn() : nullptr;
+	const AActor* PlayerShip = Cast<ASpaceship>(Pawn);
+	for (const AActor* Parent = Pawn ? Pawn->GetAttachParentActor() : nullptr; !PlayerShip && Parent; Parent = Parent->GetAttachParentActor())
 	{
-		for (TActorIterator<AActor> It(LiveWorld); It; ++It)
+		PlayerShip = Parent->IsA<ASpaceship>() ? Parent : nullptr;
+	}
+
+	// The home colony (its base module), its landing pad and the home ship, as the terminal finds them.
+	const AActor* HomeShip = nullptr;
+	const AActor* Pad = nullptr;
+	for (TActorIterator<AActor> It(LiveWorld); It; ++It)
+	{
+		if (!IsValid(*It) || !It->ActorHasTag(TEXT("APS.Civilization.Materialized"))) continue;
+		const UAPSCivilizationIdentityComponent* Identity = It->FindComponentByClass<UAPSCivilizationIdentityComponent>();
+		if (!Identity) continue;
+		if (Identity->Role == EAPSCivilizationEntityRole::BaseModule)
 		{
-			if (!IsValid(*It) || !It->ActorHasTag(TEXT("APS.Civilization.Materialized"))) continue;
-			const UAPSCivilizationIdentityComponent* Identity = It->FindComponentByClass<UAPSCivilizationIdentityComponent>();
-			if (Identity && Identity->Role == EAPSCivilizationEntityRole::BaseModule)
-			{
-				Add(EMarker::Colony, It->GetActorLocation(), TEXT("COLONY"), APSChrome::Amber(), 1.05, *It);
-			}
+			Add(EMarker::Colony, It->GetActorLocation(), TEXT("HOME COLONY"), APSChrome::Amber(), 1.05, *It, true);
+		}
+		else if (Identity->Role == EAPSCivilizationEntityRole::LandingPad)
+		{
+			Pad = *It;
+		}
+		else if (Identity->Role == EAPSCivilizationEntityRole::SelectedShip)
+		{
+			HomeShip = *It;
 		}
 	}
-	if (const FAPSFleetCommand* Fleet = APSFleetFind(LiveWorld))
+	if (Pad)
 	{
-		for (const FAPSFleetBodyRecord& Record : Fleet->GetBodies())
-		{
-			if (Record.Body.Get() != LiveBody || !bSurfaceKnown) continue;
-			for (const TWeakObjectPtr<AActor>& Outpost : Record.Outposts)
-			{
-				if (Outpost.IsValid())
-				{
-					Add(EMarker::Outpost, Outpost->GetActorLocation(), FAPSFleetCommand::DisplayName(Outpost.Get()).ToString().ToUpper(),
-						APSChrome::Cyan(), 1.5, Outpost.Get());
-				}
-			}
-			// Rio 02.10 ("the anomalies look"): a located anomaly's site, studied ones dimmer; a detected one only says so.
-			if (Record.bHasAnomaly && Record.Anomaly >= APSFleet::EAnomalyState::Located)
-			{
-				const bool bStudied = Record.Anomaly == APSFleet::EAnomalyState::Investigated;
-				FString Name = APSFleet::AnomalyName(Record.AnomalyKind).ToString().ToUpper();
-				if (bStudied) Name += TEXT("  (STUDIED)");
-				Add(EMarker::Anomaly, Centre + Frame.RotateVector(Record.AnomalyDirection.GetSafeNormal()) * RadiusCm * 1.001, Name,
-					bStudied ? FLinearColor(0.62f, 0.52f, 0.74f) : FLinearColor(0.92f, 0.45f, 1.0f), 1.05, LiveBody);
-			}
-			else if (Record.bHasAnomaly && Record.Anomaly == APSFleet::EAnomalyState::Detected)
-			{
-				AnomalyNote = LOCTEXT("AnomalyDetected", "An anomaly is detected on this world: a science ship's study locates its site.");
-			}
-		}
-		for (const FAPSFleetStructure& Structure : Fleet->GetStructures())
-		{
-			if (Structure.Body.Get() == LiveBody && Structure.Actor.IsValid())
-			{
-				Add(EMarker::Station, Structure.Actor->GetActorLocation(),
-					FAPSFleetCommand::DisplayName(Structure.Actor.Get()).ToString().ToUpper(), FLinearColor(0.62f, 0.8f, 1.0f), 50.0,
-					Structure.Actor.Get());
-			}
-		}
-		for (const FAPSFleetUnit& Unit : Fleet->GetUnits())
-		{
-			if (const ASpaceship* Ship = Unit.Ship.Get())
-			{
-				Add(EMarker::Ship, Ship->GetActorLocation(), Unit.CallSign.IsEmpty() ? Ship->GetName() : Unit.CallSign,
-					APSFleet::DivisionColour(Unit.Division), 4.0, Ship);
-			}
-		}
+		Add(EMarker::Pad, Pad->GetActorLocation(), TEXT("LANDING PAD"), APSChrome::Amber(), 1.05, Pad, true);
+	}
+	if (!PlayerShip && HomeShip && HomeShip->IsA<ASpaceship>())
+	{
+		PlayerShip = HomeShip;
 	}
 	// Rio 04.10 ("the new buildings show on the regular map, not on the surface map"): the infrastructure catalogue's
 	// structures at this world too (raised by ships or by hand in build mode), the civilization's own, so known without a
-	// survey; on the ground an outpost mark, in orbit a station mark, in their department's colour.
+	// survey; in their department's colour, under the name their page gives them.
 	if (const FAPSInfrastructure* Infrastructure = APSInfrastructureFind(LiveWorld))
 	{
 		TArray<const FAPSBuiltStructure*> Here;
@@ -822,16 +868,132 @@ void SAPSSurfaceMap::RefreshMarkers()
 			const AActor* Actor = Built ? Built->Actor.Get() : nullptr;
 			if (!Actor) continue;
 			const APSInfrastructure::FType* Type = APSInfrastructure::Find(Built->Type);
-			const bool bOrbital = FVector::Dist(Actor->GetActorLocation(), Centre) > RadiusCm * 1.02;
-			Add(bOrbital ? EMarker::Station : EMarker::Outpost, Actor->GetActorLocation(),
-				Type ? Type->Name.ToString().ToUpper() : FAPSFleetCommand::DisplayName(Actor).ToString().ToUpper(),
-				Type ? APSInfrastructure::DepartmentColour(Type->Department) : APSChrome::Cyan(), 50.0, Actor);
+			Add(EMarker::Outpost, Actor->GetActorLocation(), ObjectName(Actor, Type ? Type->Name : FText::GetEmpty()),
+				Type ? APSInfrastructure::DepartmentColour(Type->Department) : APSChrome::Cyan(), 50.0, Actor, false);
 		}
 	}
-	const APlayerController* Controller = LiveWorld->GetFirstPlayerController();
-	if (const APawn* Pawn = Controller ? Controller->GetPawn() : nullptr)
+	// A settlement (the generator's ground settlements) belongs to the world it stands on.
+	for (TActorIterator<AColony> It(LiveWorld); It; ++It)
 	{
-		Add(EMarker::Pilot, Pawn->GetActorLocation(), TEXT("YOU"), FLinearColor(1.0f, 0.86f, 0.42f), 6.0, Pawn);
+		const APlanetaryBody* Orbited = IsValid(*It) ? FAPSFleetCommand::OrbitedBody(*It) : nullptr;
+		if (IsValid(*It) && (!Orbited || Orbited == LiveBody))
+		{
+			Add(EMarker::Outpost, It->GetActorLocation(), ObjectName(*It), APSChrome::Cyan(), 1.05, *It, true);
+		}
+	}
+	const FAPSFleetCommand* Fleet = APSFleetFind(LiveWorld);
+	if (Fleet)
+	{
+		// Every station, HQ and shipyard of this world (FAPSFleetCommand::RefreshStructures), the generator's home ones too.
+		for (const FAPSFleetStructure& Structure : Fleet->GetStructures())
+		{
+			if (Structure.Body.Get() == LiveBody && Structure.Actor.IsValid())
+			{
+				Add(EMarker::Station, Structure.Actor->GetActorLocation(), ObjectName(Structure.Actor.Get()), FLinearColor(0.62f, 0.8f, 1.0f),
+					50.0, Structure.Actor.Get(), false);
+			}
+		}
+		for (const FAPSFleetBodyRecord& Record : Fleet->GetBodies())
+		{
+			if (Record.Body.Get() != LiveBody) continue;
+			for (const TWeakObjectPtr<AActor>& Outpost : Record.Outposts)
+			{
+				if (Outpost.IsValid())
+				{
+					Add(EMarker::Outpost, Outpost->GetActorLocation(), ObjectName(Outpost.Get()), APSChrome::Cyan(), 50.0, Outpost.Get(), true);
+				}
+			}
+			if (!bSurfaceKnown) continue;
+			// Rio 02.10 ("the anomalies look"): a located anomaly's site, studied ones dimmer; a detected one only says so.
+			if (Record.bHasAnomaly && Record.Anomaly >= APSFleet::EAnomalyState::Located)
+			{
+				const bool bStudied = Record.Anomaly == APSFleet::EAnomalyState::Investigated;
+				FString Name = APSFleet::AnomalyName(Record.AnomalyKind).ToString().ToUpper();
+				if (bStudied) Name += TEXT("  (STUDIED)");
+				Add(EMarker::Anomaly, Centre + Frame.RotateVector(Record.AnomalyDirection.GetSafeNormal()) * RadiusCm * 1.001, Name,
+					bStudied ? FLinearColor(0.62f, 0.52f, 0.74f) : FLinearColor(0.92f, 0.45f, 1.0f), 1.05, LiveBody, true);
+			}
+			else if (Record.bHasAnomaly && Record.Anomaly == APSFleet::EAnomalyState::Detected)
+			{
+				AnomalyNote = LOCTEXT("AnomalyDetected", "An anomaly is detected on this world: a science ship's study locates its site.");
+			}
+		}
+	}
+	// The generator's planet outposts and any other outpost attached to this world.
+	for (TActorIterator<AAutonomousOutpost> It(LiveWorld); It; ++It)
+	{
+		if (IsValid(*It) && FAPSFleetCommand::OrbitedBody(*It) == LiveBody)
+		{
+			Add(EMarker::Outpost, It->GetActorLocation(), ObjectName(*It), APSChrome::Cyan(), 50.0, *It, true);
+		}
+	}
+	// Rio 09.10 (the HUD's NEAREST listed "UNKNOWN STRUCTURE  Ancient site" while this map said "anomalies 0"): the ancient
+	// sites (Gameplay/Ancients) built on or over this world, under the name their page and the HUD give them.
+	if (const FAPSAncients* Ancients = APSAncientsFind(LiveWorld))
+	{
+		for (const FAPSAncients::FSite& Site : Ancients->GetSites())
+		{
+			FVector SiteCentre;
+			if (Site.Body.Get() != LiveBody || !Site.Actor.IsValid() || !Ancients->GetCentre(Site, SiteCentre)) continue;
+			Add(EMarker::Ancient, SiteCentre, ObjectName(Site.Actor.Get(), LOCTEXT("AncientSite", "ANCIENT SITE")), AncientSiteColour,
+				50.0, Site.Actor.Get(), true);
+		}
+	}
+	if (Fleet)
+	{
+		for (const FAPSFleetUnit& Unit : Fleet->GetUnits())
+		{
+			if (const ASpaceship* Ship = Unit.Ship.Get())
+			{
+				if (FMarker* Marker = Add(EMarker::Ship, Ship->GetActorLocation(), Unit.CallSign.IsEmpty() ? ObjectName(Ship) : Unit.CallSign,
+					APSFleet::DivisionColour(Unit.Division), 4.0, Ship, false))
+				{
+					Marker->bPlayerShip = Ship == PlayerShip;
+				}
+			}
+		}
+	}
+	// The ship the player flies, when it is not a fleet unit and not the pawn itself (YOU marks that one).
+	if (PlayerShip && PlayerShip != Pawn)
+	{
+		if (FMarker* Marker = Add(EMarker::Ship, PlayerShip->GetActorLocation(),
+			PlayerShip == HomeShip ? FString(TEXT("HOME SHIP")) : ObjectName(PlayerShip), APSChrome::Amber(), 4.0, PlayerShip, false))
+		{
+			Marker->bPlayerShip = true;
+		}
+	}
+	if (Pawn)
+	{
+		Add(EMarker::Pilot, Pawn->GetActorLocation(), TEXT("YOU"), FLinearColor(1.0f, 0.86f, 0.42f), 6.0, Pawn, false);
+	}
+	LogMarkers();
+}
+
+void SAPSSurfaceMap::LogMarkers()
+{
+	using namespace APSSurfaceMapPrivate;
+	// The terminal's own map only: the order panel's and the object page's globes show the same markers.
+	if (bGlobeOnly) return;
+	const int32 Detail = CVarSurfaceMapLog.GetValueOnGameThread();
+	FString Signature = FString::Printf(TEXT("%s|%d|%d"), *GetNameSafe(Body.Get()), static_cast<int32>(Known), Detail);
+	for (const FMarker& Marker : Markers)
+	{
+		Signature += FString::Printf(TEXT("|%d%d%s"), static_cast<int32>(Marker.Kind), Marker.bOrbit ? 1 : 0, *Marker.Label);
+	}
+	if (Signature == MarkerSignature) return;
+	MarkerSignature = Signature;
+	if (!Body.IsValid()) return;
+	UE_LOG(LogTemp, Log, TEXT("[APS.SurfaceMap] %s: %s"), *BodyTitle.ToString(),
+		*GetLegendText().ToString().Replace(TEXT("\n"), TEXT("   |   ")));
+	if (Detail <= 0) return;
+	static const TCHAR* KindNames[] = {TEXT("colony"), TEXT("base"), TEXT("station"), TEXT("ship"), TEXT("pilot"), TEXT("anomaly"),
+		TEXT("ancient"), TEXT("pad")};
+	static_assert(static_cast<int32>(UE_ARRAY_COUNT(KindNames)) == static_cast<int32>(EMarker::Count), "a name per marker kind");
+	for (const FMarker& Marker : Markers)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[APS.SurfaceMap]    %s %s '%s'%s at %s, %.1f km up"), Marker.bOrbit ? TEXT("ORBIT ") : TEXT("GROUND"),
+			KindNames[static_cast<int32>(Marker.Kind)], *Marker.Label, Marker.bPlayerShip ? TEXT(" (player's ship)") : TEXT(""),
+			*Coordinates(Marker.Direction), Marker.AltitudeKm);
 	}
 }
 
@@ -869,16 +1031,55 @@ FText SAPSSurfaceMap::GetPilotText() const
 
 FText SAPSSurfaceMap::GetLegendText() const
 {
-	int32 Counts[6] = {0, 0, 0, 0, 0, 0};
-	for (const FMarker& Marker : Markers) ++Counts[static_cast<int32>(Marker.Kind)];
-	if (Known == EKnown::Unknown && !bNoSurface)
+	// Rio 09.10: what is drawn, the ground and the orbit apart (the pilot is not counted).
+	constexpr int32 KindCount = static_cast<int32>(EMarker::Count);
+	int32 Ground[KindCount] = {};
+	int32 Orbit[KindCount] = {};
+	for (const FMarker& Marker : Markers)
 	{
-		return FText::Format(LOCTEXT("LegendUnknown", "Only what orbits it is known: stations {0}   /   ships {1}"),
-			APSUINumber::Number(Counts[2]), APSUINumber::Number(Counts[3]));
+		if (Marker.Kind != EMarker::Pilot)
+		{
+			++(Marker.bOrbit ? Orbit : Ground)[static_cast<int32>(Marker.Kind)];
+		}
 	}
-	return FText::Format(LOCTEXT("LegendAnomalies", "Colony {0}   /   outposts {1}   /   stations {2}   /   ships {3}   /   anomalies {4}"),
-		APSUINumber::Number(Counts[0]), APSUINumber::Number(Counts[1]), APSUINumber::Number(Counts[2]), APSUINumber::Number(Counts[3]),
-		APSUINumber::Number(Counts[5]));
+	const auto Of = [](const int32* Counts, const EMarker Kind) { return Counts[static_cast<int32>(Kind)]; };
+	const auto Number = [](const int32 Value) { return APSUINumber::Number(Value); };
+	const int32 OrbitStructures = Of(Orbit, EMarker::Colony) + Of(Orbit, EMarker::Pad) + Of(Orbit, EMarker::Outpost)
+		+ Of(Orbit, EMarker::Station) + Of(Orbit, EMarker::Anomaly);
+	FText OrbitLine = FText::Format(LOCTEXT("LegendOrbit", "In orbit (dim rings): structures {0}  /  ships {1}"),
+		Number(OrbitStructures), Number(Of(Orbit, EMarker::Ship)));
+	if (Of(Orbit, EMarker::Ancient) > 0)
+	{
+		OrbitLine = FText::Format(LOCTEXT("LegendOrbitAncient", "{0}  /  ancient sites {1}"), OrbitLine, Number(Of(Orbit, EMarker::Ancient)));
+	}
+	const int32 Bases = Of(Ground, EMarker::Outpost) + Of(Ground, EMarker::Station);
+	if (bNoSurface)
+	{
+		// A gas world: what flies low over its clouds, if anything, then the orbit.
+		const int32 Low = Bases + Of(Ground, EMarker::Colony) + Of(Ground, EMarker::Pad) + Of(Ground, EMarker::Anomaly) + Of(Ground, EMarker::Ancient);
+		return Low + Of(Ground, EMarker::Ship) == 0 ? OrbitLine
+			: FText::Format(LOCTEXT("LegendGasLow", "Low over the clouds: structures {0}  /  ships {1}\n{2}"), Number(Low),
+				Number(Of(Ground, EMarker::Ship)), OrbitLine);
+	}
+	if (Known == EKnown::Unknown)
+	{
+		return FText::Format(LOCTEXT("LegendUnknown", "Not surveyed: only our own on the ground and what orbits it.\nOn the ground: bases {0}  /  ships {1}\n{2}"),
+			Number(Bases), Number(Of(Ground, EMarker::Ship)), OrbitLine);
+	}
+	TArray<FText> Parts;
+	Parts.Add(FText::Format(LOCTEXT("LegendColony", "colony {0}"), Number(Of(Ground, EMarker::Colony))));
+	if (Of(Ground, EMarker::Pad) > 0)
+	{
+		Parts.Add(FText::Format(LOCTEXT("LegendPad", "landing pad {0}"), Number(Of(Ground, EMarker::Pad))));
+	}
+	Parts.Add(FText::Format(LOCTEXT("LegendBases", "bases {0}"), Number(Bases)));
+	Parts.Add(FText::Format(LOCTEXT("LegendAncient", "ancient sites {0}"), Number(Of(Ground, EMarker::Ancient))));
+	Parts.Add(FText::Format(LOCTEXT("LegendAnomalies", "anomalies {0}"), Number(Of(Ground, EMarker::Anomaly))));
+	if (Of(Ground, EMarker::Ship) > 0)
+	{
+		Parts.Add(FText::Format(LOCTEXT("LegendGroundShips", "ships {0}"), Number(Of(Ground, EMarker::Ship))));
+	}
+	return FText::Format(LOCTEXT("LegendSurface", "On the ground: {0}\n{1}"), FText::Join(LOCTEXT("LegendJoin", "  /  "), Parts), OrbitLine);
 }
 
 void SAPSSurfaceMap::Tick(const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime)
@@ -1164,7 +1365,8 @@ int32 SAPSSurfaceMap::OnPaint(const FPaintArgs& Args, const FGeometry& Geometry,
 		}
 	};
 	// Rio 02.10 ("labels must not overlap"): a view's icons first, then its labels, the picked marker first, then the
-	// pilot, the colony, anomalies, stations, outposts and ships, each in the first free spot around its icon.
+	// pilot, the colony, anomalies, stations, outposts and ships, each in the first free spot around its icon. Rio 09.10:
+	// the surface's own before anything in orbit, a few orbit labels at most.
 	const int32 Picked = SelectedIndex();
 	struct FLabelAsk
 	{
@@ -1172,16 +1374,22 @@ int32 SAPSSurfaceMap::OnPaint(const FPaintArgs& Args, const FGeometry& Geometry,
 		const FMarker* Marker;
 		int32 Rank;
 	};
-	const auto Rank = [Picked](const FMarker& Marker, const int32 Index)
+	// An orbit mark: in orbit and not the player's ship.
+	const auto Dim = [](const FMarker& Marker) { return Marker.bOrbit && !Marker.bPlayerShip; };
+	const auto Rank = [Picked, &Dim](const FMarker& Marker, const int32 Index)
 	{
 		if (Index == Picked) return 0;
+		if (Dim(Marker)) return 8;
+		if (Marker.bPlayerShip) return 2;
 		switch (Marker.Kind)
 		{
 		case EMarker::Pilot: return 1;
 		case EMarker::Colony: return 2;
+		case EMarker::Ancient: return 3;
 		case EMarker::Anomaly: return 3;
 		case EMarker::Station: return 4;
 		case EMarker::Outpost: return 5;
+		case EMarker::Pad: return 5;
 		default: return 6;
 		}
 	};
@@ -1189,16 +1397,33 @@ int32 SAPSSurfaceMap::OnPaint(const FPaintArgs& Args, const FGeometry& Geometry,
 	{
 		Asks.StableSort([](const FLabelAsk& A, const FLabelAsk& B) { return A.Rank < B.Rank; });
 		TArray<FBox2D> Taken;
+		TArray<FVector2D> Colonies;
 		for (const FLabelAsk& Ask : Asks)
 		{
 			Taken.Add(FBox2D(Ask.At - FVector2D(6.0, 6.0), Ask.At + FVector2D(6.0, 6.0)));
+			if (Ask.Marker->Kind == EMarker::Colony) Colonies.Add(Ask.At);
 		}
 		int32 ShipLabels = 0;
+		int32 OrbitLabels = 0;
+		// The generator's home stations share one name: an orbit label says it once a view.
+		TSet<FString> OrbitNames;
 		for (const FLabelAsk& Ask : Asks)
 		{
 			const FMarker& Marker = *Ask.Marker;
-			if (Marker.Label.IsEmpty() || (Ask.Rank > 0 && Marker.Kind == EMarker::Ship && ShipLabels >= 6)) continue;
-			const FVector2D TextSize = Measure->Measure(Marker.Label, LabelFont);
+			const bool bDim = Dim(Marker);
+			if (Marker.Label.IsEmpty() || (Ask.Rank > 0 && !bDim && Marker.Kind == EMarker::Ship && ShipLabels >= 6)
+				|| (Ask.Rank > 0 && bDim && (OrbitLabels >= MaxOrbitLabels || OrbitNames.Contains(Marker.Label))))
+			{
+				continue;
+			}
+			// The pad under the colony's mark reads as one sign: the colony's label names it.
+			if (Ask.Rank > 0 && Marker.Kind == EMarker::Pad
+				&& Colonies.ContainsByPredicate([&Ask](const FVector2D& Colony) { return FVector2D::Distance(Colony, Ask.At) < 10.0; }))
+			{
+				continue;
+			}
+			const FString Text = Marker.bOrbit ? Marker.Label + TEXT("  /  ORBIT") : Marker.Label;
+			const FVector2D TextSize = Measure->Measure(Text, LabelFont);
 			const FVector2D Offsets[] = {FVector2D(11.0, -TextSize.Y - 3.0), FVector2D(11.0, 3.0),
 				FVector2D(-TextSize.X - 11.0, -TextSize.Y - 3.0), FVector2D(-TextSize.X - 11.0, 3.0),
 				FVector2D(-TextSize.X * 0.5, -TextSize.Y - 12.0), FVector2D(-TextSize.X * 0.5, 12.0)};
@@ -1215,14 +1440,16 @@ int32 SAPSSurfaceMap::OnPaint(const FPaintArgs& Args, const FGeometry& Geometry,
 					continue;
 				}
 				Taken.Add(Box);
-				ShipLabels += Marker.Kind == EMarker::Ship ? 1 : 0;
+				ShipLabels += !bDim && Marker.Kind == EMarker::Ship ? 1 : 0;
+				OrbitLabels += bDim ? 1 : 0;
+				if (bDim) OrbitNames.Add(Marker.Label);
 				FSlateDrawElement::MakeBox(Elements, LayerMarker + 1, Geometry.ToPaintGeometry(FVector2f(Box.GetSize()),
 					FSlateLayoutTransform(FVector2f(Box.Min))), White, ESlateDrawEffect::None,
 					Ask.Rank == 0 ? APSUITheme::Retint(FLinearColor(0.03f, 0.10f, 0.12f, 0.9f)) : APSUITheme::Retint(FLinearColor(0.01f, 0.03f, 0.04f, 0.72f)));
-				// The name on its plate by its capitals (Rio 03.10).
+				// The name on its plate by its capitals (Rio 03.10); an orbit mark's quieter.
 				FSlateDrawElement::MakeText(Elements, LayerMarker + 2, Geometry.ToPaintGeometry(FVector2f(TextSize),
 					FSlateLayoutTransform(FVector2f(TextAt + FVector2D(0.0, APSChrome::CapsCenterOffset(LabelFont))))),
-					Marker.Label, LabelFont, ESlateDrawEffect::None, Marker.Color);
+					Text, LabelFont, ESlateDrawEffect::None, bDim && Ask.Rank > 0 ? OrbitLabelColour : Marker.Color);
 				break;
 			}
 		}
@@ -1234,8 +1461,41 @@ int32 SAPSSurfaceMap::OnPaint(const FPaintArgs& Args, const FGeometry& Geometry,
 		{
 			Circle(At, 13.0f, FLinearColor(1.0f, 1.0f, 1.0f, 0.85f), 1.6f, Layer);
 		}
+		if (Dim(Marker))
+		{
+			// Rio 09.10: what flies above the world, not a point on it: a small tilted orbit round a dot (a square for a
+			// structure), in one quiet steel.
+			TArray<FVector2D> Orbit;
+			constexpr int32 Steps = 20;
+			const double Cos = FMath::Cos(-0.42);
+			const double Sin = FMath::Sin(-0.42);
+			for (int32 Step = 0; Step <= Steps; ++Step)
+			{
+				const double Angle = UE_TWO_PI * Step / Steps;
+				const double X = FMath::Cos(Angle) * 7.0;
+				const double Y = FMath::Sin(Angle) * 2.6;
+				Orbit.Add(At + FVector2D(X * Cos - Y * Sin, X * Sin + Y * Cos));
+			}
+			if (APSSlateLineGuard::IsDrawable(Orbit))
+			{
+				FSlateDrawElement::MakeLines(Elements, Layer, Geometry.ToPaintGeometry(), Orbit, ESlateDrawEffect::None, OrbitMarkColour, true, 1.0f);
+			}
+			const float Dot = Marker.Kind == EMarker::Ship ? 2.0f : 3.0f;
+			FSlateDrawElement::MakeBox(Elements, Layer, Geometry.ToPaintGeometry(FVector2f(Dot, Dot),
+				FSlateLayoutTransform(FVector2f(At - FVector2D(Dot * 0.5, Dot * 0.5)))), White, ESlateDrawEffect::None,
+				FLinearColor(OrbitMarkColour.R, OrbitMarkColour.G, OrbitMarkColour.B, 0.8f));
+			return;
+		}
 		switch (Marker.Kind)
 		{
+		case EMarker::Pad:
+			// A square round the colony's diamond (the base on its pad), with a dot of its own when apart.
+			FSlateDrawElement::MakeLines(Elements, Layer, Geometry.ToPaintGeometry(), TArray<FVector2D>{At + FVector2D(-9, -9), At + FVector2D(9, -9),
+				At + FVector2D(9, 9), At + FVector2D(-9, 9), At + FVector2D(-9, -9)}, ESlateDrawEffect::None, Marker.Color, true, 1.2f);
+			FSlateDrawElement::MakeBox(Elements, Layer, Geometry.ToPaintGeometry(FVector2f(2.0f, 2.0f), FSlateLayoutTransform(FVector2f(At - FVector2D(1, 1)))),
+				White, ESlateDrawEffect::None, Marker.Color);
+			break;
+		case EMarker::Ancient:
 		case EMarker::Anomaly:
 		{
 			// A star of three strokes in a ring; larger in the anomalies look.
@@ -1274,6 +1534,8 @@ int32 SAPSSurfaceMap::OnPaint(const FPaintArgs& Args, const FGeometry& Geometry,
 				ESlateDrawEffect::None, Marker.Color, true, 1.4f);
 			FSlateDrawElement::MakeLines(Elements, Layer, Geometry.ToPaintGeometry(), TArray<FVector2D>{At + FVector2D(5, 0), At + FVector2D(13, 0)},
 				ESlateDrawEffect::None, Marker.Color, true, 1.4f);
+			break;
+		default:
 			break;
 		}
 	};
@@ -1472,15 +1734,19 @@ int32 SAPSSurfaceMap::OnPaint(const FPaintArgs& Args, const FGeometry& Geometry,
 	Circle(GlobeCentre, ScreenRadius, APSUITheme::RetintHighlight(FLinearColor(0.45f, 0.75f, 0.9f, 0.55f)), 1.2f, LayerFrame);
 	{
 		TArray<FLabelAsk> Asks;
-		for (int32 Index = 0; Index < Markers.Num(); ++Index)
+		// The orbit marks first, under the surface's own.
+		for (int32 Pass = 0; Pass < 2; ++Pass)
 		{
-			FVector2D At;
-			if (GlobePoint(Markers[Index].Direction, View, Right, Up, Forward, At))
+			for (int32 Index = 0; Index < Markers.Num(); ++Index)
 			{
-				DrawMarker(Markers[Index], At, Index == Picked);
-				if (!bGlobeOnly)
+				FVector2D At;
+				if (Dim(Markers[Index]) == (Pass == 0) && GlobePoint(Markers[Index].Direction, View, Right, Up, Forward, At))
 				{
-					Asks.Add({At, &Markers[Index], Rank(Markers[Index], Index)});
+					DrawMarker(Markers[Index], At, Index == Picked);
+					if (!bGlobeOnly)
+					{
+						Asks.Add({At, &Markers[Index], Rank(Markers[Index], Index)});
+					}
 				}
 			}
 		}
@@ -1583,13 +1849,16 @@ int32 SAPSSurfaceMap::OnPaint(const FPaintArgs& Args, const FGeometry& Geometry,
 	}
 	{
 		TArray<FLabelAsk> Asks;
-		for (int32 Index = 0; Index < Markers.Num(); ++Index)
+		for (int32 Pass = 0; Pass < 2; ++Pass)
 		{
-			FVector2D At;
-			if (MapPoint(MapUV(Markers[Index].Direction), MapBox, At))
+			for (int32 Index = 0; Index < Markers.Num(); ++Index)
 			{
-				DrawMarker(Markers[Index], At, Index == Picked);
-				Asks.Add({At, &Markers[Index], Rank(Markers[Index], Index)});
+				FVector2D At;
+				if (Dim(Markers[Index]) == (Pass == 0) && MapPoint(MapUV(Markers[Index].Direction), MapBox, At))
+				{
+					DrawMarker(Markers[Index], At, Index == Picked);
+					Asks.Add({At, &Markers[Index], Rank(Markers[Index], Index)});
+				}
 			}
 		}
 		PlaceLabels(Asks, MapBox);
@@ -1682,15 +1951,17 @@ int32 SAPSSurfaceMap::PickMarker(const FGeometry& Geometry, const FVector2D& Scr
 	double BestDistance = 12.0;
 	for (int32 Index = 0; Index < Markers.Num(); ++Index)
 	{
+		// Rio 09.10: a mark on the ground wins over an orbit mark drawn at the same place.
+		const double Penalty = Markers[Index].bOrbit && !Markers[Index].bPlayerShip ? 4.0 : 0.0;
 		FVector2D At;
-		if (GlobePoint(Markers[Index].Direction, View, Right, Up, Forward, At) && FVector2D::Distance(At, Local) < BestDistance)
+		if (GlobePoint(Markers[Index].Direction, View, Right, Up, Forward, At) && FVector2D::Distance(At, Local) + Penalty < BestDistance)
 		{
-			BestDistance = FVector2D::Distance(At, Local);
+			BestDistance = FVector2D::Distance(At, Local) + Penalty;
 			Best = Index;
 		}
-		if (!bGlobeOnly && MapPoint(MapUV(Markers[Index].Direction), View.MapBox, At) && FVector2D::Distance(At, Local) < BestDistance)
+		if (!bGlobeOnly && MapPoint(MapUV(Markers[Index].Direction), View.MapBox, At) && FVector2D::Distance(At, Local) + Penalty < BestDistance)
 		{
-			BestDistance = FVector2D::Distance(At, Local);
+			BestDistance = FVector2D::Distance(At, Local) + Penalty;
 			Best = Index;
 		}
 	}
@@ -1750,8 +2021,8 @@ FText SAPSSurfaceMap::GetSelectionText() const
 	const FString Height = Marker.AltitudeKm < 1.0
 		? FString::Printf(TEXT("%.0f m up"), FMath::Max(Marker.AltitudeKm * 1000.0, 0.0))
 		: FString::Printf(TEXT("%.1f km up"), Marker.AltitudeKm);
-	return FText::FromString(FString::Printf(TEXT("%s\n%s   /   %s%s"), *Marker.Label, *Coordinates(Marker.Direction), *Height,
-		Marker.Actor.IsValid() ? TEXT("\nDouble click: open its page") : TEXT("")));
+	return FText::FromString(FString::Printf(TEXT("%s%s\n%s   /   %s%s"), *Marker.Label, Marker.bOrbit ? TEXT("  /  IN ORBIT") : TEXT(""),
+		*Coordinates(Marker.Direction), *Height, Marker.Actor.IsValid() ? TEXT("\nDouble click: open its page") : TEXT("")));
 }
 
 FReply SAPSSurfaceMap::OnMouseMove(const FGeometry& Geometry, const FPointerEvent& Event)

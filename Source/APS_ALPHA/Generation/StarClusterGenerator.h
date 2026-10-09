@@ -33,6 +33,17 @@ public:
 		const FVector& ClusterBounds, double StarMass, FVector& OutPosition);
 
 	/**
+	 * Rio 09.10 (playtest 30: "Elongated Stream: everything drifts"): ElongatedStream and Hourglass with their historic
+	 * shapes, but every scatter draw from a stream keyed by (seed, formation index) instead of the global RNG, so a seed
+	 * gives the same formation in every rebuild. FormationIndex / FormationCount place a stream star along its length:
+	 * the caller passes a full-cycle permutation of the catalogue (as for RingArc), so any rendered prefix spans the whole
+	 * stream. OutPosition is final (x100 applied, as CalculateStarPosition returns). False for every other type, whose
+	 * code is unchanged; CalculateStarPosition itself is unchanged too (LegacyFormationsUnchanged).
+	 */
+	static bool SampleSeededStreamFormation(EStarClusterType ClusterType, int32 GenerationSeed, int32 FormationIndex,
+		int32 FormationCount, const FVector& ClusterBounds, FVector& OutPosition);
+
+	/**
 	 * Rio 03.10 ("SIZE must show"): linear extent of a cluster size relative to Giant (1.0), applied to the type's
 	 * bounds of new datasets. Historic datasets keep their stored table bounds.
 	 */

@@ -488,6 +488,42 @@ TArray<FVector> SpaceSystemCentres(const TArray<FVector>& Centres, const TArray<
 	for (int32 Index = 0; Index < Count; ++Index) Offsets[Index] = Fixed[Index] ? FVector::ZeroVector : Positions[Index] - Centres[Index];
 	return Offsets;
 }
+
+/** Rio 08.10 (STAR BRIGHTNESS): the name of the material instances it puts on a catalogue view; only those are ever replaced. */
+const TCHAR* const PreviewStarBrightnessMaterialName = TEXT("APSPreviewStarBrightness");
+
+/**
+ * Rio 08.10 (STAR BRIGHTNESS, a menu viewing aid): a catalogue view's points through their material's point visibility
+ * (GameplayPointVisibility, the gameplay daylight term: it scales the whole point and ray signal and is 1 by default). Below
+ * 1 the view draws a material instance of its own with that value; at 1 and above its original material is put back, so the
+ * accepted look is drawn by the very same material (the shared material clamps the term at 1: no brightening here).
+ */
+void ApplyPreviewStarBrightness(UInstancedStaticMeshComponent* View, const float Brightness)
+{
+	if (!IsValid(View)) return;
+	static const FName VisibilityParameter(TEXT("GameplayPointVisibility"));
+	const float Visibility = FMath::IsFinite(Brightness) ? FMath::Clamp(Brightness, 0.0f, 1.0f) : 1.0f;
+	for (int32 Slot = 0; Slot < View->GetNumMaterials(); ++Slot)
+	{
+		UMaterialInterface* Current = View->GetMaterial(Slot);
+		UMaterialInstanceDynamic* Own = Cast<UMaterialInstanceDynamic>(Current);
+		if (Own && Own->GetFName().GetPlainNameString() != PreviewStarBrightnessMaterialName) Own = nullptr;
+		if (Visibility >= 1.0f)
+		{
+			if (Own && IsValid(Own->Parent)) View->SetMaterial(Slot, Own->Parent);
+			continue;
+		}
+		if (!Own)
+		{
+			if (!IsValid(Current)) continue;
+			Own = UMaterialInstanceDynamic::Create(Current, View,
+				MakeUniqueObjectName(View, UMaterialInstanceDynamic::StaticClass(), FName(PreviewStarBrightnessMaterialName)));
+			if (!IsValid(Own)) continue;
+			View->SetMaterial(Slot, Own);
+		}
+		Own->SetScalarParameterValue(VisibilityParameter, Visibility);
+	}
+}
 }
 
 FVector APSPreviewClusterSpacing::GetOffsetCm(const AAstroGenerator* Generator, const int32 InstanceIndex)
@@ -738,6 +774,8 @@ void AAstroGenerator::EnsureContinuousPreviewPresentation()
 					View->SetCustomDataValue(Index, Field, Source->PerInstanceSMCustomData[Address], false);
 			}
 		APSStellarOpticalSupport::EnsureLayout(View);
+		// Rio 08.10 (STAR BRIGHTNESS): a rebuilt view keeps the menu's brightness (1: its material stays untouched).
+		ApplyPreviewStarBrightness(View, PreviewStarBrightness);
 		return View;
 	};
 	if (!IsValid(ContinuousGalaxyView) && IsValid(GeneratedGalaxy))
@@ -1794,6 +1832,15 @@ void AAstroGenerator::SetContinuousPreviewFramingTangent(const double Tangent)
 	// manual orbit/zoom still takes precedence. The next focus uses the exact fit.
 	if (bHadLayout && UsesContinuousPreviewFrame() && bContinuousPreviewInitialized && bContinuousPreviewAutoFraming)
 		StartContinuousPreviewTransition(nullptr);
+}
+
+void AAstroGenerator::SetPreviewStarBrightness(const float Brightness)
+{
+	const float NewBrightness = FMath::IsFinite(Brightness) ? FMath::Clamp(Brightness, 0.05f, 4.0f) : 1.0f;
+	if (NewBrightness == PreviewStarBrightness) return;
+	PreviewStarBrightness = NewBrightness;
+	ApplyPreviewStarBrightness(ContinuousGalaxyView, PreviewStarBrightness);
+	ApplyPreviewStarBrightness(ContinuousClusterView, PreviewStarBrightness);
 }
 
 void AAstroGenerator::StartContinuousPreviewTransition(APlayerController* PlayerController, const double DistanceRatio)

@@ -136,6 +136,8 @@ private:
 	bool bMapRequest{false};
 	FVector MapFocusLocation{FVector::ZeroVector};
 	double MapViewDistanceCm{0.0};
+	/** Rio 09.10: the last "map looks too far out to shift" log line (aps.WorldOrigin.MapShiftMaxAU). */
+	double LastMapShiftCapLogSeconds{0.0};
 	/** The map brought its view near 0,0,0, away from the pilot: back to the pilot as soon as it closes. */
 	bool bMapShifted{false};
 	/** Shifts the world to the map's far view; a pilot not in open space holds still meanwhile. True when it shifted. */

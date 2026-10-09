@@ -73,6 +73,13 @@ namespace APSWorldScapeProfiles
         TEXT("Read only when creating a surface profile: stop PIE before changing. ")
         TEXT("Terrain and liquid stay on matching lattices; collision and PLANET previews are unchanged."),
         ECVF_Default);
+    // 08.10: registered with the module (it was a function static, created on the first surface profile, so a startup
+    // -ExecCmds value never reached it and the A/B arm "0" silently ran as 1).
+    TAutoConsoleVariable<int32> CVarPreparedAllFamilies(
+        TEXT("aps.Surface.PreparedAllFamilies"), 1,
+        TEXT("1: worker-prepared WorldScape publication for every planet family (08.10). ")
+        TEXT("0: only Terrestrial, Frozen and Oasis (30.09). Read when a surface profile is created."),
+        ECVF_Default);
 
 	struct FSurfaceProfile
 	{
@@ -1176,14 +1183,22 @@ void APlanetarySurfaceGenerator::ApplySurfaceProfileNow(APlanetaryBody* Body)
 	// (-1) requires this explicit owner tag; 0 restores the legacy publication.
 	// Keep other presets, authored roots and scaled previews on their old path.
 	const FName PreparedPublicationTag(TEXT("APS.Mesh.PreparedPublication"));
-	const bool bPreparedPublicationType = ResolvedSurfaceProfile.PlanetType == EPlanetType::Terrestrial
-		|| ResolvedSurfaceProfile.PlanetType == EPlanetType::Frozen
-		|| ResolvedSurfaceProfile.PlanetType == EPlanetType::Oasis;
+	// Rio 08.10 night (0.6.1: "the ice planet: zero freezes; other planets freeze"): every family. Packaged A/B descents,
+	// frames >= 50 ms without -> with: ocean 8/8/5 -> 0/4/0, forest 9 -> 1, near-surface frames equal (n-fam-*,
+	// night_0810). Rio 08.10 afternoon: no exceptions, the lava stack (Volcanic / Lava / Melted) too, every family A/B'd.
+	// aps.Surface.PreparedAllFamilies 0 restores the 30.09 list.
+	const EPlanetType PreparedType = ResolvedSurfaceProfile.PlanetType;
+	const bool bPreparedPublicationType = PreparedType == EPlanetType::Terrestrial
+		|| PreparedType == EPlanetType::Frozen
+		|| PreparedType == EPlanetType::Oasis
+		|| APSWorldScapeProfiles::CVarPreparedAllFamilies.GetValueOnGameThread() != 0;
 	if (bPreparedPublicationType && WorldScapeRootInstance->ActorHasTag(ParallelCollisionTag)
 		&& !(CoastPlanet && CoastPlanet->IsManual))
 		WorldScapeRootInstance->Tags.AddUnique(PreparedPublicationTag);
 	else
 		WorldScapeRootInstance->Tags.Remove(PreparedPublicationTag);
+	UE_LOG(LogTemp, Log, TEXT("[APS.Surface] publication body=%s type=%s prepared=%d"), *GetNameSafe(Body),
+		*UEnum::GetValueAsString(PreparedType), WorldScapeRootInstance->ActorHasTag(PreparedPublicationTag) ? 1 : 0);
 	// Depth accompanies the versioned material; diagnostics can still opt in.
 	// The native LOD worker owns UV1; no per-frame GT bathymetry or mesh rewrite.
 	// Do not enable for authored/compressed roots or other liquid families.

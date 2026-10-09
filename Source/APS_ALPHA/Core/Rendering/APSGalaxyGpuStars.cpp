@@ -523,6 +523,9 @@ namespace APSGalaxyGpuStars
 			/** The screen's extra brightness LOD (aps.Stars.MenuMinPixel*), eased, and the scale last sent (with the share). */
 			float MinPixelFocus = 1.0f;
 			float AppliedMinPixelScale = 1.0f;
+			/** Rio 08.10 (SetMenuStarBrightness): the menu brightness the sets and the glow carry now, and the glow as registered. */
+			float AppliedMenuBrightness = 1.0f;
+			APSStarRenderer::FGlowVolumeDesc MenuGlowDesc;
 			FTransform PushedTransform = FTransform::Identity;
 			FRequest Request;
 			uint32 CatalogKey = 0;
@@ -632,6 +635,8 @@ namespace APSGalaxyGpuStars
 		/** The menu screen (SetMenuGlowScope), the share shown when the camera's flight to it began, and the flight's
 		 * eased progress; the screen's own share is read live from the CVars. */
 		EMenuGlowScope GMenuGlowScope = EMenuGlowScope::Far;
+		/** Rio 08.10 (SetMenuStarBrightness): the menu's STAR BRIGHTNESS, read by the menu layer only. */
+		float GMenuStarBrightness = 1.0f;
 		float GMenuGlowFrom = 1.0f;
 		float GMenuPointFrom = 1.0f;
 		float GMenuMinPixelFrom = 1.0f;
@@ -1440,8 +1445,11 @@ namespace APSGalaxyGpuStars
 			GLayer.AppliedPointVisibility = StartVisibility;
 			GLayer.AppliedGlowVisibility = StartGlowVisibility;
 			GLayer.MinPixelFocus = Mode == ELayerMode::Menu ? MenuMinPixelScale() : 1.0f;
+			// Rio 08.10 (SetMenuStarBrightness): a menu layer is registered with the brightness the menu asks for now.
+			const float MenuBrightness = Mode == ELayerMode::Menu ? GMenuStarBrightness : 1.0f;
+			GLayer.AppliedMenuBrightness = MenuBrightness;
 			GLayer.AppliedMinPixelScale = Mode == ELayerMode::Menu
-				? PointMinPixelScale(GLayer.MinPixelFocus, GLayer.PointFocus) : 1.0f;
+				? PointMinPixelScale(GLayer.MinPixelFocus, GLayer.PointFocus * MenuBrightness) : 1.0f;
 			for (int32 Level = 0; Level < Result.Points.Num(); ++Level)
 			{
 				TArray<APSStarRenderer::FPackedStar>& Points = Result.Points[Level];
@@ -1453,7 +1461,7 @@ namespace APSGalaxyGpuStars
 				Desc.LocalToWorld = LocalToWorld;
 				Desc.FarEnvelope = Envelope;
 				Desc.LocalBounds = Result.LevelBounds[Level];
-				Desc.IntensityScale = static_cast<float>(BaseScale * PointShare);
+				Desc.IntensityScale = static_cast<float>(BaseScale * PointShare) * MenuBrightness;
 				Desc.BrightnessFloorDistanceLocal = FloorLocal;
 				// Inner levels (nearest stars) first under aps.Stars.GpuPointBudget.
 				Desc.Priority = Level;
@@ -1496,6 +1504,12 @@ namespace APSGalaxyGpuStars
 				GlowDesc.BrightnessFloorDistanceLocal = GlowFloorLocal >= 0.0f ? GlowFloorLocal : FloorLocal;
 				GlowDesc.DebugName = Mode == ELayerMode::Gameplay ? TEXT("GameplayGalaxy") : TEXT("MenuGalaxy");
 				GlowDesc.Visibility = StartGlowVisibility;
+				if (Mode == ELayerMode::Menu)
+				{
+					// Rio 08.10: kept without the menu brightness; PushMenuPresentation re-sends it when the brightness moves.
+					GLayer.MenuGlowDesc = GlowDesc;
+					GlowDesc.TotalIntensity *= MenuBrightness;
+				}
 				Galaxy->GpuGlowVolume = APSStarRenderer::RegisterGlowVolume(World, GlowDesc, MoveTemp(Result.GlowMap));
 			}
 			UE_LOG(LogTemp, Log,
@@ -1583,6 +1597,35 @@ namespace APSGalaxyGpuStars
 				APSStarRenderer::SetVisibility(Galaxy.GpuGlowVolume, GlowVisibility);
 				GLayer.AppliedGlowVisibility = GlowVisibility;
 			}
+			// Rio 08.10 (SetMenuStarBrightness): the menu brightness rides on the sets' IntensityScale and the glow's
+			// TotalIntensity (visibility stops at 1), sent once per change with this frame's values; the cut below takes it
+			// like a share, so a dimmed point stays drawn and a brightened one draws no new faint stars. 1: nothing is sent.
+			const float MenuBrightness = GMenuStarBrightness;
+			if (MenuBrightness != GLayer.AppliedMenuBrightness)
+			{
+				const float BrightnessCut = PointMinPixelScale(GLayer.MinPixelFocus, GLayer.PointFocus * MenuBrightness);
+				for (int32 Index = 0; Index < GLayer.PointSets.Num() && Index < GLayer.PointDescs.Num(); ++Index)
+				{
+					APSStarRenderer::FPointSetDesc& Desc = GLayer.PointDescs[Index];
+					Desc.IntensityScale = GLayer.PointIntensityScale * MenuBrightness;
+					Desc.MinPixelScale = BrightnessCut;
+					Desc.FarEnvelope = Envelope;
+					APSStarRenderer::UpdatePointSet(GLayer.PointSets[Index], Desc);
+				}
+				GLayer.AppliedMinPixelScale = BrightnessCut;
+				if (Galaxy.GpuGlowVolume != 0 && GLayer.MenuGlowDesc.TotalIntensity > 0.0)
+				{
+					APSStarRenderer::FGlowVolumeDesc GlowDesc = GLayer.MenuGlowDesc;
+					GlowDesc.TotalIntensity *= MenuBrightness;
+					GlowDesc.LocalToWorld = GLayer.PushedTransform;
+					GlowDesc.FarEnvelope = Envelope;
+					GlowDesc.Visibility = GLayer.AppliedGlowVisibility;
+					APSStarRenderer::UpdateGlowVolume(Galaxy.GpuGlowVolume, GlowDesc);
+				}
+				UE_LOG(LogTemp, Log, TEXT("[APS.GalaxyGpu] menu star brightness x%.2f -> x%.2f"),
+					GLayer.AppliedMenuBrightness, MenuBrightness);
+				GLayer.AppliedMenuBrightness = MenuBrightness;
+			}
 			// Rio 05.10: the points' brightness LOD follows their share (a dimmed point keeps being drawn), times the
 			// screen's optional extra cut, eased the same way; sent on a 1% change and at the end.
 			const float MinPixelTarget = MenuMinPixelScale();
@@ -1592,7 +1635,7 @@ namespace APSGalaxyGpuStars
 			{
 				GLayer.MinPixelFocus = MinPixelTarget;
 			}
-			const float MinPixelScale = PointMinPixelScale(GLayer.MinPixelFocus, GLayer.PointFocus);
+			const float MinPixelScale = PointMinPixelScale(GLayer.MinPixelFocus, GLayer.PointFocus * MenuBrightness);
 			if (MinPixelScale != GLayer.AppliedMinPixelScale
 				&& ((bSettled && bMinPixelSettled) || FMath::Abs(MinPixelScale / GLayer.AppliedMinPixelScale - 1.0f) > 0.01f))
 			{
@@ -1927,6 +1970,12 @@ namespace APSGalaxyGpuStars
 		GMenuLastFlightAlpha = T;
 		GMenuGlowProgress = GMenuFlightEaseBase < 1.0f
 			? FMath::Clamp((Eased - GMenuFlightEaseBase) / (1.0f - GMenuFlightEaseBase), 0.0f, 1.0f) : 1.0f;
+	}
+
+	void SetMenuStarBrightness(const float Brightness)
+	{
+		// Read by the menu layer's next presentation (TickMenuPresentation runs it every frame, even with a still camera).
+		GMenuStarBrightness = FMath::IsFinite(Brightness) ? FMath::Clamp(Brightness, 0.05f, 4.0f) : 1.0f;
 	}
 
 	int32 GetDrawnPointCount(const UWorld* World)

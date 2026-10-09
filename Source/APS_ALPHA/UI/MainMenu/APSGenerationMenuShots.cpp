@@ -5,6 +5,7 @@
 #include "WorldGenerationViewModel.h"
 #include "APS_ALPHA/Actors/Astro/APSBodyDesignation.h"
 #include "APS_ALPHA/Actors/Astro/Moon.h"
+#include "APS_ALPHA/Actors/Astro/Planet.h"
 #include "APS_ALPHA/Core/Controllers/MainMenuController.h"
 #include "APS_ALPHA/Core/Enums/GalaxyClass.h"
 #include "APS_ALPHA/Core/Enums/GalaxyType.h"
@@ -67,6 +68,12 @@ namespace APSGenerationShotsPrivate
 		double GalaxyDensity{-1.0};
 		/** Rio 05.10: realscale=1 turns the REAL SCALE (EXPERIMENTAL) row on before the shots. */
 		bool bRealScale{false};
+		/** Rio 09.10 (playtest 17): drawn= moves the GALAXY STARS slider (every star drawn: placed + GPU points). */
+		double DrawnStars{-1.0};
+		/** Rio 09.10 (playtest 32): orbit= moves the home planet's ORBIT DISTANCE / AU before the shots, then logs where it
+		 * stands after the rebuild (it snapped back under REAL SCALE). */
+		double OrbitAu{-1.0};
+		int32 OrbitStage{0};
 		bool bWorldApplied{false};
 		int32 Step{0};
 		bool bStepRequested{false};
@@ -240,6 +247,13 @@ namespace APSGenerationShotsPrivate
 				UE_LOG(LogTemp, Log, TEXT("[APS.MenuShots] REAL SCALE on (active=%d)"), VM->IsRealScaleActive() ? 1 : 0);
 				bChanged = true;
 			}
+			if (GShots.DrawnStars > 0.0)
+			{
+				VM->SetGalaxyDrawnStars(GShots.DrawnStars);
+				UE_LOG(LogTemp, Log, TEXT("[APS.MenuShots] STARS slider -> %.0f: target %lld (ceiling %d)"),
+					GShots.DrawnStars, VM->GetGalaxyDrawnStarTarget(), VM->GetGalaxyDrawnStarCeiling());
+				bChanged = true;
+			}
 			if (bChanged)
 			{
 				UE_LOG(LogTemp, Log, TEXT("[APS.MenuShots] world: stars=%.0f cluster size=%s type=%s population=%s; galaxy population=%s composition=%s"),
@@ -248,6 +262,34 @@ namespace APSGenerationShotsPrivate
 				GShots.ReadySeconds = 0.0;
 				return true;
 			}
+		}
+		if (GShots.OrbitAu > 0.0 && GShots.OrbitStage < 3)
+		{
+			// Rio 09.10 (playtest 32): PLANET of the home world, the slider's value, then the value after the rebuild.
+			GShots.ReadySeconds = 0.0;
+			if (GShots.OrbitStage == 0)
+			{
+				// Selected the way a click on it selects it (the SELECTED PLANET panel needs a selected planet).
+				const AAstroGenerator* Generator = VM->GetPreviewGenerator();
+				if (!Generator || !IsValid(Generator->HomePlanet) || !VM->FocusPreviewBody(Generator->HomePlanet))
+				{
+					VM->SetPreviewFocus(EAstroPreviewFocus::HomePlanet);
+				}
+			}
+			else if (GShots.OrbitStage == 1)
+			{
+				UE_LOG(LogTemp, Log, TEXT("[APS.MenuShots] orbit: editable=%d before %.4f AU, asking %.4f AU (real scale %d)"),
+					VM->CanEditSelectedPlanetOrbit() ? 1 : 0, VM->GetSelectedPlanetOrbitDistanceAu(), GShots.OrbitAu,
+					VM->IsRealScaleActive() ? 1 : 0);
+				VM->SetSelectedPlanetOrbitDistanceAu(GShots.OrbitAu);
+			}
+			else
+			{
+				UE_LOG(LogTemp, Log, TEXT("[APS.MenuShots] orbit: after the rebuild %.4f AU (asked %.4f), manual edit %d"),
+					VM->GetSelectedPlanetOrbitDistanceAu(), GShots.OrbitAu, VM->HasSelectedPlanetOrbitEdit() ? 1 : 0);
+			}
+			++GShots.OrbitStage;
+			return true;
 		}
 		if (GShots.Step >= UE_ARRAY_COUNT(Shots))
 		{
@@ -393,6 +435,8 @@ static FAutoConsoleCommand GAPSGenerationShotsCommand(
 			else if (Key.Equals(TEXT("gdens"), ESearchCase::IgnoreCase)) GShots.GalaxyDensity = FCString::Atod(*Value);
 			else if (Key.Equals(TEXT("gcomp"), ESearchCase::IgnoreCase)) GShots.GalaxyComposition = Value;
 			else if (Key.Equals(TEXT("realscale"), ESearchCase::IgnoreCase)) GShots.bRealScale = FCString::Atoi(*Value) != 0;
+			else if (Key.Equals(TEXT("drawn"), ESearchCase::IgnoreCase)) GShots.DrawnStars = FCString::Atod(*Value);
+			else if (Key.Equals(TEXT("orbit"), ESearchCase::IgnoreCase)) GShots.OrbitAu = FCString::Atod(*Value);
 		}
 		GShots.Ticker = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateStatic(&Tick), 0.0f);
 		UE_LOG(LogTemp, Log, TEXT("[APS.MenuShots] armed label=%s planets=%d moons=%d quit=%d"), *GShots.Label,

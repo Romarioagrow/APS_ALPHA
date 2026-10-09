@@ -108,6 +108,16 @@ namespace
 		Model.SurfaceRoughnessScale = BodyOverride.SurfaceRoughnessScale;
 		Model.AtmosphereHeight = BodyOverride.AtmosphereHeight;
 		Model.CloudSettings = BodyOverride.CloudSettings.Sanitized();
+		// Rio 09.10 (A23, HOME START PLANET INDEX): a world pinned when the home slot moved keeps its own generated climate
+		// and physics on its orbit, whichever recipe (HOME or procedural) now builds that slot.
+		if (BodyOverride.Generated.bPinned)
+		{
+			Model.Temperature = BodyOverride.Generated.TemperatureK;
+			Model.PlanetZone = BodyOverride.Generated.Zone;
+			Model.PlanetDensity = BodyOverride.Generated.Density;
+			Model.Mass = static_cast<float>(BodyOverride.Generated.Mass);
+			Model.PlanetGravityStrength = BodyOverride.Generated.GravityStrength;
+		}
 	}
 
 	bool ApplyToPlanetModelDataPreservingMoonCenters(
@@ -634,6 +644,11 @@ bool AAstroGenerator::SavePreviewBodyEditOverride(
 		*InGeneratedWorld, StableKey);
 	BodyOverride.MoonCount = Cast<APlanet>(Body)
 		? FMath::Clamp(InGeneratedWorld->MoonsAmount, 0, 10) : INDEX_NONE;
+	// Rio 09.10 (A23): the editor buffer carries no climate; a pin set when the home slot moved stays with the body.
+	if (const FAPSPreviewBodyEditOverride* Existing = InGeneratedWorld->FindPreviewBodyEditOverride(StableKey))
+	{
+		BodyOverride.Generated = Existing->Generated;
+	}
 	InGeneratedWorld->SetPreviewBodyEditOverride(StableKey, BodyOverride);
 	UE_LOG(LogTemp, Verbose,
 		TEXT("[APS.PreviewBodyEdit] Saved %s seed=%d feature=%.3f relief=%.3f land=%.3f mountain=%.3f crater=%.3f roughness=%.3f"),

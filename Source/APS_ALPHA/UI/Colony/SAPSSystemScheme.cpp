@@ -8,6 +8,9 @@
 #include "APS_ALPHA/Actors/Astro/PlanetarySystem.h"
 #include "APS_ALPHA/Actors/Astro/Star.h"
 #include "APS_ALPHA/Actors/Astro/StarSystem.h"
+#include "APS_ALPHA/Core/Enums/StarSpectralClass.h"
+#include "APS_ALPHA/Core/Enums/StellarType.h"
+#include "APS_ALPHA/UI/Colony/APSColonyTerminalSubsystem.h"
 #include "APS_ALPHA/UI/Style/APSMenuChrome.h"
 #include "APS_ALPHA/UI/Style/APSSlateLineGuard.h"
 #include "Brushes/SlateRoundedBoxBrush.h"
@@ -17,6 +20,7 @@
 #include "Framework/Application/SlateApplication.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
+#include "HAL/IConsoleManager.h"
 #include "Rendering/DrawElements.h"
 #include "Rendering/SlateRenderer.h"
 #include "Styling/AppStyle.h"
@@ -26,12 +30,15 @@
 
 namespace APSSystemSchemePrivate
 {
-	// The largest planet's disc radius at zoom 1; every other disc uses the same kilometre scale.
+	// The largest planet's disc radius at zoom 1 (the default view); every planet and moon uses the same kilometre scale.
+	// Rio 09.10 (item 33): smaller only where the lanes would not fit the view with it, and never under the second one.
 	constexpr double LargestPlanetPixels = 34.0;
-	// Bodies that would vanish at this scale keep a visible dot. Rio 06.10 ("the planets differ but look the same"): small,
-	// so a 3,600 km world and a 5,600 km one already differ at the default view where the star shows whole.
-	constexpr float MinimumPlanetPixels = 1.5f;
-	constexpr float MinimumMoonPixels = 1.5f;
+	constexpr double LargestPlanetLeastPixels = 10.0;
+	// Bodies that would vanish at this scale keep a visible dot (Rio 09.10: "all readable"; to scale above it).
+	constexpr float MinimumPlanetPixels = 2.5f;
+	constexpr float MinimumMoonPixels = 2.0f;
+	// A star never drawn smaller than this.
+	constexpr double MinimumStarPixels = 6.0;
 	// Between neighbouring slots (each slot fits its disc, its labels and its moon column).
 	constexpr double SlotGapPixels = 34.0;
 	// Above a lane's axis: the star's labels.
@@ -74,18 +81,13 @@ namespace APSSystemSchemePrivate
 		const double Designated = Designation.IsEmpty() ? 0.0 : NameDesignationGap + Measure(Designation, DesignationFont()).X;
 		return Measure(Name, NameFont()).X + Designated;
 	}
-	// Rio 04.10 ("what are these stars? it was fine"): a star is always a filled round disc inside its lane. Up to the
-	// lane's room it is whole and to scale; a larger one slides off the left edge (whole radius, up to twice the room) and
-	// then shows its round edge, flatter for the system's largest star, never an empty outline and never cut flat by
-	// the lane. Every step follows the size continuously, so zooming never jumps.
+	// Rio 04.10 ("what are these stars? it was fine"): a star is always a filled round disc inside its lane. Rio 09.10: in
+	// the default view every star is whole in its lane's room (the stars' own scale); zoomed in, the view's edges cut it.
 	constexpr double StarMarginPixels = 12.0;
 	constexpr double LaneMarginPixels = 12.0;
-	constexpr double StarSlideFrom = 1.0;
-	constexpr double StarSlideTo = 2.0;
-	constexpr double StarEdgeTo = 4.0;
-	// The part of a large star in view, as a fraction of its room: the smallest star of the system and the largest.
-	constexpr double StarEdgeSmallest = 0.32;
-	constexpr double StarEdgeLargest = 0.50;
+
+	/** Test runs (aps.Test.Scheme): the scheme on screen, the newest one (the terminal builds its own on every open). */
+	TWeakPtr<SAPSSystemScheme> LiveScheme;
 
 	FLinearColor TypeColor(const EPlanetType Type)
 	{
@@ -145,6 +147,9 @@ void SAPSSystemScheme::Construct(const FArguments& InArgs)
 {
 	World = InArgs._World;
 	OnPicked = InArgs._OnPicked;
+	// Rio 09.10: zoomed in, the scheme runs past its edges; it is cut there instead of drawing over the terminal around it.
+	SetClipping(EWidgetClipping::ClipToBounds);
+	APSSystemSchemePrivate::LiveScheme = SharedThis(this);
 	Refresh();
 }
 
@@ -155,11 +160,47 @@ void SAPSSystemScheme::ShowSystem(AActor* Star)
 	{
 		PinnedStar = Star;
 		Picked = nullptr;
-		bFitPending = true;
-		FitPasses = 2;
+		Zoom = 1.0;
 		Pan = FVector2D::ZeroVector;
 	}
 	Refresh();
+}
+
+FText SAPSSystemScheme::StarClassText(const AStar& Star)
+{
+	// Rio 09.10 (item 33, "BHOUNKNOWN" on a star): FullSpectralName is AStar::GenerateFullSpectralName, the class, the
+	// subclass and the luminosity class glued from their enum names ("%s%d%s"). A black hole has subclass 0 and no
+	// luminosity class, so it read "BH0Unknown" (the zero looks like an O in the UI font). Compact objects say what they
+	// are (the stellar type owns them, as in StarGenerator; the spectral class as a fallback), and a part the generator
+	// could not name is left out. The name itself stays as generated: star names are derived from it.
+	const EStellarType Type = Star.StellarClass;
+	if (Type == EStellarType::BlackHole || Star.SpectralClass == ESpectralClass::BH)
+	{
+		return LOCTEXT("ClassBlackHole", "BLACK HOLE");
+	}
+	if (Type == EStellarType::Pulsar)
+	{
+		return LOCTEXT("ClassPulsar", "PULSAR");
+	}
+	if (Type == EStellarType::Neutron || Star.SpectralClass == ESpectralClass::NS)
+	{
+		return LOCTEXT("ClassNeutron", "NEUTRON STAR");
+	}
+	if (Type == EStellarType::Protostar || Star.SpectralClass == ESpectralClass::PS)
+	{
+		return LOCTEXT("ClassProtostar", "PROTOSTAR");
+	}
+	FString Name = Star.FullSpectralName.IsNone() ? FString() : Star.FullSpectralName.ToString();
+	if (Name.StartsWith(TEXT("Unknown")))
+	{
+		Name.Reset();
+	}
+	Name.ReplaceInline(TEXT("Unknown"), TEXT(""));
+	if (Name.IsEmpty() && !Star.FullSpectralClass.IsNone())
+	{
+		Name = Star.FullSpectralClass.ToString();
+	}
+	return Name.IsEmpty() ? FText::GetEmpty() : FText::FromString(Name.ToUpper());
 }
 
 void SAPSSystemScheme::Refresh()
@@ -213,8 +254,7 @@ void SAPSSystemScheme::Refresh()
 		StarBody.RadiusKm = Star->RadiusKM > 0.0 ? Star->RadiusKM : static_cast<double>(Star->StarRadiusKM);
 		StarBody.Designation = FText::FromString(APSBodyDesignation::Of(Star));
 		StarBody.Name = Upper(Star->AstroName, LOCTEXT("Star", "STAR"));
-		StarBody.Detail = Star->FullSpectralName.IsNone() ? FText::GetEmpty()
-			: FText::FromString(Star->FullSpectralName.ToString().ToUpper());
+		StarBody.Detail = StarClassText(*Star);
 		StarBody.Color = FLinearColor(1.0f, 0.82f, 0.46f);
 		if (IsValid(Star->PlanetarySystem))
 		{
@@ -252,7 +292,6 @@ void SAPSSystemScheme::Refresh()
 		}
 		++Lanes;
 	}
-	LaidOutSize = FVector2D::ZeroVector;
 }
 
 void SAPSSystemScheme::Layout(const FVector2D& Size) const
@@ -270,15 +309,46 @@ void SAPSSystemScheme::Layout(const FVector2D& Size) const
 		LaidOutPan = FVector2D::ZeroVector;
 		return;
 	}
-	double LargestPlanetKm = 1.0;
-	double LargestStarKm = 1.0;
+	const double BaseLaneHeight = Size.Y / Lanes;
+	// Rio 09.10 (item 33, "the planets are all the same dots, although their sizes differ a lot"): the stars no longer set
+	// the planets' scale (fitted to the stars, every planet was under a pixel and got the same minimum dot). Planets and
+	// moons share one kilometre scale of their own: the system's largest planet LargestPlanetPixels, or less where a lane
+	// with its labels and moon column would not fit its share of the view, never under LargestPlanetLeastPixels.
+	double LargestPlanetKm = 0.0;
+	TArray<double> LaneLargestKm;
+	LaneLargestKm.Init(0.0, Lanes);
+	TArray<int32> MoonCounts;
+	MoonCounts.Init(0, Bodies.Num());
 	for (const FBody& Body : Bodies)
 	{
-		if (!Body.bStar) LargestPlanetKm = FMath::Max(LargestPlanetKm, Body.RadiusKm);
-		else LargestStarKm = FMath::Max(LargestStarKm, Body.RadiusKm);
+		if (Body.bStar) continue;
+		LargestPlanetKm = FMath::Max(LargestPlanetKm, Body.RadiusKm);
+		if (Body.bMoon && Bodies.IsValidIndex(Body.Parent)) ++MoonCounts[Body.Parent];
+		else if (!Body.bMoon && Body.Lane < Lanes) LaneLargestKm[Body.Lane] = FMath::Max(LaneLargestKm[Body.Lane], Body.RadiusKm);
 	}
-	PixelsPerKm = LargestPlanetPixels / LargestPlanetKm * Zoom;
-	const double BaseLaneHeight = Size.Y / Lanes;
+	double PlanetScale = 0.0;
+	if (LargestPlanetKm > 0.0)
+	{
+		PlanetScale = LargestPlanetPixels / LargestPlanetKm;
+		TArray<int32> LaneMoons;
+		LaneMoons.Init(0, Lanes);
+		for (int32 Index = 0; Index < Bodies.Num(); ++Index)
+		{
+			const FBody& Body = Bodies[Index];
+			if (!Body.bStar && !Body.bMoon && Body.Lane < Lanes) LaneMoons[Body.Lane] = FMath::Max(LaneMoons[Body.Lane], MoonCounts[Index]);
+		}
+		for (int32 Lane = 0; Lane < Lanes; ++Lane)
+		{
+			if (LaneLargestKm[Lane] <= 0.0) continue;
+			// The lane's height as LaneShape builds it below: its header, the largest disc twice, the label row and the moon
+			// column (rows of their minimum height).
+			const double MoonsBelow = LaneMoons[Lane] > 0 ? MoonGapPixels + LaneMoons[Lane] * (MoonRowPixels + 4.0) : 0.0;
+			const double Fits = 0.5 * (BaseLaneHeight - LaneHeaderPixels - LabelGapPixels - LabelRowHeight() - MoonsBelow
+				- LaneMarginPixels);
+			PlanetScale = FMath::Min(PlanetScale, Fits / LaneLargestKm[Lane]);
+		}
+		PlanetScale = FMath::Max(PlanetScale, LargestPlanetLeastPixels / LargestPlanetKm);
+	}
 	// First pass: each lane's largest planet disc (the axis and the label row follow it) and each planet's moon column.
 	TArray<double> LaneLargest;
 	LaneLargest.Init(MinimumPlanetPixels, Lanes);
@@ -289,7 +359,7 @@ void SAPSSystemScheme::Layout(const FVector2D& Size) const
 	for (int32 Index = 0; Index < Bodies.Num(); ++Index)
 	{
 		const FBody& Body = Bodies[Index];
-		const double Radius = Body.RadiusKm * PixelsPerKm;
+		const double Radius = Body.RadiusKm * PlanetScale;
 		if (Body.bMoon && Bodies.IsValidIndex(Body.Parent))
 		{
 			const double Dot = 2.0 * FMath::Max(Radius, static_cast<double>(MinimumMoonPixels));
@@ -344,45 +414,17 @@ void SAPSSystemScheme::Layout(const FVector2D& Size) const
 		StarRoom[Lane] = RoomOf(Height, Offset, LaneLargest[Lane]);
 		Top += Height;
 	}
-	// Rio 04.10 evening ("I cannot zoom out far enough to see the star whole"): the wheel's lower limit is the zoom at
-	// which every star fits its lane whole and to scale, with its planets at their smallest dots; the upper limit keeps
-	// the largest planet within about 40% of the view's height.
-	MaxZoom = FMath::Max(1.0, 0.4 * Size.Y / LargestPlanetPixels);
-	// Rio 06.10 (audit: the default view took the wheel's limit, capped at 0.25, so a small star with a gas giant opened
-	// smaller than its lane; and the fit was judged with the planets at their smallest dots): FitZoom is the uncapped zoom
-	// at which every star fits its lane whole, and the wheel's lower limit keeps its old cap. On the fit's second pass the
-	// zoom is a candidate, so the lanes are shaped with their real largest discs at it.
-	const bool bFitAtCandidate = bFitPending && FitPasses < 2;
-	double FitZoom = TNumericLimits<double>::Max();
-	double CandidateFitZoom = TNumericLimits<double>::Max();
+	// Rio 06.10 ("by default it should look like this", the star whole beside its planets): every star of the system on
+	// one scale, the planets' own or smaller, so that each star is whole in its lane's room. Rio 09.10: a star drawn
+	// smaller than the planets' scale says by how much on its plate (OnPaint), the same factor for every star of the system.
+	double StarScale = PlanetScale;
 	for (const FBody& Body : Bodies)
 	{
-		if (!Body.bStar || Body.RadiusKm <= 0.0 || Body.Lane >= Lanes) continue;
-		const double ZoomPerRoomPixel = LargestPlanetKm / (LargestPlanetPixels * Body.RadiusKm);
-		double Height = 0.0;
-		double Offset = 0.0;
-		LaneShape(MinimumPlanetPixels, LaneBelow[Body.Lane], Height, Offset);
-		const double Fit = 0.97 * RoomOf(Height, Offset, MinimumPlanetPixels) * ZoomPerRoomPixel;
-		FitZoom = FMath::Min(FitZoom, FMath::Max(Fit, 1.0e-5));
-		if (bFitAtCandidate)
+		if (Body.bStar && Body.RadiusKm > 0.0 && Body.Lane < Lanes)
 		{
-			const double Largest = FMath::Max(LaneLargest[Body.Lane], static_cast<double>(MinimumPlanetPixels));
-			LaneShape(Largest, LaneBelow[Body.Lane], Height, Offset);
-			CandidateFitZoom = FMath::Min(CandidateFitZoom, FMath::Max(0.97 * RoomOf(Height, Offset, Largest) * ZoomPerRoomPixel, 1.0e-5));
+			const double Fit = 0.97 * StarRoom[Body.Lane] / Body.RadiusKm;
+			StarScale = StarScale > 0.0 ? FMath::Min(StarScale, Fit) : Fit;
 		}
-	}
-	MinZoom = FMath::Min(0.25, FitZoom);
-	// The fit waits for a real size (a zero-size layout would judge it with lanes of no height).
-	if (bFitPending && Size.X > 1.0 && Size.Y > 1.0)
-	{
-		// Rio 06.10 ("by default it should look like this", the star whole beside its planets): a new system opens at the
-		// zoom where every star fits its lane whole and to scale, never more zoomed in than the base 1.0; the wheel zooms
-		// in from there. Two passes: the first from the smallest dots, the second at that candidate zoom.
-		Zoom = FMath::Clamp(bFitAtCandidate ? CandidateFitZoom : FitZoom, 1.0e-5, 1.0);
-		--FitPasses;
-		bFitPending = FitPasses > 0;
-		Layout(Size);
-		return;
 	}
 	double Along = 0.0;
 	double MoonY = 0.0;
@@ -393,32 +435,17 @@ void SAPSSystemScheme::Layout(const FVector2D& Size) const
 		const FBody& Body = Bodies[Index];
 		const int32 Lane = FMath::Clamp(Body.Lane, 0, Lanes - 1);
 		const double AxisY = Axes[Lane];
-		const double Radius = Body.RadiusKm * PixelsPerKm;
 		if (Body.bStar)
 		{
-			// Whole and to scale up to the lane's room; then the whole disc slides off the left edge until half of it is in
-			// view; then its edge flattens to the round cap whose chord at the left edge is the room's height again.
-			const double Room = StarRoom[Lane];
-			const double Scale = Radius / Room;
-			double DrawnRadius = FMath::Max(Radius, 6.0);
-			double RightEdge = 24.0 + 2.0 * DrawnRadius;
-			if (Scale > StarSlideTo)
-			{
-				const double Edge = Room * FMath::Lerp(StarEdgeSmallest, StarEdgeLargest, FMath::Clamp(Body.RadiusKm / LargestStarKm, 0.0, 1.0));
-				RightEdge = FMath::Lerp(Room, Edge, FMath::SmoothStep(StarSlideTo, StarEdgeTo, Scale));
-				DrawnRadius = (Room * Room + RightEdge * RightEdge) / (2.0 * RightEdge);
-			}
-			else if (Scale > StarSlideFrom)
-			{
-				DrawnRadius = Room;
-				RightEdge = FMath::Lerp(24.0 + 2.0 * Room, Room, FMath::SmoothStep(StarSlideFrom, StarSlideTo, Scale));
-			}
+			const double DrawnRadius = FMath::Max(Body.RadiusKm * StarScale, MinimumStarPixels);
+			const double RightEdge = 24.0 + 2.0 * DrawnRadius;
 			Radii[Index] = static_cast<float>(DrawnRadius);
 			Centres[Index] = FVector2D(RightEdge - DrawnRadius, AxisY);
 			Along = RightEdge + 48.0;
 			Right = FMath::Max(Right, RightEdge);
 			continue;
 		}
+		const double Radius = Body.RadiusKm * PlanetScale;
 		if (!Body.bMoon)
 		{
 			Radii[Index] = FMath::Max(static_cast<float>(Radius), MinimumPlanetPixels);
@@ -437,25 +464,42 @@ void SAPSSystemScheme::Layout(const FVector2D& Size) const
 		Centres[Index] = FVector2D(MoonLeft + Radii[Index], MoonY + Row * 0.5);
 		MoonY += Row + 4.0;
 	}
-	// The pan is applied last, within limits for this content (a zoom can change the content under a stored pan).
+	// Rio 09.10 ("when I turn the wheel they all drift apart differently"): the zoom used to resize the discs inside a layout
+	// that did not scale with them (slots as wide as their labels, a star sliding and flattening on its own curve, each
+	// lane differently), while the wheel moved the pan as if all of it had scaled around the cursor. Now everything above
+	// is the default view, and the zoom and the pan are one transform of it for every disc, lane and label row; labels
+	// keep their size at their bodies, and zoomed in the gaps between them only grow. The wheel stops where the largest
+	// planet's disc is about 40% of the view's height.
 	ContentSize = FVector2D(Right, Top);
-	LaidOutPan = ClampPan(Pan, Size);
-	for (FVector2D& Centre : Centres)
+	double LargestDisc = 8.0;
+	for (int32 Index = 0; Index < Bodies.Num(); ++Index)
 	{
-		Centre += LaidOutPan;
+		if (!Bodies[Index].bStar) LargestDisc = FMath::Max(LargestDisc, static_cast<double>(Radii[Index]));
+	}
+	MaxZoom = FMath::Max(1.0, 0.4 * Size.Y / LargestDisc);
+	Zoom = FMath::Clamp(Zoom, 1.0, MaxZoom);
+	PixelsPerKm = (PlanetScale > 0.0 ? PlanetScale : StarScale) * Zoom;
+	LaidOutPan = ClampPan(Pan, Size);
+	for (int32 Index = 0; Index < Bodies.Num(); ++Index)
+	{
+		Centres[Index] = Centres[Index] * Zoom + LaidOutPan;
+		Radii[Index] = static_cast<float>(Radii[Index] * Zoom);
 	}
 	for (int32 Lane = 0; Lane < Lanes; ++Lane)
 	{
-		LabelRows[Lane] = Axes[Lane] + LaneLargest[Lane] + LabelGapPixels + LaidOutPan.Y;
+		LabelRows[Lane] = (Axes[Lane] + LaneLargest[Lane]) * Zoom + LaidOutPan.Y + LabelGapPixels;
+		LaneTops[Lane] = LaneTops[Lane] * Zoom + LaidOutPan.Y;
+		LaneHeights[Lane] *= Zoom;
 	}
 }
 
 FVector2D SAPSSystemScheme::ClampPan(const FVector2D& Wanted, const FVector2D& Size) const
 {
 	// Never right of the scheme's left edge; to the left only until half the view still shows the scheme; vertically
-	// within the lanes (no pan while they fit).
-	const double MinX = FMath::Min(0.0, Size.X * 0.5 - ContentSize.X);
-	const double MinY = FMath::Min(0.0, Size.Y - ContentSize.Y);
+	// within the lanes (no pan while they fit). The scheme on screen is its laid-out size at the zoom.
+	const FVector2D Content = ContentSize * Zoom;
+	const double MinX = FMath::Min(0.0, Size.X * 0.5 - Content.X);
+	const double MinY = FMath::Min(0.0, Size.Y - Content.Y);
 	return FVector2D(FMath::Clamp(Wanted.X, MinX, 0.0), FMath::Clamp(Wanted.Y, MinY, 0.0));
 }
 
@@ -516,7 +560,7 @@ int32 SAPSSystemScheme::OnPaint(const FPaintArgs&, const FGeometry& Geometry, co
 	}
 	for (int32 Lane = 1; Lane < Lanes && Lane < LaneTops.Num(); ++Lane)
 	{
-		const double Y = LaneTops[Lane] + LaidOutPan.Y;
+		const double Y = LaneTops[Lane];
 		if (Y <= 0.0 || Y >= Size.Y) continue;
 		const TArray<FVector2D> LanePoints{FVector2D(0.0, Y), FVector2D(Size.X, Y)};
 		if (APSSlateLineGuard::IsDrawable(LanePoints))
@@ -545,8 +589,8 @@ int32 SAPSSystemScheme::OnPaint(const FPaintArgs&, const FGeometry& Geometry, co
 			}
 			if (Centre.X + Radius < -2.0) continue;
 			// Rio 04.10 ("what are these stars? it was fine"): the filled disc with a soft glow and a bright limb, always;
-			// Layout keeps it inside its lane, and the widget's left edge cuts the part that slid off (the limb is drawn
-			// only where it is in view).
+			// Layout keeps it whole in its lane, and zoomed in the widget's edges cut the part out of view (the limb is
+			// drawn only where it is in view on the left).
 			const float Span = FMath::Acos(static_cast<float>(FMath::Clamp(-Centre.X / Radius, -1.0, 1.0)));
 			const FVector2D ClipMin = Geometry.LocalToAbsolute(FVector2D::ZeroVector);
 			const FVector2D ClipMax = Geometry.LocalToAbsolute(Size);
@@ -564,10 +608,15 @@ int32 SAPSSystemScheme::OnPaint(const FPaintArgs&, const FGeometry& Geometry, co
 			// The star's labels on a dark plate (Rio 02.10: "the star's label drifts off somewhere"): a small star has them
 			// under its disc like a planet; a large one centred on the part of the disc in view, on the axis, so the
 			// label moves with the star under zoom and pan instead of sticking near the left edge.
-			// A star drawn smaller than to scale says by how much.
-			const double TrueRadius = Body.RadiusKm * PixelsPerKm;
-			const FText ScaleNote = TrueRadius > Radius * 1.05
-				? FText::Format(LOCTEXT("StarScaleNote", "SHOWN {0}x SMALLER"), APSUINumber::Number(FMath::RoundToInt(TrueRadius / Radius)))
+			// A star drawn smaller than the planets' scale says by how much. Rio 09.10 (item 33, "SHOWN 1x SMALLER"): the
+			// factor was rounded to whole numbers from 1.05 up; now under 10 with one decimal ("1.4x"), and said only
+			// when it rounds above 1. The zoom scales the star and the planets alike, so the factor holds at any zoom.
+			const double Factor = Radius > 0.0f ? Body.RadiusKm * PixelsPerKm / Radius : 1.0;
+			const double Shown = Factor < 10.0 ? FMath::RoundToDouble(Factor * 10.0) / 10.0 : FMath::RoundToDouble(Factor);
+			FNumberFormattingOptions FactorFormat;
+			FactorFormat.SetMaximumFractionalDigits(1);
+			const FText ScaleNote = Shown > 1.0
+				? FText::Format(LOCTEXT("StarScaleNote", "SHOWN {0}x SMALLER"), APSUINumber::Number(Shown, &FactorFormat))
 				: FText::GetEmpty();
 			const double NameLine = LineHeight(NameFont);
 			const double DetailLine = LineHeight(DetailFont);
@@ -637,18 +686,77 @@ int32 SAPSSystemScheme::OnPaint(const FPaintArgs&, const FGeometry& Geometry, co
 
 FReply SAPSSystemScheme::OnMouseWheel(const FGeometry& Geometry, const FPointerEvent& Event)
 {
-	const double Previous = Zoom;
-	// Rio 04.10 evening: zoomed out far enough, every star of the system shows whole and to scale (MinZoom).
-	// Rio 06.10: zooming scales the whole system; out no further than a little under the fitting view. Rio 06.10 (audit:
-	// the default view can open below that limit, and a wheel-out then jumped in): the limit never raises the zoom.
-	Zoom = FMath::Clamp(Zoom * FMath::Pow(1.2, Event.GetWheelDelta()), FMath::Min(MinZoom * 0.8, Zoom), FMath::Max(MaxZoom, 1.0));
-	// Keep the point under the cursor roughly in place (discs, slots and the lanes that grow with them follow the zoom);
-	// the next layout keeps the pan within the scheme (ClampPan).
-	const FVector2D Pointer = Geometry.AbsoluteToLocal(Event.GetScreenSpacePosition());
-	const double Ratio = Zoom / Previous;
-	Pan = FVector2D(FMath::Min(Pointer.X - (Pointer.X - LaidOutPan.X) * Ratio, 0.0),
-		FMath::Min(Pointer.Y - (Pointer.Y - LaidOutPan.Y) * Ratio, 0.0));
+	ZoomAt(Event.GetWheelDelta(), Geometry.AbsoluteToLocal(Event.GetScreenSpacePosition()));
 	return FReply::Handled();
+}
+
+void SAPSSystemScheme::ZoomAt(const double WheelSteps, const FVector2D& Local)
+{
+	// Rio 06.10: zooming scales the whole system. Rio 09.10 ("they all drift apart differently"): the layout is one
+	// transform of the default view (Layout), so keeping the point under the cursor in place is exact: the pan follows
+	// the zoom's ratio around it. Out no further than the default view (every star whole, the labels laid out to fit),
+	// in no further than MaxZoom; the pan stays within the scheme (ClampPan), which moves everything alike.
+	const double Previous = Zoom;
+	Zoom = FMath::Clamp(Zoom * FMath::Pow(1.2, WheelSteps), 1.0, FMath::Max(MaxZoom, 1.0));
+	Pan = ClampPan(Local - (Local - LaidOutPan) * (Zoom / Previous), LaidOutSize);
+}
+
+void SAPSSystemScheme::RunTestCommand(const TArray<FString>& Args, UWorld* World)
+{
+	// Rio 09.10 (item 33 A/B captures, test runs only): "open" (the default) opens the colony terminal on SYSTEM SCHEME;
+	// "zoom <wheel steps> [x y]" turns the wheel there over a point given as fractions of the scheme (its centre by
+	// default); "log" writes the view and every body's disc as the last frame drew them.
+	const FString Verb = Args.IsEmpty() ? FString(TEXT("open")) : Args[0];
+	if (Verb.Equals(TEXT("open"), ESearchCase::IgnoreCase))
+	{
+		constexpr int32 SchemeTab = 7;
+		UAPSColonyTerminalSubsystem* Terminal = World ? World->GetSubsystem<UAPSColonyTerminalSubsystem>() : nullptr;
+		if (Terminal)
+		{
+			Terminal->OpenTerminalTab(SchemeTab);
+		}
+		UE_LOG(LogTemp, Log, TEXT("[APS.Colony.Scheme] open: %s"), Terminal && Terminal->IsTerminalOpen()
+			? TEXT("SYSTEM SCHEME") : TEXT("no colony terminal (a generated game binds it)"));
+		return;
+	}
+	const TSharedPtr<SAPSSystemScheme> Scheme = APSSystemSchemePrivate::LiveScheme.Pin();
+	if (!Scheme.IsValid())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[APS.Colony.Scheme] %s: no scheme on screen (aps.Test.Scheme open first)"), *Verb);
+		return;
+	}
+	if (Verb.Equals(TEXT("zoom"), ESearchCase::IgnoreCase) && Args.Num() >= 2)
+	{
+		const FVector2D At = Args.Num() >= 4 ? FVector2D(FCString::Atod(*Args[2]), FCString::Atod(*Args[3])) : FVector2D(0.5, 0.5);
+		Scheme->ZoomAt(FCString::Atod(*Args[1]), Scheme->LaidOutSize * At);
+		UE_LOG(LogTemp, Log, TEXT("[APS.Colony.Scheme] zoom %s at (%.2f, %.2f): zoom=%.3f (max %.3f) pan=(%.1f, %.1f)"), *Args[1],
+			At.X, At.Y, Scheme->Zoom, Scheme->MaxZoom, Scheme->Pan.X, Scheme->Pan.Y);
+		return;
+	}
+	if (Verb.Equals(TEXT("log"), ESearchCase::IgnoreCase))
+	{
+		UE_LOG(LogTemp, Log, TEXT("[APS.Colony.Scheme] view size=(%.0f x %.0f) zoom=%.3f (max %.3f) pan=(%.1f, %.1f) km/px=%.1f bodies=%d"),
+			Scheme->LaidOutSize.X, Scheme->LaidOutSize.Y, Scheme->Zoom, Scheme->MaxZoom, Scheme->LaidOutPan.X, Scheme->LaidOutPan.Y,
+			Scheme->PixelsPerKm > 0.0 ? 1.0 / Scheme->PixelsPerKm : 0.0, Scheme->Bodies.Num());
+		for (int32 Index = 0; Index < Scheme->Bodies.Num() && Index < Scheme->Centres.Num(); ++Index)
+		{
+			const FBody& Body = Scheme->Bodies[Index];
+			UE_LOG(LogTemp, Log, TEXT("[APS.Colony.Scheme] %s %s %s km=%.0f centre=(%.1f, %.1f) r=%.2f %s"),
+				Body.bStar ? TEXT("star") : Body.bMoon ? TEXT("moon") : TEXT("planet"), *Body.Designation.ToString(),
+				*Body.Name.ToString(), Body.RadiusKm, Scheme->Centres[Index].X, Scheme->Centres[Index].Y, Scheme->Radii[Index],
+				*Body.Detail.ToString());
+		}
+		return;
+	}
+	UE_LOG(LogTemp, Warning, TEXT("[APS.Colony.Scheme] aps.Test.Scheme [open | zoom <wheel steps> [x y] | log]"));
+}
+
+namespace APSSystemSchemePrivate
+{
+	FAutoConsoleCommandWithWorldAndArgs TestSchemeCommand(TEXT("aps.Test.Scheme"),
+		TEXT("Test runs: aps.Test.Scheme [open | zoom <wheel steps> [x y] | log]: opens the colony terminal on SYSTEM SCHEME, ")
+		TEXT("turns the wheel over a point of the scheme (fractions of its size, the centre by default), logs every body's disc."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&SAPSSystemScheme::RunTestCommand));
 }
 
 FReply SAPSSystemScheme::OnMouseButtonDown(const FGeometry& Geometry, const FPointerEvent& Event)

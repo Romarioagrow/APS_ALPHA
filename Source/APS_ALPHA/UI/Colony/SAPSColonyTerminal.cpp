@@ -1727,8 +1727,10 @@ TSharedRef<SWidget> SAPSColonyTerminal::BuildScheme()
 		if (const AStar* Star = Cast<AStar>(Picked))
 		{
 			const double RadiusKm = Star->RadiusKM > 0.0 ? Star->RadiusKM : static_cast<double>(Star->StarRadiusKM);
+			// Rio 09.10 (item 33, "BHOUNKNOWN"): the class as the scheme says it, not the glued FullSpectralName.
+			const FText Class = SAPSSystemScheme::StarClassText(*Star);
 			return Field == 0 ? FText::FromString(FString::Printf(TEXT("%s  %s"), *Designation, *Star->AstroName.ToString().ToUpper()))
-				: Field == 1 ? FText::Format(LOCTEXT("SchemeStarKind", "STAR  /  {0}"), FText::FromName(Star->FullSpectralName))
+				: Field == 1 ? (Class.IsEmpty() ? LOCTEXT("SchemeStarKindOnly", "STAR") : FText::Format(LOCTEXT("SchemeStarKind", "STAR  /  {0}"), Class))
 				: FText::Format(LOCTEXT("SchemeStarSize", "Radius {0} km, {1} solar radii"), APSUINumber::Number(FMath::RoundToInt(RadiusKm)),
 					APSUINumber::Number(RadiusKm / 695700.0, &FNumberFormattingOptions().SetMaximumFractionalDigits(2)));
 		}

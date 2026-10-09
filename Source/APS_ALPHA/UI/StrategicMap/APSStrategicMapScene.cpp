@@ -914,21 +914,29 @@ FVector FAPSStrategicMapScene::GetFrameUp() const
 		return !OutNormal.IsNearlyZero();
 	};
 	FVector Normal = FVector::UpVector;
-	if (OrbitNormal(GetHomePlanet(), Normal))
+	bool bFound = OrbitNormal(GetHomePlanet(), Normal);
+	UWorld* LiveWorld = World.Get();
+	if (!bFound && LiveWorld)
 	{
-		return Normal;
-	}
-	if (UWorld* LiveWorld = World.Get())
-	{
-		for (TActorIterator<APlanet> It(LiveWorld); It; ++It)
+		for (TActorIterator<APlanet> It(LiveWorld); It && !bFound; ++It)
 		{
-			if (OrbitNormal(*It, Normal))
-			{
-				return Normal;
-			}
+			bFound = OrbitNormal(*It, Normal);
 		}
 	}
-	return FVector::UpVector;
+	if (!bFound)
+	{
+		Normal = FVector::UpVector;
+	}
+	// Rio 09.10 ("on the map everything is upside down: I click on me and I hang head down"): the orbit plane's normal has
+	// no preferred side, so the map could look at the system from below. It now looks from the side the player's own up
+	// (the piloted ship's, or the walker's) points to; the pawn holds still while the map is open, so the side stays put.
+	const APlayerController* Player = LiveWorld ? LiveWorld->GetFirstPlayerController() : nullptr;
+	if (const APawn* Pawn = Player ? Player->GetPawn() : nullptr;
+		Pawn && FVector::DotProduct(Normal, Pawn->GetActorUpVector()) < 0.0)
+	{
+		Normal = -Normal;
+	}
+	return Normal;
 }
 
 double FAPSStrategicMapScene::GetHomeRoomCm() const
