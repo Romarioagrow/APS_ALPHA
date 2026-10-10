@@ -10,6 +10,7 @@
 #include "APS_ALPHA/Actors/Tech/Colony.h"
 #include "APS_ALPHA/Actors/Tech/SpaceHeadquarters.h"
 #include "APS_ALPHA/Core/Instances/MainGameplayInstance.h"
+#include "APS_ALPHA/Core/Model/APSWorldRules.h"
 #include "APS_ALPHA/Core/Model/SpawnParameters.h"
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationIdentityComponent.h"
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationJournalSubsystem.h"
@@ -18,6 +19,8 @@
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationStarterActors.h"
 #include "APS_ALPHA/Gameplay/Civilizations/APSStarterDressing.h"
 #include "APS_ALPHA/Gameplay/Civilizations/Civilization.h"
+#include "APS_ALPHA/Gameplay/Expansion/APSInfrastructure.h"
+#include "APS_ALPHA/Gameplay/Origins/APSOrigins.h"
 #include "APS_ALPHA/Gameplay/Production/APSProductionSubsystem.h"
 #include "APS_ALPHA/Pawns/Characters/CustomGravityCharacter.h"
 #include "Camera/CameraActor.h"
@@ -792,6 +795,7 @@ AAPSColonyModule* UAPSColonyConstructionSubsystem::RestoreModule(const FName Mod
 		Module->AttachToActor(Parent, FAttachmentTransformRules::KeepWorldTransform);
 	}
 	BuiltModules.Add(Module);
+	OnModuleStood(ModuleId, true);
 	UE_LOG(LogAPSColonyConstruction, Log, TEXT("[APS.Colony.Build] restored %s beside %s"), *ModuleId.ToString(),
 		*GetNameSafe(Anchor));
 	return Module;
@@ -809,6 +813,35 @@ void UAPSColonyConstructionSubsystem::GetBuiltModules(const EAPSSpawnSite Site,
 		{
 			OutModules.Add(Built.Get());
 		}
+	}
+}
+
+int32 UAPSColonyConstructionSubsystem::CountBuilt(const FName ModuleId) const
+{
+	int32 Count = 0;
+	for (const TWeakObjectPtr<AAPSColonyModule>& Built : BuiltModules)
+	{
+		Count += Built.IsValid() && Built->GetModuleId() == ModuleId ? 1 : 0;
+	}
+	return Count;
+}
+
+void UAPSColonyConstructionSubsystem::OnModuleStood(const FName ModuleId, const bool bRestored)
+{
+	UWorld* World = GetWorld();
+	const FAPSColonyModuleSpec* Spec = FAPSColonyModuleCatalogue::Find(ModuleId);
+	if (!World || !Spec)
+	{
+		return;
+	}
+	if (FAPSInfrastructure* Infrastructure = APSInfrastructureFind(World))
+	{
+		Infrastructure->RefreshRates();
+	}
+	// A restored module's token came back with the save; only a module built now opens one.
+	if (!bRestored && !Spec->UnlocksToken.IsNone() && APSWorldRules::IsLadder(World))
+	{
+		APSProgressionTokens::Grant(World, Spec->UnlocksToken, APSColonyConstruction::JournalCategory);
 	}
 }
 
@@ -992,6 +1025,7 @@ bool UAPSColonyConstructionSubsystem::MaterializeJob(const EAPSSpawnSite Kind, F
 	BuiltModules.Add(Module);
 	JobNotes.Remove(Job.JobId);
 	JobRetrySeconds.Remove(Job.JobId);
+	OnModuleStood(ModuleId, false);
 	UAPSCivilizationJournalSubsystem::Post(this, JournalCategory, FText::Format(
 		LOCTEXT("Built", "Built: {0} beside {1}."), Spec->Name, SiteName(Kind)));
 	UE_LOG(LogAPSColonyConstruction, Log,

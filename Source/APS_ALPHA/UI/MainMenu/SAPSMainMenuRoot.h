@@ -144,9 +144,19 @@ private:
 	void HandleThemeChanged();
 	void RebuildCurrentPage();
 	FDelegateHandle ThemeChangedHandle;
-	/** Rio 06.10: SINGLE GAME's maps as a grid of cards with a rendered preview (Content/Slate/MapPreviews). */
+	/** Rio 06.10: SINGLE GAME's maps as a grid of cards with a rendered preview (Content/Slate/MapPreviews). Rio 09.10:
+	 * plus the authored worlds (APSAuthoredWorlds): presets of the generator, one card each, a click applies the preset
+	 * and opens the generation screen with its levels locked. */
 	TSharedRef<SWidget> BuildAuthoredMapGrid();
 	TSharedPtr<FSlateBrush> MapPreviewBrush;
+	/** thumb.png of each authored world, loaded once per card id. */
+	TMap<FString, TSharedPtr<FSlateBrush>> AuthoredWorldBrushes;
+	FReply PlayAuthoredWorld(FString Id);
+	/** Rio 07–09.10 (concept §2): the MODE row (ORIGIN / SANDBOX / SPACE TRIPS) and, for ORIGIN, the origin chips on
+	 * NEW WORLD; the knobs live on the menu's world model (APSWorldRules). */
+	TSharedRef<SWidget> BuildNewWorldRulesRows();
+	FReply SetNewWorldMode(uint8 Mode);
+	FReply SetNewWorldOrigin(uint8 Origin);
 	/** Rio 06.10: the SETTINGS page's open tab, kept while a theme switch rebuilds the page. */
 	EAPSSettingsTab SettingsTab{};
 	TSharedRef<SWidget> BuildLandingPage();

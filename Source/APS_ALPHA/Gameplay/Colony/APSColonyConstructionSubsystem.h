@@ -47,6 +47,8 @@ public:
 	bool GetSiteSnapshot(EAPSSpawnSite Site, FAPSProductionSnapshot& OutSnapshot) const;
 	/** Modules standing at a site, oldest first. */
 	void GetBuiltModules(EAPSSpawnSite Site, TArray<AAPSColonyModule*>& OutModules) const;
+	/** Rio 07-09.10, ORIGIN (T-06): how many modules of this id stand, at either site; the stocks and the Ancients read it. */
+	int32 CountBuilt(FName ModuleId) const;
 	/**
 	 * Loads (APSCivilizationSave): one saved module back at its site, placed relative to the site's anchor as it was.
 	 * Null while the site is not ready (the colony materializes after the load), so the caller tries again later.
@@ -99,6 +101,9 @@ private:
 	FGuid PilotStableId;
 	TMap<FGuid, FText> JobNotes;
 	TMap<FGuid, double> JobRetrySeconds;
+	/** Rio 07-09.10, ORIGIN (T-06): a module stands (built now, or back from a save): the stocks are recounted and, when built
+	 * now in the ladder, the token it opens is granted (the fabrication bay: the rover). */
+	void OnModuleStood(FName ModuleId, bool bRestored);
 	TArray<TWeakObjectPtr<AAPSColonyModule>> BuiltModules;
 	float PollAccumulator{0.0f};
 	bool bDefinitionsRegistered{false};

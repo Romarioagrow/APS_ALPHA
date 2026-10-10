@@ -2,12 +2,15 @@
 
 #include "APS_ALPHA/Actors/Astro/PlanetaryBody.h"
 #include "APS_ALPHA/Core/Instances/MainGameplayInstance.h"
+#include "APS_ALPHA/Core/Model/APSWorldRules.h"
 #include "APS_ALPHA/Core/Model/SpawnParameters.h"
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationIdentityComponent.h"
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationMaterializationSubsystem.h"
 #include "APS_ALPHA/Gameplay/Civilizations/APSStarterDressing.h"
 #include "APS_ALPHA/Gameplay/Colony/APSColonyConstructionSubsystem.h"
 #include "APS_ALPHA/Gameplay/Colony/APSColonyModule.h"
+#include "APS_ALPHA/Gameplay/Expansion/APSMissions.h"
+#include "APS_ALPHA/Gameplay/Origins/APSOrigins.h"
 #include "APS_ALPHA/Gameplay/Spawn/APSSpawnPlacementSubsystem.h"
 #include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
 #include "APS_ALPHA/Pawns/Spaceships/APSShipFlightModel.h"
@@ -128,7 +131,20 @@ namespace APSGroundVehiclesLocal
 		const UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
 		const UMainGameplayInstance* Gameplay = GameInstance ? GameInstance->GetSubsystem<UMainGameplayInstance>() : nullptr;
 		const int32 Mask = Gameplay && IsValid(Gameplay->SpawnParameters) ? Gameplay->SpawnParameters->GroundVehicleMask : 7;
-		return (Mask & (1 << Index)) != 0;
+		if ((Mask & (1 << Index)) == 0)
+		{
+			return false;
+		}
+		// Rio 07-09.10, ORIGIN ladder (T-03): the colony's vehicles arrive as the ladder opens them (the fabrication bay
+		// prints the rover, the launch yard the hover and the drone); the spawner's retry brings each once its token is open.
+		if (!APSWorldRules::IsLadder(World))
+		{
+			return true;
+		}
+		const FAPSMissionBoard* Missions = APSMissionsFind(World);
+		const FName Token = Index == 0 ? APSProgressionTokens::VehiclesRover()
+			: Index == 1 ? APSProgressionTokens::VehiclesHover() : APSProgressionTokens::VehiclesDrone();
+		return Missions && Missions->IsUnlocked(Token);
 	}
 
 	bool HasMissing(const FWorldVehicles& State)

@@ -133,6 +133,11 @@ namespace APSInfrastructure
 		bool bGiantOnly{false};
 		/** Needs an unlock from a department mission first (APSMissions). */
 		bool bNeedsUnlock{false};
+		/**
+		 * Rio 07-09.10, ORIGIN ladder (T-07): a token of the ladder (APSProgressionTokens, kept by the mission board) that must
+		 * be open first; NAME_None: none. Read only when the world asks for the ladder (APSWorldRules::IsLadder).
+		 */
+		FName RequiresToken;
 		/** The look's size against the family's model (megastructures are larger). */
 		float VisualScale{1.0f};
 

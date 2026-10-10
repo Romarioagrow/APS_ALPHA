@@ -1,5 +1,7 @@
 #include "APSColonyModuleCatalogue.h"
 
+#include "APS_ALPHA/Gameplay/Origins/APSOrigins.h"
+
 #define LOCTEXT_NAMESPACE "APSColonyModules"
 
 namespace APSColonyModuleParts
@@ -85,6 +87,7 @@ namespace APSColonyModuleParts
 				"Pressurised quarters for the first crew: bunks, galley and an airlock facing the base.");
 			Spec.SizeCm = FVector(1000.0, 1400.0, 700.0);
 			Spec.BuildSeconds = 20.0;
+			Spec.YieldPerMinute[4] = 1.0f;
 			Spec.bFoundation = true;
 			for (const double X : {-200.0, 200.0})
 			{
@@ -116,6 +119,7 @@ namespace APSColonyModuleParts
 				"Glass walls over hydroponic beds that feed the colony; grow lamps keep them going at night.");
 			Spec.SizeCm = FVector(900.0, 1300.0, 500.0);
 			Spec.BuildSeconds = 16.0;
+			Spec.YieldPerMinute[1] = 1.0f;
 			Spec.bFoundation = true;
 			for (const double X : {-210.0, 210.0})
 			{
@@ -205,6 +209,7 @@ namespace APSColonyModuleParts
 				"Six panels on posts, tilted toward the star at build time: power for the modules.");
 			Spec.SizeCm = FVector(900.0, 1400.0, 380.0);
 			Spec.BuildSeconds = 12.0;
+			Spec.YieldPerMinute[2] = 3.0f;
 			Spec.bFoundation = true;
 			Spec.bFaceSun = true;
 			for (const double X : {-220.0, 220.0})
@@ -229,6 +234,7 @@ namespace APSColonyModuleParts
 				"A relay antenna with a red beacon, linking the colony with the headquarters in orbit.");
 			Spec.SizeCm = FVector(500.0, 500.0, 1800.0);
 			Spec.BuildSeconds = 14.0;
+			Spec.YieldPerMinute[3] = 1.0f;
 			Spec.bFoundation = true;
 			Spec.Parts.Add(Shape(EShape::Cube, FVector(0.0, 0.0, 110.0), FVector(300.0, 300.0, 220.0), Hull));
 			Spec.Parts.Add(Shape(EShape::Cylinder, FVector(0.0, 0.0, 900.0), FVector(40.0, 40.0, 1400.0), Metal));
@@ -242,6 +248,34 @@ namespace APSColonyModuleParts
 			Spec.Lights.Add(Light(FVector(0.0, 0.0, 1660.0), Red, 600.0f, 2500.0f));
 		}
 		{
+			// Rio 07-09.10, ORIGIN (T-06): the colony's workshop; in the ladder the first rover is assembled here.
+			FAPSColonyModuleSpec& Spec = Catalogue.AddDefaulted_GetRef();
+			Spec.Id = TEXT("Fab");
+			Spec.Site = EAPSSpawnSite::Surface;
+			Spec.Name = LOCTEXT("FabName", "FABRICATION BAY");
+			Spec.Description = LOCTEXT("FabDescription",
+				"A roofed bay with a printer and a hoist: spares for every machine, and the colony's first rover.");
+			Spec.SizeCm = FVector(1100.0, 1300.0, 650.0);
+			Spec.BuildSeconds = 18.0;
+			Spec.bFoundation = true;
+			Spec.YieldPerMinute[0] = 2.0f;
+			Spec.UnlocksToken = APSProgressionTokens::VehiclesRover();
+			// Floor slab, two side walls and a back wall, a roof with a hoist beam; the bay opens toward the base (+X).
+			Spec.Parts.Add(Shape(EShape::Cube, FVector(0.0, 0.0, 15.0), FVector(1000.0, 1200.0, 30.0), Metal));
+			Spec.Parts.Add(Shape(EShape::Cube, FVector(-100.0, -580.0, 300.0), FVector(800.0, 40.0, 560.0), Hull));
+			Spec.Parts.Add(Shape(EShape::Cube, FVector(-100.0, 580.0, 300.0), FVector(800.0, 40.0, 560.0), Hull));
+			Spec.Parts.Add(Shape(EShape::Cube, FVector(-480.0, 0.0, 300.0), FVector(40.0, 1200.0, 560.0), Hull));
+			Spec.Parts.Add(Shape(EShape::Cube, FVector(-100.0, 0.0, 600.0), FVector(800.0, 1200.0, 40.0), Hull));
+			Spec.Parts.Add(Trim(EShape::Cube, FVector(-100.0, 0.0, 560.0), FVector(760.0, 30.0, 30.0), Amber));
+			Spec.Parts.Add(Trim(EShape::Cube, FVector(260.0, 0.0, 560.0), FVector(30.0, 1100.0, 30.0), Dark));
+			// The printer at the back wall and its lit screen; two marker lamps at the roof's open edge.
+			Spec.Parts.Add(Shape(EShape::Cube, FVector(-380.0, 0.0, 170.0), FVector(140.0, 300.0, 280.0), Metal));
+			Spec.Parts.Add(Glow(EShape::Cube, FVector(-305.0, 0.0, 200.0), FVector(6.0, 200.0, 120.0), Cyan, 10.0f));
+			Spec.Parts.Add(Glow(EShape::Cube, FVector(290.0, -560.0, 590.0), FVector(20.0, 20.0, 20.0), Amber, 20.0f));
+			Spec.Parts.Add(Glow(EShape::Cube, FVector(290.0, 560.0, 590.0), FVector(20.0, 20.0, 20.0), Amber, 20.0f));
+			Spec.Lights.Add(Light(FVector(0.0, 0.0, 560.0), Warm, 600.0f, 2000.0f, FRotator(-90.0, 0.0, 0.0), 80.0f));
+		}
+		{
 			FAPSColonyModuleSpec& Spec = Catalogue.AddDefaulted_GetRef();
 			Spec.Id = TEXT("SolarWing");
 			Spec.Site = EAPSSpawnSite::Orbit;
@@ -250,6 +284,7 @@ namespace APSColonyModuleParts
 				"Two panel wings on a truss, bolted to the headquarters by a boom.");
 			Spec.SizeCm = FVector(400.0, 3000.0, 420.0);
 			Spec.BuildSeconds = 15.0;
+			Spec.YieldPerMinute[2] = 4.0f;
 			Spec.Parts.Add(Shape(EShape::Cube, FVector(0.0, 0.0, 210.0), FVector(80.0, 2900.0, 80.0), Metal));
 			Spec.Parts.Add(Shape(EShape::Cylinder, FVector(0.0, 0.0, 210.0), FVector(170.0, 170.0, 320.0), Hull,
 				FRotator(90.0, 0.0, 0.0)));
@@ -271,6 +306,7 @@ namespace APSColonyModuleParts
 				"Pressurised containers racked outside the station, freeing the hangar.");
 			Spec.SizeCm = FVector(900.0, 700.0, 500.0);
 			Spec.BuildSeconds = 10.0;
+			Spec.YieldPerMinute[0] = 1.0f;
 			Spec.Parts.Add(Shape(EShape::Cube, FVector(0.0, 0.0, 250.0), FVector(900.0, 60.0, 60.0), Metal));
 			const FLinearColor PodColors[] = {Amber, Hull, Cyan};
 			int32 Pod = 0;
@@ -294,6 +330,7 @@ namespace APSColonyModuleParts
 				"An amber marker lamp that guides ships to the headquarters.");
 			Spec.SizeCm = FVector(400.0, 400.0, 620.0);
 			Spec.BuildSeconds = 6.0;
+			Spec.YieldPerMinute[4] = 1.0f;
 			Spec.Parts.Add(Shape(EShape::Cylinder, FVector(0.0, 0.0, 200.0), FVector(160.0, 160.0, 300.0), Hull));
 			Spec.Parts.Add(Shape(EShape::Cylinder, FVector(0.0, 0.0, 360.0), FVector(220.0, 220.0, 30.0), Metal));
 			Spec.Parts.Add(Glow(EShape::Sphere, FVector(0.0, 0.0, 440.0), FVector(120.0, 120.0, 120.0), Amber, 25.0f));

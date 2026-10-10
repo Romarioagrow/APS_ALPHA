@@ -107,6 +107,9 @@ public:
 
 	/** Structure types unlocked by missions (catalogue types marked as needing it). */
 	bool IsUnlocked(FName Type) const { return Unlocked.Contains(Type); }
+	/** Rio 07.10 (ORIGIN ladder, concept §3 / T-03): grants a token (LAUNCH, STELLAR_DRIVE, RES_METALS…) or a structure
+	 * type outside a mission; saved with the board like a mission's unlock. No-op for NAME_None or a held token. */
+	void Unlock(FName Type);
 	/** Levels the department earned through missions (added to its level like work growth). */
 	int32 GetEarnedLevels(APSInfrastructure::EDepartment Department) const;
 

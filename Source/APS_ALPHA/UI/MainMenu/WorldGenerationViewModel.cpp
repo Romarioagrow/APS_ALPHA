@@ -7,6 +7,7 @@
 #include "APS_ALPHA/Core/Instances/MainGameplayInstance.h"
 #include "APS_ALPHA/Core/Model/GeneratedWorld.h"
 #include "APS_ALPHA/Core/Model/SpawnParameters.h"
+#include "APS_ALPHA/Core/Worlds/APSAuthoredWorlds.h"
 #include "APS_ALPHA/Core/Rendering/APSGalaxyGpuStars.h"
 #include "APS_ALPHA/Core/Planetary/APSPlanetSurfaceProfile.h"
 #include "APS_ALPHA/Core/Enums/CharSpawnPlace.h"
@@ -1517,6 +1518,15 @@ void UWorldGenerationViewModel::RegeneratePreviewVariant()
 				break;
 			}
 		}
+		// Rio 09.10 (AUTHORED_WORLDS §1): a level an authored world locks is never rerolled; the press says so instead.
+		if (APSAuthoredWorlds::IsScopeLocked(*GeneratedWorld, Scope))
+		{
+			UE_LOG(LogTemp, Log, TEXT("[APS.WorldGeneration] REGENERATE refused: authored world '%s' locks this level (scope %d, locks %d)"),
+				*GeneratedWorld->AuthoredWorldId, static_cast<int32>(Scope), GeneratedWorld->AuthoredLocks);
+			SetPreviewStatus(FText::Format(LOCTEXT("AuthoredWorldLocked", "{0}: THIS LEVEL IS AUTHORED AND LOCKED"),
+				FText::FromString(GeneratedWorld->AuthoredWorldId.ToUpper())), bPreviewReady);
+			return;
+		}
 		if (Scope == APSWorldRoll::EScope::System || Scope == APSWorldRoll::EScope::HomeSystemOnly)
 		{
 			GeneratedWorld->ClearPreviewBodyEditOverrides();
@@ -1583,6 +1593,11 @@ void UWorldGenerationViewModel::RollWorld(const TCHAR* Reason)
 	const bool bPlanetOnly = GenerationRoute == EAPSGenerationRoute::Planet
 		|| GeneratedWorld->AstroGenerationLevel == EAstroGenerationLevel::SinglePlanet
 		|| !GeneratedWorld->bGenerateHomeSystem;
+	if (APSAuthoredWorlds::IsScopeLocked(*GeneratedWorld, bPlanetOnly ? APSWorldRoll::EScope::PlanetOnly : APSWorldRoll::EScope::System))
+	{
+		UE_LOG(LogTemp, Log, TEXT("[APS.WorldGeneration] %s roll skipped: authored world '%s' is locked"), Reason, *GeneratedWorld->AuthoredWorldId);
+		return;
+	}
 	// A person gets a seed nobody rolled before; scripted runs (menu shots, bench) a reproducible chain from the
 	// current world seed, so their frames stay comparable between runs.
 	const int32 RollSeed = APSWorldRoll::IsInteractiveSession() ? APSWorldRoll::MakeFreshSeed()

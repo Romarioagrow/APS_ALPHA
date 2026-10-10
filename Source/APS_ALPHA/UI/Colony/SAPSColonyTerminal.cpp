@@ -3093,10 +3093,15 @@ void SAPSColonyTerminal::BuildChainPage()
 		];
 	}
 
-	// Every step: done and current ones in full with their briefs and rewards; the ones after as ???.
+	// Every step: done and current ones in full with their briefs and rewards. Rio 09.10: the locked ones after them are
+	// not listed at all (they showed as "LOCKED ???"); the next one appears when it comes up.
 	const FText Unknown = LOCTEXT("ChainUnknown", "???");
 	for (int32 Index = 0; Index < StepCount; ++Index)
 	{
+		if (!(Site->bStarted && (Index < Done || (Index == Done && !bComplete))))
+		{
+			continue;
+		}
 		const APSAncientsQuests::FStep& Step = Chain.Steps[Index];
 		const FName Template = APSAncientsQuests::TemplateOf(Site->Spec, Index);
 		const FAPSMission* Mission = nullptr;

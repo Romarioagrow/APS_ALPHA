@@ -41,6 +41,10 @@ namespace APSShipLightBudget
 		TEXT("(point/spot/rect components of the ship and of the actors attached to it; never a walker's, another ship's, a ")
 		TEXT("directional or a sky light) stop casting shadows, except the aps.Ship.LightShadowsKeepNearest nearest to the player's ")
 		TEXT("camera; each gets its authored shadows back once the ship has rested aps.Ship.HullRestoreRestSeconds."));
+	TAutoConsoleVariable<float> CVarLightShadowsHoldSeconds(
+		TEXT("aps.Ship.LightShadowsHoldSeconds"), 60.0f,
+		TEXT("Rio 09.10 late: once a moving ship's lights lost their shadows, they stay off this many seconds after its last motion ")
+		TEXT("(no off/on flicker while the motion notion flickers in the world flow). 0: back after aps.Ship.HullRestoreRestSeconds."));
 	TAutoConsoleVariable<int32> CVarLightShadowsKeepNearest(
 		TEXT("aps.Ship.LightShadowsKeepNearest"), 0,
 		TEXT("Rio 09.10 (aps.Ship.LightShadowsWhileMoving 0): this many of a moving ship's authored-shadowed, visible lights nearest ")
@@ -366,7 +370,11 @@ void FAPSShipLightBudget::Update(ASpaceship& Ship, FShip& State, const bool bHas
 	}
 	static const IConsoleVariable* const RestCVar =
 		IConsoleManager::Get().FindConsoleVariable(TEXT("aps.Ship.HullRestoreRestSeconds"));
-	const double RestSeconds = RestCVar ? FMath::Max(RestCVar->GetFloat(), 0.0f) : 1.0;
+	// Rio 09.10 late (0.6.4.3: "the material glitches back and forth at medium speed"): the motion notion flickers in the
+	// world flow, so the shadows went off and on; once cut they now stay cut for aps.Ship.LightShadowsHoldSeconds.
+	static IConsoleVariable* HoldCVar = IConsoleManager::Get().FindConsoleVariable(TEXT("aps.Ship.LightShadowsHoldSeconds"));
+	const double RestSeconds = FMath::Max(RestCVar ? FMath::Max(RestCVar->GetFloat(), 0.0f) : 1.0f,
+		HoldCVar ? FMath::Max(HoldCVar->GetFloat(), 0.0f) : 0.0f);
 	const bool bMoving = bCutFeature
 		&& (Motion || (State.bMoving && WorldSeconds - State.LastMotionWorldSeconds < RestSeconds));
 	if (bMoving)

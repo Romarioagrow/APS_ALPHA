@@ -179,6 +179,23 @@ public:
 	bool CanAfford(const TArray<APSInfrastructure::FAmount>& Cost) const;
 	void AddStock(APSInfrastructure::EResource Resource, float Value);
 
+	/**
+	 * Rio 07-09.10, ORIGIN ladder (T-08, concept section 5): the stocks open one by one. A closed stock is not earned and
+	 * not shown as income: its home yield is nothing, a structure that costs or yields it is refused unless it is the one
+	 * that opens it (the mining outpost opens metals, the gas harvester volatiles, the research station research, a claim
+	 * influence), and that one pays without the closed part. Energy is open from the first minute. Every stock is open
+	 * outside the ladder (SANDBOX, old saves).
+	 */
+	bool IsResourceOpen(APSInfrastructure::EResource Resource) const;
+	/** The RES_* token a type opens when it stands (APSProgressionTokens); NAME_None when it opens none. */
+	static FName OpensResourceToken(const APSInfrastructure::FType& Type);
+	/** The cost actually taken: the catalogue's, without a closed stock the type opens; nothing with unlimited resources. */
+	void EffectiveCost(const APSInfrastructure::FType& Type, TArray<APSInfrastructure::FAmount>& OutCost) const;
+	/** Takes a cost at once (a hull laid down in the ladder); false and nothing taken when it cannot be afforded. */
+	bool Spend(const TArray<APSInfrastructure::FAmount>& Cost);
+	/** Rates again: the colony's modules were built or a stock opened (colony construction, the Ancients, the tokens). */
+	void RefreshRates();
+
 	/** Summed rule changes (+0.1 = 10% faster). */
 	float SurveySpeedBonus() const;
 	float BuildSpeedBonus() const;
@@ -230,6 +247,11 @@ private:
 	float PilotGroundedSeconds{0.0f};
 	float Stocks[static_cast<int32>(APSInfrastructure::EResource::Count)]{};
 	float Rates[static_cast<int32>(APSInfrastructure::EResource::Count)]{};
+	/** Rio 07-09.10 (T-08): the stocks the ladder has not opened (bits in EResource order), set in RecountRates. */
+	uint8 ClosedMask{0};
+	/** The world's resources knob says unlimited: nothing is ever taken. */
+	bool bUnlimited{false};
+	float RulesClock{0.0f};
 	TOptional<FAPSInfrastructureSaveData> PendingRestore;
 	float RestoreWait{0.0f};
 	float SettleClock{0.0f};

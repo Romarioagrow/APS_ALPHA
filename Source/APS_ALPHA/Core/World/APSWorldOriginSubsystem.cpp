@@ -88,6 +88,12 @@ namespace APSWorldOrigin
 		TEXT("Rio 04.10 (from ~900 AU the home planet's layers slid apart on the map): 1 brings the strategic map's close ")
 		TEXT("view of something far (beyond 50 view distances and 1 AU from 0,0,0) near the origin, while the pilot flies a ")
 		TEXT("ship in open space; the pilot is the origin again as the map closes. 0: the map never shifts the world."));
+	TAutoConsoleVariable<int32> CVarRebaseFixups(
+		TEXT("aps.WorldOrigin.RebaseFixups"), 1,
+		TEXT("Rio 09.10 (0.6.4.3, colony arrival: walls, pads and props vanished and came back as the camera turned, a ")
+		TEXT("GPUScene.cpp:367 ensure right after 'rebase reason=colony arrival'): the engine's SetNewWorldOrigin path of a rebase ")
+		TEXT("skipped the fix-ups of ShiftWorldBy (instanced/spline mesh resend, Nanite re-file into the scene culling grid). ")
+		TEXT("1 runs them after every engine rebase. 0: as before."));
 	TAutoConsoleVariable<float> CVarMapShiftMaxAU(
 		TEXT("aps.WorldOrigin.MapShiftMaxAU"), 1000.0f,
 		TEXT("Rio 09.10 (critical: after the map looked at systems ~550 ly out, every station and ship near the pilot lay in one ")
@@ -2227,6 +2233,31 @@ bool UAPSWorldOriginSubsystem::RebaseNow(const FVector& WorldLocation, const TCH
 		UE_LOG(LogTemp, Warning, TEXT("[APS.WorldOrigin] engine refused the shift reason=%s (level visibility request pending)"),
 			Reason);
 		return false;
+	}
+	// Rio 09.10: the same fix-ups as ShiftWorldBy (see aps.WorldOrigin.RebaseFixups).
+	if (APSWorldOrigin::CVarRebaseFixups.GetValueOnGameThread() != 0)
+	{
+		for (TObjectIterator<UInstancedStaticMeshComponent> It; It; ++It)
+		{
+			UInstancedStaticMeshComponent* Instanced = *It;
+			if (IsValid(Instanced) && Instanced->GetWorld() == World && Instanced->IsRegistered() && Instanced->GetInstanceCount() > 0)
+			{
+				Instanced->UpdateComponentTransform(EUpdateTransformFlags::SkipPhysicsUpdate, ETeleportType::TeleportPhysics);
+				if (Instanced->IsA<UHierarchicalInstancedStaticMeshComponent>() && Instanced->IsRenderStateCreated())
+				{
+					Instanced->MarkRenderStateDirty();
+				}
+			}
+		}
+		for (TObjectIterator<USplineMeshComponent> It; It; ++It)
+		{
+			USplineMeshComponent* Spline = *It;
+			if (IsValid(Spline) && Spline->GetWorld() == World && Spline->IsRegistered() && Spline->IsRenderStateCreated())
+			{
+				Spline->MarkRenderStateDirty();
+			}
+		}
+		RefileNanite(nullptr, TArray<AActor*>());
 	}
 	const double ShiftMs = (FPlatformTime::Seconds() - StartSeconds) * 1000.0;
 	const FVector PawnAfter = Pawn ? Pawn->GetActorLocation() : FVector::ZeroVector;

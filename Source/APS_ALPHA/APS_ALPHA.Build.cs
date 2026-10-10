@@ -28,6 +28,8 @@ public class APS_ALPHA : ModuleRules
 		}
 		
 		PrivateDependencyModuleNames.AddRange(new string[] { "Slate", "SlateCore", "DirGravity", "EnhancedInput", "AssetRegistry", "RenderCore" });
+		// Rio 09.10 (authored worlds, Core/Worlds/APSAuthoredWorlds): presets of the generator as JSON files under Content.
+		PrivateDependencyModuleNames.AddRange(new string[] { "Json", "JsonUtilities" });
 		// Rio 03.10 (galaxy phase 3): GPU star points and galaxy glow (Plugins/APSStarRenderer, enabled in the .uproject).
 		PrivateDependencyModuleNames.Add("APSStarRenderer");
 

@@ -279,6 +279,9 @@ struct APS_ALPHA_API FAPSShipyardOption
 	ESpaceshipSizeClass SizeClass{ESpaceshipSizeClass::M};
 	FText Name;
 	float BuildSeconds{0.0f};
+	/** Rio 07-09.10, ORIGIN ladder (T-03): why it cannot be laid down now (empty: it can), and what it costs the stocks. */
+	FText Refusal;
+	FText CostText;
 };
 
 /** A ship on a shipyard's slipway or waiting for it. Every shipyard builds its first job at the same time. */

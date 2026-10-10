@@ -2,6 +2,9 @@
 #include "APS_ALPHA/Core/Controllers/GravityPlayerController.h"
 #include "APS_ALPHA/Core/World/APSWorldOriginSubsystem.h"
 #include "APS_ALPHA/Pawns/Characters/CustomGravityCharacter.h"
+#include "APS_ALPHA/Pawns/Characters/APSSpeedModeCharacter.h"
+#include "Camera/PlayerCameraManager.h"
+#include "GameFramework/CharacterMovementComponent.h"
 
 #include "Spaceship.h"
 #include "APSShipFlightModel.h"
@@ -1744,6 +1747,149 @@ namespace APSShipBenchmark
 	}
 
 	// -----------------------------------------------------------------------------------------------------------------
+	// Rio 10.10 night (freezes on foot, zero-G "small jerks"): an offscreen run's viewport gets no key input, so the walker
+	// is driven here: once the player's gravity character stands in the world, after a warm-up it walks straight on (pace 3,
+	// optional sprint, optional zero-G) and every frame's dt, walker place and camera place go to a CSV
+	// (Saved/Diagnostics/Walk); hitches come from [APS.Perf]. Test-only.
+	struct FTestWalk
+	{
+		TWeakObjectPtr<UWorld> World;
+		double Warmup{30.0};
+		double Seconds{30.0};
+		bool bSprint{false};
+		bool bZeroG{false};
+		bool bQuit{false};
+		double Waited{0.0};
+		double Elapsed{0.0};
+		bool bWalking{false};
+		FVector Dir{FVector::ZeroVector};
+		FVector CheckPlace{FVector::ZeroVector};
+		double CheckTime{0.0};
+		int32 Turns{0};
+		FString Csv;
+		FTSTicker::FDelegateHandle Handle;
+	};
+	FTestWalk GTestWalk;
+
+	bool TickTestWalk(float DeltaTime)
+	{
+		UWorld* World = nullptr;
+		if (GEngine)
+		{
+			for (const FWorldContext& Context : GEngine->GetWorldContexts())
+			{
+				if (Context.World() && Context.World()->IsGameWorld() && Context.World()->GetName().Contains(TEXT("L_WorldGeneration")))
+				{
+					World = Context.World();
+				}
+			}
+		}
+		APlayerController* Controller = World ? World->GetFirstPlayerController() : nullptr;
+		ACustomGravityCharacter* Walker = Controller ? Cast<ACustomGravityCharacter>(Controller->GetPawn()) : nullptr;
+		if (!GTestWalk.bWalking)
+		{
+			// As aps.Char.AutoProbe: the warm-up counts only once the spawn's surface hold has released the walker.
+			GTestWalk.Waited = Walker && !Walker->IsSurfaceHandoffSuspended() ? GTestWalk.Waited + DeltaTime : 0.0;
+			if (!Walker || GTestWalk.Waited < GTestWalk.Warmup)
+			{
+				return true;
+			}
+			GTestWalk.bWalking = true;
+			if (AAPSSpeedModeCharacter* Paced = Cast<AAPSSpeedModeCharacter>(Walker))
+			{
+				Paced->SetSpeedMode(EAPSSpeedMode::Open);
+			}
+			Walker->SetSprintHeldForTest(GTestWalk.bSprint);
+			if (GTestWalk.bZeroG)
+			{
+				Walker->ToggleManualZeroGOverride();
+			}
+			GTestWalk.Csv = TEXT("time,dt_ms,pawn_x,pawn_y,pawn_z,cam_x,cam_y,cam_z\n");
+			const UCharacterMovementComponent* Movement = Walker->GetCharacterMovement();
+			UE_LOG(LogTemp, Log, TEXT("[APS.TestWalk] start walker=%s sprint=%d zeroG=%d seconds=%.0f mode=%d moveInputIgnored=%d maxWalk=%.0f"),
+				*GetNameSafe(Walker), GTestWalk.bSprint ? 1 : 0, GTestWalk.bZeroG ? 1 : 0, GTestWalk.Seconds,
+				Movement ? static_cast<int32>(Movement->MovementMode.GetValue()) : -1, Controller->IsMoveInputIgnored() ? 1 : 0,
+				Movement ? Movement->MaxWalkSpeed : -1.f);
+		}
+		if (!Walker || GTestWalk.Elapsed >= GTestWalk.Seconds)
+		{
+			if (Walker)
+			{
+				Walker->SetSprintHeldForTest(false);
+			}
+			const FString Path = FPaths::ProjectSavedDir() / TEXT("Diagnostics/Walk")
+				/ FString::Printf(TEXT("%s_walk.csv"), *FDateTime::Now().ToString(TEXT("%Y%m%d_%H%M%S")));
+			FFileHelper::SaveStringToFile(GTestWalk.Csv, *Path);
+			UE_LOG(LogTemp, Log, TEXT("[APS.TestWalk] %s after %.1f s (%d turns at obstacles), csv=%s"),
+				Walker ? TEXT("finished") : TEXT("walker lost"), GTestWalk.Elapsed, GTestWalk.Turns,
+				*FPaths::ConvertRelativePathToFull(Path));
+			GTestWalk.Handle.Reset();
+			if (GTestWalk.bQuit)
+			{
+				FPlatformMisc::RequestExit(false, TEXT("aps.Test.Walk"));
+			}
+			return false;
+		}
+		GTestWalk.Elapsed += DeltaTime;
+		// Straight on, kept on the gravity plane on the ground (pace and sprint as the player). A walker that made under
+		// 30 cm in half a second (a wall of the base it starts beside) turns 75 deg about its up and goes on.
+		const FVector Up = Walker->GetActorUpVector();
+		if (GTestWalk.Dir.IsNearlyZero())
+		{
+			// Weightless: straight up, away from the base (nothing to bump into: a clean camera-follow measure).
+			GTestWalk.Dir = GTestWalk.bZeroG ? Up
+				: FVector::VectorPlaneProject(Walker->GetActorForwardVector(), Up).GetSafeNormal();
+			GTestWalk.CheckPlace = Walker->GetActorLocation();
+			GTestWalk.CheckTime = GTestWalk.Elapsed;
+		}
+		if (GTestWalk.Elapsed - GTestWalk.CheckTime >= 0.5)
+		{
+			if (FVector::Dist(Walker->GetActorLocation(), GTestWalk.CheckPlace) < 30.0)
+			{
+				GTestWalk.Dir = FQuat(Up, FMath::DegreesToRadians(75.0)).RotateVector(GTestWalk.Dir);
+				++GTestWalk.Turns;
+			}
+			GTestWalk.CheckPlace = Walker->GetActorLocation();
+			GTestWalk.CheckTime = GTestWalk.Elapsed;
+		}
+		if (!GTestWalk.bZeroG)
+		{
+			GTestWalk.Dir = FVector::VectorPlaneProject(GTestWalk.Dir, Up).GetSafeNormal();
+		}
+		// Forced: a run's start screens may leave the controller ignoring move input; the walker itself still walks.
+		Walker->AddMovementInput(GTestWalk.Dir, 1.0f, true);
+		// Last frame's walker and camera (both final for that frame): the camera's motion against the walker's.
+		const FVector Pawn = Walker->GetActorLocation();
+		const FVector Cam = Controller->PlayerCameraManager ? Controller->PlayerCameraManager->GetCameraLocation() : FVector::ZeroVector;
+		GTestWalk.Csv += FString::Printf(TEXT("%.4f,%.3f,%.2f,%.2f,%.2f,%.2f,%.2f,%.2f\n"), GTestWalk.Elapsed, DeltaTime * 1000.0,
+			Pawn.X, Pawn.Y, Pawn.Z, Cam.X, Cam.Y, Cam.Z);
+		return true;
+	}
+
+	void TestWalk(const TArray<FString>& Args, UWorld*)
+	{
+		GTestWalk = FTestWalk();
+		for (const FString& Arg : Args)
+		{
+			FString Key, Value;
+			if (Arg.Split(TEXT("="), &Key, &Value))
+			{
+				if (Key == TEXT("warmup")) GTestWalk.Warmup = FCString::Atod(*Value);
+				else if (Key == TEXT("duration")) GTestWalk.Seconds = FCString::Atod(*Value);
+				else if (Key == TEXT("sprint")) GTestWalk.bSprint = FCString::Atoi(*Value) != 0;
+				else if (Key == TEXT("zerog")) GTestWalk.bZeroG = FCString::Atoi(*Value) != 0;
+			}
+			else if (Arg.Equals(TEXT("quit"), ESearchCase::IgnoreCase))
+			{
+				GTestWalk.bQuit = true;
+			}
+		}
+		GTestWalk.Handle = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateStatic(&TickTestWalk));
+		UE_LOG(LogTemp, Log, TEXT("[APS.TestWalk] armed: warmup=%.0f duration=%.0f sprint=%d zeroG=%d quit=%d"), GTestWalk.Warmup,
+			GTestWalk.Seconds, GTestWalk.bSprint ? 1 : 0, GTestWalk.bZeroG ? 1 : 0, GTestWalk.bQuit ? 1 : 0);
+	}
+
+	// -----------------------------------------------------------------------------------------------------------------
 	// Rio 06.10 (star approach v2, stage A harness): galaxy targets, a registration watch, arrival stages and a steering
 	// pilot for the offscreen star approach runs (F:/ChatGPT/APOSFERA/work/flight/run_star_approach.ps1, checked by
 	// star_approach_check.py). Test-only: nothing here runs unless a run's console commands ask for it.
@@ -3272,6 +3418,11 @@ namespace APSShipBenchmark
 		TEXT("Test runs: toggles the F10 strategic map."), FConsoleCommandWithWorldDelegate::CreateStatic(&TestMap));
 	FAutoConsoleCommandWithWorld TestBuildModeCommand(TEXT("aps.Test.BuildMode"),
 		TEXT("Test runs: toggles build mode of the player on foot."), FConsoleCommandWithWorldDelegate::CreateStatic(&TestBuildMode));
+	FAutoConsoleCommandWithWorldAndArgs TestWalkCommand(TEXT("aps.Test.Walk"),
+		TEXT("Test runs: aps.Test.Walk [warmup=30] [duration=30] [sprint=0|1] [zerog=0|1] [quit]: once the player's gravity character ")
+		TEXT("stands in L_WorldGeneration, after the warm-up it walks straight on at pace 3 (sprint held, or weightless with G) and ")
+		TEXT("writes each frame's dt, walker and camera place to Saved/Diagnostics/Walk."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TestWalk));
 	FAutoConsoleCommandWithWorldAndArgs TestKeyCommand(TEXT("aps.Test.Key"),
 		TEXT("Test runs: aps.Test.Key <Key>: presses and releases a key through Slate, as the player would (G, Y, M...)."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateStatic(&TestKey));

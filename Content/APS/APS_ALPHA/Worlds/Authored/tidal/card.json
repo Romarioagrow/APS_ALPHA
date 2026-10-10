@@ -1,0 +1,15 @@
+{
+  "id": "tidal",
+  "order": 10,
+  "name": "TIDAL",
+  "subtitle": "A tundra moon in the shadow of its giant",
+  "lore": "A tundra moon in the shadow of its giant. For half of every day the sun is a rumour behind blue bands of weather; the other half, two lights in the sky. Nothing here was easy, and nothing here was ever alone.",
+  "place": "TUNDRA MOON   ·   K STAR",
+  "tags": ["ICE GIANT", "MOON", "K STAR"],
+  "locks": ["all"],
+  "origin": "ring",
+  "route": "civilization",
+  "spawn": "MoonSurface",
+  "playable": true,
+  "readiness": "ready"
+}

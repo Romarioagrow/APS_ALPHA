@@ -1,0 +1,193 @@
+﻿--- a/Public/WorldScapePreparedMesh.h
++++ b/Public/WorldScapePreparedMesh.h
+@@ -47,4 +47,8 @@
+     WORLDSCAPECORE_API void LogStats();
+     WORLDSCAPECORE_API bool CopyPreparedRenderBuffers(FStaticMeshVertexBuffers& Destination,
+         const FStaticMeshVertexBuffers& Source);
++    // APS 09.10 night: the same format/size validation without the CPU copy, so the render thread can upload
++    // straight from the worker-packed buffers (one copy instead of two).
++    WORLDSCAPECORE_API bool PreparedLayoutMatches(const FStaticMeshVertexBuffers& Destination,
++        const FStaticMeshVertexBuffers& Source);
+ }
+--- a/Private/WorldScapePreparedMesh.cpp
++++ b/Private/WorldScapePreparedMesh.cpp
+@@ -10,8 +10,11 @@
+ {
+     TAutoConsoleVariable<int32> CVarPrepared(TEXT("worldscape.PreparedMesh"), -1,
+         TEXT("Worker publication: -1 approved APS roots only (default), 0 off, 1 all APS tagged visual roots."));
+-    TAutoConsoleVariable<int32> CVarBudget(TEXT("worldscape.PreparedMeshBudgetMiB"), 384,
+-        TEXT("Global transient vertex-buffer reservation cap, 0-512 MiB. Exhaustion uses legacy publication."));
++    // APS 09.10 night: 384 MiB held ~10 rings of 256; a fast pass near the home planet (terrain + ocean on one lattice)
++    // needs ~14 rings per batch, so the rest fell back to the legacy path (GT UpdateSection 23-35 ms + RT 60-83 ms in
++    // Rio's 0.6.4.3 log). Transient memory only; 384 restores the old cap.
++    TAutoConsoleVariable<int32> CVarBudget(TEXT("worldscape.PreparedMeshBudgetMiB"), 1024,
++        TEXT("Global transient vertex-buffer reservation cap, 0-4096 MiB (default 1024; 384 = before 09.10). Exhaustion uses legacy publication."));
+     TAutoConsoleVariable<int32> CVarPrepareRender(TEXT("worldscape.PreparedRender"), 1,
+         TEXT("Also prepare packed CPU render buffers in the worker; requires PreparedMesh."));
+     std::atomic<int64> LiveBytes{0}, HighBytes{0}, Built{0}, Applied{0}, BudgetFallbacks{0};
+@@ -127,7 +130,7 @@
+         // actual TArray allocations are checked again after preparation.
+         Bytes += int64(Section->PlanetVertexBuffer.Num()) * (sizeof(FWorldScapeMeshVertex) * 2 + (bPack ? 64 : 0)) + 65536;
+     }
+-    const int64 Limit = int64(FMath::Clamp(CVarBudget.GetValueOnGameThread(), 0, 512)) * 1024 * 1024;
++    const int64 Limit = int64(FMath::Clamp(CVarBudget.GetValueOnGameThread(), 0, 4096)) * 1024 * 1024;
+     if (!Reserve(Bytes, Limit)) return {};
+     auto Result = MakeUnique<FWorldScapePreparedLod>();
+     Result->bPrepareRender = bPack;
+@@ -142,7 +145,16 @@
+ {
+     // Validate every format/size before any memcpy. Unknown layouts fall back to
+     // the original conversion loop, preserving future platform/plugin changes.
+-    if (D.PositionVertexBuffer.GetNumVertices() != S.PositionVertexBuffer.GetNumVertices()
++    if (!PreparedLayoutMatches(D, S)) return false;
++    FMemory::Memcpy(D.PositionVertexBuffer.GetVertexData(), S.PositionVertexBuffer.GetVertexData(), S.PositionVertexBuffer.GetAllocatedSize());
++    FMemory::Memcpy(D.ColorVertexBuffer.GetVertexData(), S.ColorVertexBuffer.GetVertexData(), S.ColorVertexBuffer.GetAllocatedSize());
++    FMemory::Memcpy(D.StaticMeshVertexBuffer.GetTangentData(), S.StaticMeshVertexBuffer.GetTangentData(), S.StaticMeshVertexBuffer.GetTangentSize());
++    FMemory::Memcpy(D.StaticMeshVertexBuffer.GetTexCoordData(), S.StaticMeshVertexBuffer.GetTexCoordData(), S.StaticMeshVertexBuffer.GetTexCoordSize());
++    return true;
++}
++bool WorldScapePreparedMesh::PreparedLayoutMatches(const FStaticMeshVertexBuffers& D, const FStaticMeshVertexBuffers& S)
++{
++    return !(D.PositionVertexBuffer.GetNumVertices() != S.PositionVertexBuffer.GetNumVertices()
+         || D.PositionVertexBuffer.GetStride() != S.PositionVertexBuffer.GetStride()
+         || D.ColorVertexBuffer.GetAllocatedSize() != S.ColorVertexBuffer.GetAllocatedSize()
+         || D.StaticMeshVertexBuffer.GetNumVertices() != S.StaticMeshVertexBuffer.GetNumVertices()
+@@ -150,12 +162,8 @@
+         || D.StaticMeshVertexBuffer.GetUseFullPrecisionUVs() != S.StaticMeshVertexBuffer.GetUseFullPrecisionUVs()
+         || D.StaticMeshVertexBuffer.GetUseHighPrecisionTangentBasis() != S.StaticMeshVertexBuffer.GetUseHighPrecisionTangentBasis()
+         || D.StaticMeshVertexBuffer.GetTangentSize() != S.StaticMeshVertexBuffer.GetTangentSize()
+-        || D.StaticMeshVertexBuffer.GetTexCoordSize() != S.StaticMeshVertexBuffer.GetTexCoordSize()) return false;
+-    FMemory::Memcpy(D.PositionVertexBuffer.GetVertexData(), S.PositionVertexBuffer.GetVertexData(), S.PositionVertexBuffer.GetAllocatedSize());
+-    FMemory::Memcpy(D.ColorVertexBuffer.GetVertexData(), S.ColorVertexBuffer.GetVertexData(), S.ColorVertexBuffer.GetAllocatedSize());
+-    FMemory::Memcpy(D.StaticMeshVertexBuffer.GetTangentData(), S.StaticMeshVertexBuffer.GetTangentData(), S.StaticMeshVertexBuffer.GetTangentSize());
+-    FMemory::Memcpy(D.StaticMeshVertexBuffer.GetTexCoordData(), S.StaticMeshVertexBuffer.GetTexCoordData(), S.StaticMeshVertexBuffer.GetTexCoordSize());
+-    return true;
++        || D.StaticMeshVertexBuffer.GetTexCoordSize() != S.StaticMeshVertexBuffer.GetTexCoordSize()
++        || D.PositionVertexBuffer.GetAllocatedSize() != S.PositionVertexBuffer.GetAllocatedSize());
+ }
+ int64 WorldScapePreparedMesh::PeakBytes() { return HighBytes.load(); }
+ void WorldScapePreparedMesh::Published() { ++Applied; }
+--- a/Private/WorldScapeMeshComponent.cpp
++++ b/Private/WorldScapeMeshComponent.cpp
+@@ -30,6 +30,7 @@
+ #include "Materials/MaterialRenderProxy.h"
+ #include "RenderUtils.h"
+ #include "SceneInterface.h"
++#include "Tasks/Task.h"
+ 
+ 
+ 
+@@ -46,6 +47,23 @@
+ DECLARE_CYCLE_STAT(TEXT("Create Mesh Section"), STAT_WorldScapeMesh_CreateMeshSection, STATGROUP_WorldScapeMesh);
+ DECLARE_CYCLE_STAT(TEXT("UpdateSection GT"), STAT_WorldScapeMesh_UpdateSectionGT, STATGROUP_WorldScapeMesh);
+ DECLARE_CYCLE_STAT(TEXT("UpdateSection RT"), STAT_WorldScapeMesh_UpdateSectionRT, STATGROUP_WorldScapeMesh);
++DECLARE_CYCLE_STAT(TEXT("UpdateSection RT CPU copy"), STAT_WorldScapeMesh_UpdateSectionRT_Copy, STATGROUP_WorldScapeMesh);
++DECLARE_CYCLE_STAT(TEXT("UpdateSection RT upload"), STAT_WorldScapeMesh_UpdateSectionRT_Upload, STATGROUP_WorldScapeMesh);
++DECLARE_CYCLE_STAT(TEXT("UpdateSection RT free"), STAT_WorldScapeMesh_UpdateSectionRT_Free, STATGROUP_WorldScapeMesh);
++
++// APS 09.10 night (Rio's 0.6.4.3 log, stat dumphitches): near planets the render thread stalled 50-110 ms in
++// UpdateSection RT for 36-60 sections per frame. Per section it copied the worker-packed buffers into the proxy's CPU
++// arrays, copied those again into the locked GPU buffers, then freed ~24 MB of transient arrays (old + new vertices).
++static TAutoConsoleVariable<int32> CVarAPSPublishSingleCopy(
++	TEXT("worldscape.PublishSingleCopy"), 1,
++	TEXT("1: upload a prepared section straight from the worker-packed buffers into the GPU buffers (one copy). ")
++	TEXT("The proxy's CPU-side vertex arrays then keep their previous contents (nothing reads them after init). ")
++	TEXT("0: copy into the CPU arrays first, then upload (before 09.10)."),
++	ECVF_RenderThreadSafe);
++static TAutoConsoleVariable<int32> CVarAPSPublishFreeAsync(
++	TEXT("worldscape.PublishFreeAsync"), 1,
++	TEXT("1: free the transient section arrays on a background task instead of the render thread. 0: before 09.10."),
++	ECVF_RenderThreadSafe);
+ DECLARE_CYCLE_STAT(TEXT("Get WorldScapeMesh Elements"), STAT_WorldScapeMesh_GetMeshElements, STATGROUP_WorldScapeMesh);
+ DECLARE_CYCLE_STAT(TEXT("Update bCollision"), STAT_WorldScapeMesh_UpdateCollision, STATGROUP_WorldScapeMesh);
+ 
+@@ -350,6 +368,17 @@
+ 				// Lock vertex buffer
+ 				const int32 NumVerts = SectionData->NewVertexBuffer.Num();
+ 
++				// APS 09.10: with worldscape.PublishSingleCopy the GPU buffers are filled straight from the packed
++				// worker buffers; otherwise (or for an unknown layout) the proxy's CPU arrays are refreshed first.
++				const FStaticMeshVertexBuffers* UploadSource = &Section->VertexBuffers;
++				if (SectionData->PackedBuffers && CVarAPSPublishSingleCopy.GetValueOnRenderThread() != 0
++					&& WorldScapePreparedMesh::PreparedLayoutMatches(Section->VertexBuffers, *SectionData->PackedBuffers))
++				{
++					UploadSource = SectionData->PackedBuffers.Get();
++				}
++				else
++				{
++				SCOPE_CYCLE_COUNTER(STAT_WorldScapeMesh_UpdateSectionRT_Copy);
+ 				// Iterate through vertex data, copying in new info
+ 				const bool bCopied = SectionData->PackedBuffers && WorldScapePreparedMesh::CopyPreparedRenderBuffers(Section->VertexBuffers, *SectionData->PackedBuffers);
+ 				if (!bCopied)
+@@ -367,36 +396,44 @@
+ 					Section->VertexBuffers.StaticMeshVertexBuffer.SetVertexUV(i, 3, Vertex.TextureCoordinate[3]);
+ 					Section->VertexBuffers.ColorVertexBuffer.VertexColor(i) = Vertex.Color;
+ 				}
++				}
+ 
+ 				{
++				SCOPE_CYCLE_COUNTER(STAT_WorldScapeMesh_UpdateSectionRT_Upload);
++				{
+ 					auto& VertexBuffer = Section->VertexBuffers.PositionVertexBuffer;
++					const auto& Source = UploadSource->PositionVertexBuffer;
+ 					void* VertexBufferData = RHICmdList.LockBuffer(VertexBuffer.VertexBufferRHI, 0, VertexBuffer.GetNumVertices() * VertexBuffer.GetStride(), RLM_WriteOnly);
+-					FMemory::Memcpy(VertexBufferData, VertexBuffer.GetVertexData(), VertexBuffer.GetNumVertices() * VertexBuffer.GetStride());
++					FMemory::Memcpy(VertexBufferData, Source.GetVertexData(), VertexBuffer.GetNumVertices() * VertexBuffer.GetStride());
+ 					RHICmdList.UnlockBuffer(VertexBuffer.VertexBufferRHI);
+ 				}
+ 
+ 				{
+ 					auto& VertexBuffer = Section->VertexBuffers.ColorVertexBuffer;
++					const auto& Source = UploadSource->ColorVertexBuffer;
+ 					void* VertexBufferData = RHICmdList.LockBuffer(VertexBuffer.VertexBufferRHI, 0, VertexBuffer.GetNumVertices() * VertexBuffer.GetStride(), RLM_WriteOnly);
+-					FMemory::Memcpy(VertexBufferData, VertexBuffer.GetVertexData(), VertexBuffer.GetNumVertices() * VertexBuffer.GetStride());
++					FMemory::Memcpy(VertexBufferData, Source.GetVertexData(), VertexBuffer.GetNumVertices() * VertexBuffer.GetStride());
+ 					RHICmdList.UnlockBuffer(VertexBuffer.VertexBufferRHI);
+ 				}
+ 
+ 				{
+ 					auto& VertexBuffer = Section->VertexBuffers.StaticMeshVertexBuffer;
++					const auto& Source = UploadSource->StaticMeshVertexBuffer;
+ 
+ 					void* VertexBufferData = RHICmdList.LockBuffer(VertexBuffer.TangentsVertexBuffer.VertexBufferRHI, 0, VertexBuffer.GetTangentSize(), RLM_WriteOnly);
+-					FMemory::Memcpy(VertexBufferData, VertexBuffer.GetTangentData(), VertexBuffer.GetTangentSize());
++					FMemory::Memcpy(VertexBufferData, Source.GetTangentData(), VertexBuffer.GetTangentSize());
+ 					RHICmdList.UnlockBuffer(VertexBuffer.TangentsVertexBuffer.VertexBufferRHI);
+ 				}
+ 
+ 				{
+ 					auto& VertexBuffer = Section->VertexBuffers.StaticMeshVertexBuffer;
++					const auto& Source = UploadSource->StaticMeshVertexBuffer;
+ 
+ 					void* VertexBufferData = RHICmdList.LockBuffer(VertexBuffer.TexCoordVertexBuffer.VertexBufferRHI, 0, VertexBuffer.GetTexCoordSize(), RLM_WriteOnly);
+-					FMemory::Memcpy(VertexBufferData, VertexBuffer.GetTexCoordData(), VertexBuffer.GetTexCoordSize());
++					FMemory::Memcpy(VertexBufferData, Source.GetTexCoordData(), VertexBuffer.GetTexCoordSize());
+ 					RHICmdList.UnlockBuffer(VertexBuffer.TexCoordVertexBuffer.VertexBufferRHI);
+ 				}
++				}
+ 
+ 
+ #if RHI_RAYTRACING && ENGINE_MAJOR_VERSION == 5
+@@ -429,7 +466,21 @@
+ 
+ 
+ 			// Free data sent from game thread
+-			delete SectionData;
++			// APS 09.10: the arrays are plain CPU memory (the packed buffers never had InitResource), so a background
++			// task may free them; the reservation is released there too.
++			SCOPE_CYCLE_COUNTER(STAT_WorldScapeMesh_UpdateSectionRT_Free);
++			if (CVarAPSPublishFreeAsync.GetValueOnRenderThread() != 0)
++			{
++				// The section is published: give its budget back now, so the next batch is not pushed onto the legacy
++				// path while the background task is still freeing (10.10 A/B: 0 -> 26 budget fallbacks otherwise).
++				SectionData->Reservation.Reset();
++				UE::Tasks::Launch(UE_SOURCE_LOCATION, [SectionData]() { delete SectionData; },
++					UE::Tasks::ETaskPriority::BackgroundNormal);
++			}
++			else
++			{
++				delete SectionData;
++			}
+ 		}
+ 	}
+ 

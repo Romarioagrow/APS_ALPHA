@@ -35,6 +35,17 @@ protected:
 
 public:
 	virtual void Tick(float DeltaTime) override;
+	/** Rio 09.10 night: the exact camera lag keeps its previous boom origin in the shifted world too. */
+	virtual void ApplyWorldOffset(const FVector& InOffset, bool bWorldShift) override;
+	/** Test runs (aps.Test.Walk): hold or release the sprint key as the player would (offscreen runs get no key input). */
+	void SetSprintHeldForTest(bool bHeld)
+	{
+		if (bHeld != bSprintHeld)
+		{
+			SprintHoldDuration = 0.f;
+		}
+		bSprintHeld = bHeld;
+	}
 	/** Aboard a ship the attachment carries the character; the ship is not also its movement base (it would move twice). */
 	virtual void SetBase(UPrimitiveComponent* NewBase, const FName BoneName = NAME_None, bool bNotifyActor = true) override;
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
@@ -260,6 +271,8 @@ protected:
 	// Input handlers
 	void HandleMove(const FInputActionValue& Value);
 	void HandleLook(const FInputActionValue& Value);
+	/** Rio 09.10: a subclass view (the first-person eye) may invert the vertical look. */
+	virtual bool ShouldInvertLookPitch() const { return false; }
 	void HandleJumpStarted();
 	void HandleJumpCompleted();
 	void HandleZeroGVertical(float Value);
@@ -284,6 +297,19 @@ protected:
 	bool HasSurfaceGravitySupport(const FVector& GravityDirection);
 	void UpdateCameraReferenceFrame();
 	void AlignCameraToGravity(float DeltaTime);
+	/**
+	 * Rio 09.10 night (zero-G "small jerks", aps.Character.ExactCameraLag): the spring arm's own location lag with lag
+	 * substepping changes its per-frame gain with the frame time (8.3/16.7 ms under VSync), so the trail behind the
+	 * character jumps by ~4 cm at 12 m/s and ~14 cm at 40 m/s. This lag is the exact first-order solution for a boom origin
+	 * moving linearly through the frame: at a steady speed the trail is the same whatever the frame times. It drives the
+	 * arm through TargetOffset and holds the engine lag at speed 0; bEnableCameraLag and CameraLagMaxDistance keep their
+	 * meaning (aboard, first person). Called once per frame after the boom has its final place.
+	 */
+	void UpdateExactCameraLag(float DeltaTime);
+	/** The lag speed the camera follows with (the rig's CameraLagSpeed, also while the exact lag holds the arm's at 0). */
+	float GetCameraLocationLagSpeed() const;
+	/** A subclass that moves the boom after this Tick (the first-person eye) calls UpdateExactCameraLag itself. */
+	virtual bool DefersExactCameraLag() const { return false; }
 	void NormalizeThirdPersonCameraRig();
 	void SynchronizeCharacterToCamera(float DeltaTime);
 	FVector GetCameraPlanarForward() const;
@@ -339,6 +365,12 @@ private:
 	FQuat AboardShipLastQuat = FQuat::Identity;
 	bool bAboardSavedCameraLag = false;
 	bool bAboardSavedCameraRotationLag = false;
+	/** Exact camera lag state: the trail (lagged origin minus boom origin) and last frame's boom origin. */
+	FVector ExactLagTrail = FVector::ZeroVector;
+	FVector ExactLagPrevOrigin = FVector::ZeroVector;
+	bool bExactLagValid = false;
+	/** The rig's lag speed taken over by the exact lag (the arm's own is held at 0 meanwhile). */
+	float ExactLagSpeed = 0.f;
 
 	UPROPERTY(Transient)
 	TSubclassOf<UAnimInstance> SurfaceAnimationClass;

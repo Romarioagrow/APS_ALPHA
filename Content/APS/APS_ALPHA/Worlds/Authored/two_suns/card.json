@@ -1,0 +1,15 @@
+{
+  "id": "two_suns",
+  "order": 20,
+  "name": "TWO SUNS",
+  "subtitle": "Two suns, two shadows, and grass to the horizon",
+  "lore": "Two suns, two shadows, and grass to the horizon. The second dawn comes forty minutes after the first; the colonists called the hour between them the quiet hour.",
+  "place": "SAVANNA   ·   G+K PAIR",
+  "tags": ["BINARY", "SAVANNA", "YOUNG STARS"],
+  "locks": ["all"],
+  "origin": "ark",
+  "route": "civilization",
+  "spawn": "PlanetSurface",
+  "playable": true,
+  "readiness": "ready"
+}

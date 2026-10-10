@@ -1,0 +1,15 @@
+{
+  "id": "ember",
+  "order": 50,
+  "name": "EMBER",
+  "subtitle": "The sun is dying slowly and beautifully",
+  "lore": "The sun is dying slowly and beautifully. It fills a third of the sky and gives less heat than a hearth; the ground makes up the difference. A few million years, the engineers say. Enough.",
+  "place": "VOLCANIC   ·   RED GIANT",
+  "tags": ["RED GIANT", "LAVA", "VOLCANIC"],
+  "locks": ["all"],
+  "origin": "ark",
+  "route": "civilization",
+  "spawn": "PlanetSurface",
+  "playable": true,
+  "readiness": "ready"
+}

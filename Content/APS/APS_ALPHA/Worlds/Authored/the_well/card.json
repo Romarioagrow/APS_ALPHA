@@ -1,0 +1,15 @@
+{
+  "id": "the_well",
+  "order": 30,
+  "name": "THE WELL",
+  "subtitle": "The sky bends here",
+  "lore": "The sky bends here. Half a light-year away a dead star folds the cluster's light around itself, and every child born on the basalt learns the shape of the lens before the alphabet.",
+  "place": "BASALT   ·   F STAR   ·   GLOBULAR",
+  "tags": ["BLACK HOLE", "GLOBULAR", "BASALT"],
+  "locks": ["all"],
+  "origin": "adrift",
+  "route": "civilization",
+  "spawn": "PlanetOrbit",
+  "playable": true,
+  "readiness": "black hole neighbour not guaranteed yet"
+}

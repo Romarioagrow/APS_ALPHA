@@ -1,0 +1,15 @@
+{
+  "id": "the_wheel",
+  "order": 80,
+  "name": "THE WHEEL",
+  "subtitle": "A galaxy with no hub",
+  "lore": "The galaxy is a wheel with no hub. Our sun rides the rim; look inward and there is nothing, look along the rim and there is everything. The colonists never stopped arguing about which way was forward.",
+  "place": "PANGEA   ·   F STAR   ·   RING GALAXY",
+  "tags": ["RING GALAXY", "PANGEA"],
+  "locks": ["all"],
+  "origin": "ring",
+  "route": "civilization",
+  "spawn": "PlanetOrbit",
+  "playable": true,
+  "readiness": "ready"
+}

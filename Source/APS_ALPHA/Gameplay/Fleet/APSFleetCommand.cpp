@@ -15,6 +15,7 @@
 #include "APS_ALPHA/Core/Instances/MainGameplayInstance.h"
 #include "APS_ALPHA/Core/Interfaces/ItemInfoInterface.h"
 #include "APS_ALPHA/Core/Planetary/APSAtmosphereModel.h"
+#include "APS_ALPHA/Core/Model/APSWorldRules.h"
 #include "APS_ALPHA/Core/Planetary/APSPlanetSurfaceProfile.h"
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationJournalSubsystem.h"
 #include "APS_ALPHA/Gameplay/Civilizations/Civilization.h"
@@ -23,6 +24,7 @@
 #include "APS_ALPHA/Gameplay/Expansion/APSStarSystems.h"
 #include "APS_ALPHA/Gameplay/Expansion/APSSystemMaterializer.h"
 #include "APS_ALPHA/Gameplay/Megastructures/APSMegastructures.h"
+#include "APS_ALPHA/Gameplay/Origins/APSOrigins.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
 #include "APS_ALPHA/Pawns/Spaceships/APSShipCatalog.h"
 #include "APS_ALPHA/UI/Colony/APSColonyTerminalSubsystem.h"
@@ -2702,6 +2704,59 @@ ASpaceShipyard* FAPSFleetCommand::FindShipyard() const
 	return Yards.IsEmpty() ? nullptr : Yards[0];
 }
 
+namespace APSFleetPrivate
+{
+	/** Rio 07-09.10, ORIGIN ladder (T-03): the token a hull class needs: the small hulls the monument's LAUNCH, M the hull's
+	 * STELLAR DRIVE, L and larger the road's GALAXY HULLS. */
+	FName HullToken(const ESpaceshipSizeClass SizeClass)
+	{
+		if (SizeClass <= ESpaceshipSizeClass::S) return APSProgressionTokens::Launch();
+		if (SizeClass == ESpaceshipSizeClass::M) return APSProgressionTokens::StellarDrive();
+		return APSProgressionTokens::GalaxyHulls();
+	}
+
+	/** What a hull costs the civilization's stocks in the ladder: metals and energy by class. */
+	void HullCost(const ESpaceshipSizeClass SizeClass, TArray<APSInfrastructure::FAmount>& OutCost)
+	{
+		static const float Metals[] = {60.0f, 100.0f, 160.0f, 400.0f, 900.0f, 1600.0f, 2600.0f, 4000.0f};
+		static const float Energy[] = {20.0f, 30.0f, 60.0f, 150.0f, 300.0f, 500.0f, 800.0f, 1200.0f};
+		const int32 Index = FMath::Clamp(static_cast<int32>(SizeClass), 0, 7);
+		OutCost.Reset();
+		APSInfrastructure::FAmount MetalsAmount;
+		MetalsAmount.Resource = APSInfrastructure::EResource::Metals;
+		MetalsAmount.Value = Metals[Index];
+		OutCost.Add(MetalsAmount);
+		APSInfrastructure::FAmount EnergyAmount;
+		EnergyAmount.Resource = APSInfrastructure::EResource::Energy;
+		EnergyAmount.Value = Energy[Index];
+		OutCost.Add(EnergyAmount);
+	}
+
+	/** The ladder's refusal for a hull class (empty when it may be laid down; nothing outside the ladder); OutCost is what
+	 * it will take. */
+	FText HullRefusal(const UWorld* World, const ESpaceshipSizeClass SizeClass, TArray<APSInfrastructure::FAmount>& OutCost)
+	{
+		OutCost.Reset();
+		if (!APSWorldRules::IsLadder(World))
+		{
+			return FText::GetEmpty();
+		}
+		const FName Token = HullToken(SizeClass);
+		const FAPSMissionBoard* Missions = APSMissionsFind(World);
+		if (!Missions || !Missions->IsUnlocked(Token))
+		{
+			return FText::Format(LOCTEXT("HullLocked", "LOCKED: {0} HULLS NEED {1}."), EnumText(SizeClass), APSProgressionTokens::Title(Token));
+		}
+		HullCost(SizeClass, OutCost);
+		const FAPSInfrastructure* Infrastructure = APSInfrastructureFind(World);
+		if (Infrastructure && !Infrastructure->CanAfford(OutCost))
+		{
+			return FText::Format(LOCTEXT("HullCost", "Needs {0}."), APSInfrastructure::DescribeAmounts(OutCost));
+		}
+		return FText::GetEmpty();
+	}
+}
+
 void FAPSFleetCommand::GetShipyardOptions(TArray<FAPSShipyardOption>& OutOptions) const
 {
 	OutOptions.Reset();
@@ -2738,6 +2793,10 @@ void FAPSFleetCommand::GetShipyardOptions(TArray<FAPSShipyardOption>& OutOptions
 		Name.ReplaceInline(TEXT("_"), TEXT(" "));
 		Option.Name = FText::FromString(Name.ToUpper());
 		Option.BuildSeconds = APSFleetPrivate::ClassBuildSeconds(Entry.SizeClass) / Industry;
+		// Rio 07-09.10, ORIGIN ladder (T-03): listed still, with why it cannot be laid down and what it costs.
+		TArray<APSInfrastructure::FAmount> Cost;
+		Option.Refusal = APSFleetPrivate::HullRefusal(LiveWorld, Entry.SizeClass, Cost);
+		Option.CostText = Cost.IsEmpty() ? FText::GetEmpty() : APSInfrastructure::DescribeAmounts(Cost);
 	}
 	OutOptions.Sort([](const FAPSShipyardOption& A, const FAPSShipyardOption& B)
 	{
@@ -2808,6 +2867,20 @@ FText FAPSFleetCommand::OrderShip(const FAPSShipyardOption& Option, ASpaceShipya
 	{
 		return FText::Format(LOCTEXT("SlipwayFull", "The slipway of {0} is full: {1} ships queued. Pick another shipyard."),
 			YardName, APSUINumber::Number(ShipyardQueueLimit));
+	}
+	// Rio 07-09.10, ORIGIN ladder (T-03): the hull class needs its token, and the hull is paid for from the stocks.
+	TArray<APSInfrastructure::FAmount> Cost;
+	if (const FText Refusal = APSFleetPrivate::HullRefusal(World.Get(), Option.SizeClass, Cost); !Refusal.IsEmpty())
+	{
+		return Refusal;
+	}
+	if (!Cost.IsEmpty())
+	{
+		FAPSInfrastructure* Infrastructure = APSInfrastructureFind(World.Get());
+		if (Infrastructure && !Infrastructure->Spend(Cost))
+		{
+			return FText::Format(LOCTEXT("HullCostNow", "Needs {0}."), APSInfrastructure::DescribeAmounts(Cost));
+		}
 	}
 	FAPSShipyardJob& Job = ShipyardQueue.AddDefaulted_GetRef();
 	Job.ShipClass = Option.ShipClass;

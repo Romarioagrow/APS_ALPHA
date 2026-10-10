@@ -525,7 +525,7 @@ namespace APSRenderSafetyLocal
 	 * Below native resolution that count is raised to aps.Render.TsrMotionSamples; at native, or 0, the engine value stays.
 	 * A still camera is unchanged (no velocity, no clamp). The GPU points (APS.Stars) are drawn after TSR: not affected.
 	 */
-	TAutoConsoleVariable<float> CVarTsrMotionSamples(TEXT("aps.Render.TsrMotionSamples"), 16.0f,
+	TAutoConsoleVariable<float> CVarTsrMotionSamples(TEXT("aps.Render.TsrMotionSamples"), 0.0f,
 		TEXT("Rio 09.10: TSR history samples kept on camera motion while the scene renders below the shown resolution ")
 		TEXT("(r.TSR.Velocity.WeightClampingSampleCount, engine 4): sub-pixel stars stop blinking while the camera turns. ")
 		TEXT("32 = as still (no clamp), 0 = off (engine value). At native resolution nothing changes."));

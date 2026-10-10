@@ -156,7 +156,7 @@ namespace APSSurfacePolicyPrivate
 		ECVF_Default);
 
 	TAutoConsoleVariable<float> CVarFreezeLiftRadii(
-		TEXT("aps.Surface.FreezeLiftRadii"), 2.0f,
+		TEXT("aps.Surface.FreezeLiftRadii"), 0.0f,
 		TEXT("Rio 09.10 (0.6.4, 4K: a moon left in cruise and a planet seen from ~4 radii drawn in part, the rest of the disc only ")
 		TEXT("the atmosphere shell): WorldScape lays its rings on a plane tangent to the sphere under its observer, so its terrain ")
 		TEXT("never reaches 90 deg from the observer's direction. While the leave freeze keeps an observer and the camera is farther ")

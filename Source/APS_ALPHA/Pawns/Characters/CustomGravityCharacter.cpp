@@ -54,6 +54,13 @@ namespace APSCharacterQueryThrottle
 		ECVF_Default);
 	// Rio 09.10 (playtest 08.10 item 3, "sometimes no gravity"): a pilot who sat weightless stood up into
 	// UpdateGravityDirection's zero-G branch, which keeps zero-G at the first missed floor probe without the 0.2 s grace.
+	// Rio 09.10 night (zero-G "small jerks", ACustomGravityCharacter::UpdateExactCameraLag).
+	TAutoConsoleVariable<int32> CVarExactCameraLag(
+		TEXT("aps.Character.ExactCameraLag"), 1,
+		TEXT("1: the walker's camera lag is the exact first-order lag (the same trail behind a steadily moving character ")
+		TEXT("whatever the frame times). 0: the spring arm's own lag with substepping (before 09.10), whose trail jumps by ")
+		TEXT("~4 cm at 12 m/s on every 16.7 ms frame among 8.3 ms ones."),
+		ECVF_Default);
 	TAutoConsoleVariable<int32> CVarExitClearsZeroG(
 		TEXT("aps.Character.ExitClearsZeroG"), 1,
 		TEXT("Rio 09.10 (playtest 08.10 item 3): 1: getting up aboard a ship clears a zero-G the pilot carried from the seat (never ")
@@ -305,6 +312,10 @@ void ACustomGravityCharacter::Tick(float DeltaTime)
 		UpdateBuildCamera(DeltaTime);
 		AlignCameraToGravity(DeltaTime);
 		UpdateGravityAnimationParameters();
+		if (!DefersExactCameraLag())
+		{
+			UpdateExactCameraLag(DeltaTime);
+		}
 		return;
 	}
 
@@ -348,6 +359,83 @@ void ACustomGravityCharacter::Tick(float DeltaTime)
 	{
 		CreateTraversalHud();
 	}
+	if (!DefersExactCameraLag())
+	{
+		UpdateExactCameraLag(DeltaTime);
+	}
+}
+
+void ACustomGravityCharacter::ApplyWorldOffset(const FVector& InOffset, bool bWorldShift)
+{
+	Super::ApplyWorldOffset(InOffset, bWorldShift);
+	ExactLagPrevOrigin += InOffset;
+}
+
+float ACustomGravityCharacter::GetCameraLocationLagSpeed() const
+{
+	return CameraBoom && CameraBoom->CameraLagSpeed > 0.f ? CameraBoom->CameraLagSpeed : ExactLagSpeed;
+}
+
+void ACustomGravityCharacter::UpdateExactCameraLag(float DeltaTime)
+{
+	if (!CameraBoom)
+	{
+		return;
+	}
+	if (APSCharacterQueryThrottle::CVarExactCameraLag.GetValueOnGameThread() == 0)
+	{
+		// Hand the lag back to the arm exactly as it was.
+		if (ExactLagSpeed > 0.f && CameraBoom->CameraLagSpeed <= 0.f)
+		{
+			CameraBoom->CameraLagSpeed = ExactLagSpeed;
+		}
+		if (bExactLagValid)
+		{
+			CameraBoom->TargetOffset = FVector::ZeroVector;
+			bExactLagValid = false;
+		}
+		return;
+	}
+	if (CameraBoom->CameraLagSpeed > 0.f)
+	{
+		ExactLagSpeed = CameraBoom->CameraLagSpeed;
+		// Speed 0: USpringArmComponent's VInterpTo returns the (offset) arm origin itself, no second lag.
+		CameraBoom->CameraLagSpeed = 0.f;
+	}
+	const FVector Origin = CameraBoom->GetComponentLocation();
+	if (!CameraBoom->bEnableCameraLag || !(ExactLagSpeed > 0.f))
+	{
+		// No lag wanted (aboard a ship): the arm starts at the character; lag starts fresh when it comes back.
+		if (bExactLagValid || !CameraBoom->TargetOffset.IsZero())
+		{
+			CameraBoom->TargetOffset = FVector::ZeroVector;
+		}
+		bExactLagValid = false;
+		return;
+	}
+	if (!bExactLagValid)
+	{
+		ExactLagTrail = FVector::ZeroVector;
+		ExactLagPrevOrigin = Origin;
+		bExactLagValid = true;
+	}
+	if (DeltaTime > UE_SMALL_NUMBER)
+	{
+		// x' = k (O(t) - x) with O moving linearly from the previous origin to this one through the frame:
+		// trail(t + dt) = -u/k + (trail(t) + u/k) e^(-k dt), u = the origin's velocity over the frame.
+		const double K = ExactLagSpeed;
+		const FVector U = (Origin - ExactLagPrevOrigin) / DeltaTime;
+		const FVector Lead = U / K;
+		ExactLagTrail = -Lead + (ExactLagTrail + Lead) * FMath::Exp(-K * DeltaTime);
+		ExactLagPrevOrigin = Origin;
+	}
+	// The rig's distance limit (teleports, first person) as the arm applies it.
+	const float MaxDistance = CameraBoom->CameraLagMaxDistance;
+	if (MaxDistance > 0.f && ExactLagTrail.SizeSquared() > FMath::Square(MaxDistance))
+	{
+		ExactLagTrail = ExactLagTrail.GetSafeNormal() * MaxDistance;
+	}
+	CameraBoom->TargetOffset = ExactLagTrail;
 }
 
 void ACustomGravityCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -419,7 +507,11 @@ void ACustomGravityCharacter::HandleMove(const FInputActionValue& Value)
 
 void ACustomGravityCharacter::HandleLook(const FInputActionValue& Value)
 {
-	const FVector2D LookAxisVector = Value.Get<FVector2D>();
+	FVector2D LookAxisVector = Value.Get<FVector2D>();
+	if (ShouldInvertLookPitch())
+	{
+		LookAxisVector.Y = -LookAxisVector.Y;
+	}
 	if (ConstructionMode.IsValid())
 	{
 		// Building: the cursor moves freely; a right or middle drag turns the camera about gravity and tilts its look

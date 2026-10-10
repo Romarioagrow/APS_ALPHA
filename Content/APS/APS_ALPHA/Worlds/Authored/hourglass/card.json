@@ -1,0 +1,15 @@
+{
+  "id": "hourglass",
+  "order": 90,
+  "name": "HOURGLASS",
+  "subtitle": "Two clouds of stars touch above us",
+  "lore": "Two clouds of stars touch above us, and the neck between them is ours. Three suns: two to warm, one to remind. The crystal world catches all of them at once.",
+  "place": "CRYSTAL   ·   TRIPLE STAR",
+  "tags": ["DOUBLE CLUSTER", "TRIPLE STAR", "CRYSTAL"],
+  "locks": ["all"],
+  "origin": "ring",
+  "route": "civilization",
+  "spawn": "MoonSurface",
+  "playable": true,
+  "readiness": "the crystal world's look is untested"
+}

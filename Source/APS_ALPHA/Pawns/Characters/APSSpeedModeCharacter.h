@@ -169,6 +169,11 @@ private:
 	void ToggleFirstPersonView();
 	void UpdateFirstPersonCamera(float DeltaTime);
 	void SetFirstPersonBodyHidden(bool bHide);
+	virtual bool ShouldInvertLookPitch() const override;
+	/** Rio 09.10 night: Tick runs the exact camera lag after the first-person eye has moved the boom. */
+	virtual bool DefersExactCameraLag() const override { return true; }
+	/** Rio 09.10: in first person the body stays visible; only the head bone and what hangs on it are hidden. */
+	FName FirstPersonHiddenBone;
 
 	bool bBaseMovementCached = false;
 	bool bZeroGPaceApplied = false;

@@ -44,6 +44,12 @@ namespace APSSpeedModeFeel
 		TEXT("Rio 09.10: 1: keys 1-3 set the zero-G pace too: 1 slow (0.35x speed, 0.6x thrust), 2 as before, 3 fast ")
 		TEXT("(1.6x speed, 1.4x thrust) on the character's zero-G values. 0: one zero-G pace, as before."),
 		ECVF_Default);
+	TAutoConsoleVariable<int32> CVarFirstPersonShowBody(
+		TEXT("aps.Character.FirstPersonShowBody"), 1,
+		TEXT("Rio 09.10: 1 keeps the body visible in first person (only the head bone and its attachments hidden). 0: whole body hidden."));
+	TAutoConsoleVariable<int32> CVarFirstPersonInvertPitch(
+		TEXT("aps.Character.FirstPersonInvertPitch"), 1,
+		TEXT("Rio 09.10: 1 inverts the vertical mouse look in first person (as the third-person orbit felt). 0: not inverted."));
 	TAutoConsoleVariable<int32> CVarFirstPerson(
 		TEXT("aps.Character.FirstPerson"), 1,
 		TEXT("Rio 09.10: 1: C toggles a first-person view on foot and in zero-G (smooth move of the camera to eye height, ")
@@ -149,12 +155,15 @@ void AAPSSpeedModeCharacter::Tick(float DeltaTime)
 	Super::Tick(DeltaTime);
 	if (IsSurfaceHandoffSuspended() || DeltaTime <= 0.f)
 	{
+		UpdateExactCameraLag(DeltaTime);
 		return;
 	}
 	UpdateTurnRate(DeltaTime);
 	UpdateCameraLag(DeltaTime);
 	UpdateFirstPersonCamera(DeltaTime);
 	UpdateLocomotionAnimation(DeltaTime);
+	// After the first-person eye has moved the boom: the lag follows its final place this frame.
+	UpdateExactCameraLag(DeltaTime);
 }
 
 void AAPSSpeedModeCharacter::SetSpeedMode(EAPSSpeedMode NewMode)
@@ -286,7 +295,7 @@ void AAPSSpeedModeCharacter::UpdateCameraLag(float DeltaTime)
 	// grow with the pace instead: at once when speeding up, gently when slowing (the trail shrinks first). At rest
 	// the rig's own limit still bounds teleports.
 	const float TargetLimit = FMath::Max(BaseCameraLagMaxDistance,
-		GetVelocity().Size() / FMath::Max(CameraBoom->CameraLagSpeed, 1.f) / CameraLagShare);
+		GetVelocity().Size() / FMath::Max(GetCameraLocationLagSpeed(), 1.f) / CameraLagShare);
 	CameraBoom->CameraLagMaxDistance = TargetLimit >= CameraBoom->CameraLagMaxDistance
 		? TargetLimit : FMath::FInterpTo(CameraBoom->CameraLagMaxDistance, TargetLimit, DeltaTime, 2.f);
 }
@@ -520,6 +529,14 @@ void AAPSSpeedModeCharacter::SetFirstPersonBodyHidden(bool bHide)
 		return;
 	}
 	bFirstPersonBodyHidden = bHide;
+	if (!bHide && !FirstPersonHiddenBone.IsNone())
+	{
+		if (USkeletalMeshComponent* MeshComponent = GetMesh())
+		{
+			MeshComponent->UnHideBoneByName(FirstPersonHiddenBone);
+		}
+		FirstPersonHiddenBone = NAME_None;
+	}
 	if (!bHide)
 	{
 		for (const TPair<TWeakObjectPtr<UPrimitiveComponent>, uint8>& Part : FirstPersonHiddenParts)
@@ -538,6 +555,35 @@ void AAPSSpeedModeCharacter::SetFirstPersonBodyHidden(bool bHide)
 	{
 		return;
 	}
+	if (APSSpeedModeFeel::CVarFirstPersonShowBody.GetValueOnGameThread() != 0)
+	{
+		// The body stays; the head bone (and the helmet or hair on it) is hidden so the eye is not inside it.
+		for (const TCHAR* Bone : {TEXT("head"), TEXT("Head"), TEXT("head_01"), TEXT("neck_02")})
+		{
+			if (MeshComponent->GetBoneIndex(FName(Bone)) != INDEX_NONE)
+			{
+				FirstPersonHiddenBone = FName(Bone);
+				MeshComponent->HideBoneByName(FirstPersonHiddenBone, EPhysBodyOp::PBO_None);
+				break;
+			}
+		}
+		TArray<USceneComponent*> Attached;
+		MeshComponent->GetChildrenComponents(true, Attached);
+		for (USceneComponent* Part : Attached)
+		{
+			const FString Socket = Part ? Part->GetAttachSocketName().ToString() : FString();
+			UPrimitiveComponent* Primitive = Cast<UPrimitiveComponent>(Part);
+			if (Primitive && (Socket.Contains(TEXT("head")) || Socket.Contains(TEXT("Head")) || Socket.Contains(TEXT("helmet"))
+				|| Socket.Contains(TEXT("Helmet"))))
+			{
+				FirstPersonHiddenParts.Emplace(Primitive,
+					static_cast<uint8>((Primitive->bOwnerNoSee ? 1 : 0) | (Primitive->bCastHiddenShadow ? 2 : 0)));
+				Primitive->SetOwnerNoSee(true);
+				Primitive->SetCastHiddenShadow(true);
+			}
+		}
+		return;
+	}
 	TArray<USceneComponent*> Parts;
 	MeshComponent->GetChildrenComponents(true, Parts);
 	Parts.Add(MeshComponent);
@@ -552,6 +598,11 @@ void AAPSSpeedModeCharacter::SetFirstPersonBodyHidden(bool bHide)
 			Primitive->SetCastHiddenShadow(true);
 		}
 	}
+}
+
+bool AAPSSpeedModeCharacter::ShouldInvertLookPitch() const
+{
+	return FirstPersonAlpha > 0.5f && APSSpeedModeFeel::CVarFirstPersonInvertPitch.GetValueOnGameThread() != 0;
 }
 
 FText AAPSSpeedModeCharacter::GetTraversalStatusText() const

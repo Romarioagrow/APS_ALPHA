@@ -1,5 +1,6 @@
 #include "APSInfrastructureCatalog.h"
 
+#include "APS_ALPHA/Gameplay/Origins/APSOrigins.h"
 #include "APS_ALPHA/UI/Style/APSUINumber.h"
 
 #define LOCTEXT_NAMESPACE "APSInfrastructure"
@@ -187,6 +188,15 @@ namespace APSInfrastructureCatalogLocal
 		}
 
 		// FLEET COMMAND: keep the fleet flying.
+		{
+			// Rio 07-09.10, ORIGIN ladder (T-07): the first yard, on the ground, where the colony's first hull is laid down (a
+			// shipyard of the fleet: GetShipyards lists it). The monument's LAUNCH opens it; elsewhere just a surface yard.
+			FType T = Make(TEXT("LaunchYard"), LOCTEXT("LaunchYard", "LAUNCH YARD"),
+				LOCTEXT("LaunchYardRole", "A yard on the ground that lays down the colony's first hulls: ships are ordered here."),
+				D::Industry, C::Outpost, P::Surface, 0, 0, 60.0f, {M(120), E(40)}, {}, L::Shipyard);
+			T.RequiresToken = APSProgressionTokens::Launch();
+			Types.Add(T);
+		}
 		{
 			FType T = Make(TEXT("RepairDock"), LOCTEXT("RepairDock", "REPAIR DOCK"),
 				LOCTEXT("RepairDockRole", "Repairs and refits: work at this world a quarter faster, the fleet 5% faster."),

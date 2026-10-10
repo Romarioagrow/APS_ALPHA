@@ -1,0 +1,15 @@
+{
+  "id": "the_cradle",
+  "order": 60,
+  "name": "THE CRADLE",
+  "subtitle": "Whoever the Builders were, they began here",
+  "lore": "The stone was cut before anyone alive had a name for it. Needles, rings, forests of spires, all of one hand, all facing the same sun. Whoever the Builders were, they began here.",
+  "place": "FOREST   ·   G STAR   ·   GALAXY EDGE",
+  "tags": ["FOREST", "ANCIENTS", "GALAXY EDGE"],
+  "locks": ["all"],
+  "origin": "exodus",
+  "route": "civilization",
+  "spawn": "PlanetOrbit",
+  "playable": true,
+  "readiness": "home position at the edge waits for the generator option"
+}

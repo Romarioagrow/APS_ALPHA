@@ -65,6 +65,14 @@ struct FAPSColonyModuleSpec
 	bool bFoundation{false};
 	/** Turn the module's front toward the star (solar arrays), instead of toward the anchor. */
 	bool bFaceSun{false};
+	/**
+	 * Rio 07-09.10, ORIGIN (T-06): what it feeds the civilization's stocks per minute while it stands, in
+	 * APSInfrastructure::EResource order (metals, volatiles, energy, research, influence). FAPSInfrastructure counts the
+	 * standing modules in the ladder (and with aps.Colony.ModuleYields elsewhere).
+	 */
+	float YieldPerMinute[5]{0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+	/** A token of the ladder it opens when built (APSProgressionTokens); NAME_None: none. */
+	FName UnlocksToken;
 	TArray<FAPSColonyModulePart> Parts;
 	TArray<FAPSColonyModuleLight> Lights;
 };

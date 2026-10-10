@@ -1,0 +1,15 @@
+{
+  "id": "the_nebula",
+  "order": 100,
+  "name": "THE NEBULA",
+  "subtitle": "Two worlds inside a cloud still making stars",
+  "lore": "Two worlds circling each other inside a cloud that is still making stars. Light arrives sideways here, through dust; nothing has a hard shadow, and the night is never black.",
+  "place": "OCEAN   ·   PROTOSTAR   ·   EMBEDDED",
+  "tags": ["NEBULA", "DOUBLE PLANET", "OCEAN"],
+  "locks": ["all"],
+  "origin": "adrift",
+  "route": "civilization",
+  "spawn": "PlanetOrbit",
+  "playable": true,
+  "readiness": "nebulae and the double planet come later"
+}

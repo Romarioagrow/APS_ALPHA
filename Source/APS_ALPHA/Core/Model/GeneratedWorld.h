@@ -527,6 +527,35 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Star System")
 	double StarSystemRadius;
 
+	/**
+	 * Rio 07–09.10 (APSWorldRules, GAME_CONCEPT_ORIGIN §2): the world's rules — mode preset, origin, reach, knowledge,
+	 * goals, resources, others, sky — as bytes. Zero everywhere is today's game and every older save. Read and written
+	 * through APSWorldRules; never part of the canonical dataset hash.
+	 */
+	UPROPERTY()
+	uint8 RulesMode{0};
+	UPROPERTY()
+	uint8 RulesOrigin{0};
+	UPROPERTY()
+	uint8 RulesReach{0};
+	UPROPERTY()
+	uint8 RulesKnowledge{0};
+	UPROPERTY()
+	uint8 RulesGoals{0};
+	UPROPERTY()
+	uint8 RulesResources{0};
+	UPROPERTY()
+	uint8 RulesOthers{0};
+	UPROPERTY()
+	uint8 RulesSky{0};
+
+	/** Rio 09.10 (AUTHORED_WORLDS): the authored world this model came from (its card id), empty for a rolled world. */
+	UPROPERTY()
+	FString AuthoredWorldId;
+	/** Levels REGENERATE must keep (APSWorldRules::ELock bits): galaxy 1, cluster 2, home system 4, star 8, body 16. */
+	UPROPERTY()
+	uint8 AuthoredLocks{0};
+
 	EPlanetHabitability ResolveHomePlanetHabitabilityForSave() const;
 
 	FGeneratedWorldData SaveWorldData() const

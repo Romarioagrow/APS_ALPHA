@@ -23,6 +23,10 @@
 #include "APS_ALPHA/Generation/AstroGenerator.h"
 #include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
 #include "APS_ALPHA/Gameplay/Construction/APSConstructionCatalog.h"
+#include "APS_ALPHA/Core/Model/APSWorldRules.h"
+#include "APS_ALPHA/Gameplay/Colony/APSColonyConstructionSubsystem.h"
+#include "APS_ALPHA/Gameplay/Colony/APSColonyModuleCatalogue.h"
+#include "APS_ALPHA/Gameplay/Origins/APSOrigins.h"
 #include "HAL/IConsoleManager.h"
 #include "HAL/PlatformTime.h"
 #include "Engine/GameInstance.h"
@@ -46,6 +50,27 @@ namespace APSInfrastructureLocal
 	/** What the colony starts with and what the home produces before anything is built (per minute). */
 	constexpr float StartStocks[ResourceCount] = {300.0f, 60.0f, 150.0f, 50.0f, 50.0f};
 	constexpr float HomeYield[ResourceCount] = {4.0f, 1.0f, 4.0f, 1.0f, 1.0f};
+	/** Rio 07-09.10 (T-08): a scarce world starts with half the stocks and earns half. */
+	constexpr float ScarceScale = 0.5f;
+	/** Rio 07-09.10 (T-06): the colony's own modules feed the stocks outside the ladder too. 0: SANDBOX as before. */
+	TAutoConsoleVariable<int32> CVarModuleYields(TEXT("aps.Colony.ModuleYields"), 0,
+		TEXT("1: the colony's modules (solar arrays, habitats, the fabrication bay...) feed the civilization's stocks per minute in ")
+		TEXT("every mode. 0: only in the ORIGIN ladder, where they are the first income."));
+	/**
+	 * The structure that opens a stock in the ladder (concept section 5): the mining outpost metals, the gas harvester
+	 * volatiles, the research station research, the survey beacon (any claim) influence. Energy is open from the start.
+	 */
+	FName OpenerOf(const EResource Resource)
+	{
+		switch (Resource)
+		{
+		case EResource::Metals: return FName(TEXT("MiningOutpost"));
+		case EResource::Volatiles: return FName(TEXT("GasHarvester"));
+		case EResource::Research: return FName(TEXT("ResearchStation"));
+		case EResource::Influence: return FName(TEXT("SurveyBeacon"));
+		default: return NAME_None;
+		}
+	}
 	/** Surface objects settle on the ground within this range of the pilot, searching this band around sea level. */
 	constexpr double SettleRangeCm = 3000000.0;
 	constexpr double SurfaceBandCm = 2000000.0;
@@ -281,6 +306,20 @@ FAPSInfrastructure::FAPSInfrastructure(UWorld* InWorld)
 		Stocks[Index] = APSInfrastructureLocal::StartStocks[Index];
 	}
 	RecountRates();
+	// Rio 07-09.10 (T-08): the ladder starts with the closed stocks empty (a load puts the saved stocks back after this),
+	// a scarce world with half of everything.
+	const APSWorldRules::FRules Rules = APSWorldRules::OfGame(InWorld);
+	for (int32 Index = 0; Index < APSInfrastructureLocal::ResourceCount; ++Index)
+	{
+		if (!IsResourceOpen(static_cast<APSInfrastructure::EResource>(Index)))
+		{
+			Stocks[Index] = 0.0f;
+		}
+		else if (Rules.Resources == APSWorldRules::EResources::Scarce)
+		{
+			Stocks[Index] *= APSInfrastructureLocal::ScarceScale;
+		}
+	}
 }
 
 FAPSInfrastructure::~FAPSInfrastructure() = default;
@@ -291,6 +330,22 @@ void FAPSInfrastructure::Tick(const float DeltaSeconds)
 	for (int32 Index = 0; Index < ResourceCount; ++Index)
 	{
 		Stocks[Index] = FMath::Max(0.0f, Stocks[Index] + Rates[Index] * DeltaSeconds / 60.0f);
+	}
+	// Rio 07-09.10 (T-08): in the ladder the open stocks follow the mission board (a load brings its tokens back a moment
+	// after this object), once a second.
+	RulesClock += DeltaSeconds;
+	if (RulesClock >= 1.0f)
+	{
+		RulesClock = 0.0f;
+		if (APSWorldRules::IsLadder(World.Get()))
+		{
+			const uint8 Was = ClosedMask;
+			RecountRates();
+			if (Was != ClosedMask)
+			{
+				++Revision;
+			}
+		}
 	}
 	if (PendingRestore.IsSet())
 	{
@@ -447,6 +502,34 @@ FText FAPSInfrastructure::CheckBuild(const FName TypeId, const AActor* Site) con
 			return FText::Format(LOCTEXT("NeedsUnlock", "Unlocked by a {0} mission."), DepartmentName(Type->Department));
 		}
 	}
+	// Rio 07-09.10, ORIGIN ladder (T-07, T-08): a token of the Ancients first, and no stock that is not open yet unless this
+	// is the structure that opens it.
+	if (APSWorldRules::IsLadder(LiveWorld))
+	{
+		if (!Type->RequiresToken.IsNone())
+		{
+			const FAPSMissionBoard* Missions = APSMissionsFind(LiveWorld);
+			if (!Missions || !Missions->IsUnlocked(Type->RequiresToken))
+			{
+				return FText::Format(LOCTEXT("NeedsToken", "LOCKED: NEEDS {0} (THE ANCIENTS)."), APSProgressionTokens::Title(Type->RequiresToken));
+			}
+		}
+		const FName Opens = OpensResourceToken(*Type);
+		for (const TArray<FAmount>* Amounts : {&Type->Cost, &Type->Yield})
+		{
+			for (const FAmount& Amount : *Amounts)
+			{
+				if (IsResourceOpen(Amount.Resource) || APSProgressionTokens::ResourceToken(static_cast<int32>(Amount.Resource)) == Opens)
+				{
+					continue;
+				}
+				const FName OpenerId = APSInfrastructureLocal::OpenerOf(Amount.Resource);
+				const FType* Opener = Find(OpenerId);
+				return FText::Format(LOCTEXT("ResourceClosed", "LOCKED: {0} NOT OPEN YET. RAISE A {1} FIRST."), ResourceName(Amount.Resource),
+					Opener ? Opener->Name : FText::FromName(OpenerId));
+			}
+		}
+	}
 	// Rio 03.10, chains: each step stands on the one before it (the counts here, the rule in the catalogue).
 	FChainState Chain;
 	Chain.bStationHere = Type->bNeedsStationHere && HasStationAt(Site);
@@ -473,9 +556,11 @@ FText FAPSInfrastructure::CheckBuild(const FName TypeId, const AActor* Site) con
 			return Room;
 		}
 	}
-	if (!CanAfford(Type->Cost))
+	TArray<FAmount> Cost;
+	EffectiveCost(*Type, Cost);
+	if (!CanAfford(Cost))
 	{
-		return FText::Format(LOCTEXT("CannotAfford", "Needs {0}."), DescribeAmounts(Type->Cost));
+		return FText::Format(LOCTEXT("CannotAfford", "Needs {0}."), DescribeAmounts(Cost));
 	}
 	return FText::GetEmpty();
 }
@@ -501,20 +586,20 @@ void FAPSInfrastructure::GetOptions(const AActor* Site, TArray<TPair<FName, FTex
 bool FAPSInfrastructure::Reserve(const FName TypeId)
 {
 	const APSInfrastructure::FType* Type = APSInfrastructure::Find(TypeId);
-	if (!Type || !CanAfford(Type->Cost)) return false;
-	for (const APSInfrastructure::FAmount& Amount : Type->Cost)
-	{
-		Stocks[static_cast<int32>(Amount.Resource)] -= Amount.Value;
-	}
-	++Revision;
-	return true;
+	if (!Type) return false;
+	TArray<APSInfrastructure::FAmount> Cost;
+	EffectiveCost(*Type, Cost);
+	return Spend(Cost);
 }
 
 void FAPSInfrastructure::Refund(const FName TypeId)
 {
 	if (const APSInfrastructure::FType* Type = APSInfrastructure::Find(TypeId))
 	{
-		for (const APSInfrastructure::FAmount& Amount : Type->Cost)
+		// What Reserve took (bUnlimited took nothing; a stock opened in between is a small gift, never a loss).
+		TArray<APSInfrastructure::FAmount> Cost;
+		EffectiveCost(*Type, Cost);
+		for (const APSInfrastructure::FAmount& Amount : Cost)
 		{
 			Stocks[static_cast<int32>(Amount.Resource)] += Amount.Value;
 		}
@@ -700,6 +785,17 @@ AActor* FAPSInfrastructure::Complete(const FName TypeId, AActor* Site, const FVe
 	Built.ActorName = Actor->GetName();
 	Built.RelativeTransform = Actor->GetActorTransform().GetRelativeTransform(Frame->GetActorTransform());
 	Built.BuiltSeconds = LiveWorld->GetTimeSeconds();
+	// Rio 07-09.10, ORIGIN ladder (T-08): the structure that opens a stock opens it now (the board keeps it, the journal tells
+	// it); the yard that builds hulls builds lift coils and scouts too: the hover and the drone follow the bay's rover.
+	if (APSWorldRules::IsLadder(LiveWorld))
+	{
+		APSProgressionTokens::Grant(LiveWorld, OpensResourceToken(*Type), TEXT("Infrastructure"));
+		if (Type->Id == FName(TEXT("LaunchYard")))
+		{
+			APSProgressionTokens::Grant(LiveWorld, APSProgressionTokens::VehiclesHover(), TEXT("Infrastructure"));
+			APSProgressionTokens::Grant(LiveWorld, APSProgressionTokens::VehiclesDrone(), TEXT("Infrastructure"));
+		}
+	}
 	RecountRates();
 	++Revision;
 	if (Stars && SystemId.IsValid()) Stars->AddStructure(SystemId, Type->Id, Type->bClaims);
@@ -943,6 +1039,7 @@ float FAPSInfrastructure::GetRate(const APSInfrastructure::EResource Resource) c
 
 bool FAPSInfrastructure::CanAfford(const TArray<APSInfrastructure::FAmount>& Cost) const
 {
+	if (bUnlimited) return true;
 	for (const APSInfrastructure::FAmount& Amount : Cost)
 	{
 		if (GetStock(Amount.Resource) + 0.001f < Amount.Value) return false;
@@ -958,16 +1055,120 @@ void FAPSInfrastructure::AddStock(const APSInfrastructure::EResource Resource, c
 	++Revision;
 }
 
+bool FAPSInfrastructure::IsResourceOpen(const APSInfrastructure::EResource Resource) const
+{
+	const int32 Index = static_cast<int32>(Resource);
+	return Index < 0 || Index >= APSInfrastructureLocal::ResourceCount || (ClosedMask & (1u << Index)) == 0;
+}
+
+FName FAPSInfrastructure::OpensResourceToken(const APSInfrastructure::FType& Type)
+{
+	for (int32 Index = 0; Index < APSInfrastructureLocal::ResourceCount; ++Index)
+	{
+		if (APSInfrastructureLocal::OpenerOf(static_cast<APSInfrastructure::EResource>(Index)) == Type.Id)
+		{
+			return APSProgressionTokens::ResourceToken(Index);
+		}
+	}
+	return Type.bClaims ? APSProgressionTokens::ResInfluence() : FName(NAME_None);
+}
+
+void FAPSInfrastructure::EffectiveCost(const APSInfrastructure::FType& Type, TArray<APSInfrastructure::FAmount>& OutCost) const
+{
+	OutCost.Reset();
+	if (bUnlimited)
+	{
+		return;
+	}
+	const FName Opens = OpensResourceToken(Type);
+	for (const APSInfrastructure::FAmount& Amount : Type.Cost)
+	{
+		// The opener pays without the stock it opens: there is none of it yet.
+		if (!IsResourceOpen(Amount.Resource) && APSProgressionTokens::ResourceToken(static_cast<int32>(Amount.Resource)) == Opens)
+		{
+			continue;
+		}
+		OutCost.Add(Amount);
+	}
+}
+
+bool FAPSInfrastructure::Spend(const TArray<APSInfrastructure::FAmount>& Cost)
+{
+	if (!CanAfford(Cost))
+	{
+		return false;
+	}
+	if (!bUnlimited)
+	{
+		for (const APSInfrastructure::FAmount& Amount : Cost)
+		{
+			Stocks[static_cast<int32>(Amount.Resource)] -= Amount.Value;
+		}
+	}
+	++Revision;
+	return true;
+}
+
+void FAPSInfrastructure::RefreshRates()
+{
+	RecountRates();
+	++Revision;
+}
+
 void FAPSInfrastructure::RecountRates()
 {
 	using namespace APSInfrastructureLocal;
-	for (int32 Index = 0; Index < ResourceCount; ++Index) Rates[Index] = HomeYield[Index];
+	UWorld* LiveWorld = World.Get();
+	// Rio 07-09.10 (T-08): which stocks are closed now, read here (builds, loads, opened tokens, once a second in the
+	// ladder) and never per query. Without a board yet (the fleet subsystem makes it after this object) every ladder stock
+	// but energy is closed: right for a new game; a load restores the stocks and the board a moment later.
+	const APSWorldRules::FRules Rules = APSWorldRules::OfGame(LiveWorld);
+	const bool bLadder = APSWorldRules::IsLadder(LiveWorld);
+	bUnlimited = Rules.Resources == APSWorldRules::EResources::Unlimited;
+	ClosedMask = 0;
+	if (bLadder)
+	{
+		const FAPSMissionBoard* Missions = APSMissionsFind(LiveWorld);
+		for (int32 Index = 0; Index < ResourceCount; ++Index)
+		{
+			const FName Token = APSProgressionTokens::ResourceToken(Index);
+			if (!Token.IsNone() && (!Missions || !Missions->IsUnlocked(Token)))
+			{
+				ClosedMask |= static_cast<uint8>(1u << Index);
+			}
+		}
+	}
+	const float Scale = Rules.Resources == APSWorldRules::EResources::Scarce ? ScarceScale : 1.0f;
+	for (int32 Index = 0; Index < ResourceCount; ++Index) Rates[Index] = HomeYield[Index] * Scale;
 	for (const FAPSBuiltStructure& Structure : Structures)
 	{
 		if (const FType* Type = Find(Structure.Type))
 		{
-			for (const FAmount& Amount : Type->Yield) Rates[static_cast<int32>(Amount.Resource)] += Amount.Value;
+			for (const FAmount& Amount : Type->Yield) Rates[static_cast<int32>(Amount.Resource)] += Amount.Value * Scale;
 		}
+	}
+	// Rio 07-09.10 (T-06): the colony's own modules feed the stocks: the ladder's first income (elsewhere aps.Colony.ModuleYields).
+	const bool bModuleYields = bLadder || CVarModuleYields.GetValueOnGameThread() != 0;
+	const UAPSColonyConstructionSubsystem* Colony = nullptr;
+	if (bModuleYields && LiveWorld)
+	{
+		Colony = LiveWorld->GetSubsystem<UAPSColonyConstructionSubsystem>();
+	}
+	if (Colony)
+	{
+		for (const FAPSColonyModuleSpec& Spec : FAPSColonyModuleCatalogue::Get())
+		{
+			const int32 Count = Colony->CountBuilt(Spec.Id);
+			for (int32 Index = 0; Count > 0 && Index < ResourceCount; ++Index)
+			{
+				Rates[Index] += Spec.YieldPerMinute[Index] * Count * Scale;
+			}
+		}
+	}
+	// A closed stock earns nothing, whatever stands.
+	for (int32 Index = 0; Index < ResourceCount; ++Index)
+	{
+		if (ClosedMask & (1u << Index)) Rates[Index] = 0.0f;
 	}
 }
 

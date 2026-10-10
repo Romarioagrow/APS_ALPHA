@@ -8,6 +8,7 @@
 #include "APS_ALPHA/Actors/Astro/Star.h"
 #include "APS_ALPHA/Actors/Tech/TechInfrastructure.h"
 #include "APS_ALPHA/Core/Instances/MainGameplayInstance.h"
+#include "APS_ALPHA/Core/Model/APSWorldRules.h"
 #include "APS_ALPHA/Core/Planetary/APSPlanetSurfaceProfile.h"
 #include "APS_ALPHA/Core/World/APSWorldOriginSubsystem.h"
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationJournalSubsystem.h"
@@ -16,7 +17,9 @@
 #include "APS_ALPHA/Gameplay/Expansion/APSObjectActions.h"
 #include "APS_ALPHA/Gameplay/Expansion/APSStarSystems.h"
 #include "APS_ALPHA/Gameplay/Expansion/APSSystemMaterializer.h"
+#include "APS_ALPHA/Gameplay/Colony/APSColonyConstructionSubsystem.h"
 #include "APS_ALPHA/Gameplay/Fleet/APSFleetCommand.h"
+#include "APS_ALPHA/Gameplay/Origins/APSOrigins.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
 #include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
 #include "APS_ALPHA/Pawns/Characters/CustomGravityCharacter.h"
@@ -1378,8 +1381,19 @@ bool FAPSAncients::StartConditionMet(const FSite& Site) const
 	switch (Site.Spec.Chain)
 	{
 	case EChain::Echoes:
-		// The monument's signal comes in a little after the game starts, once the site stands.
+	{
+		// The monument's signal comes in a little after the game starts, once the site stands. Rio 07-09.10, ORIGIN ladder
+		// (T-09): and only once the colony can hear it: a comms mast stands.
+		if (APSWorldRules::IsLadder(World.Get()))
+		{
+			const UAPSColonyConstructionSubsystem* Colony = World.IsValid() ? World->GetSubsystem<UAPSColonyConstructionSubsystem>() : nullptr;
+			if (!Colony || Colony->CountBuilt(FName(TEXT("CommsMast"))) == 0)
+			{
+				return false;
+			}
+		}
 		return bBuilt && Now() - QuestsOpenedAt >= CVarSignalDelay.GetValueOnGameThread();
+	}
 	case EChain::QuietHull:
 		// The monument's survey (its glyphs point up), or the pilot passing near the hull.
 		return EchoesStepDone(0) || PilotDistance < HullNoticeCm;
@@ -1570,6 +1584,43 @@ void FAPSAncients::OnStepsCompleted(FSite& Site, const int32 From, const int32 T
 	if (To >= Chain.Steps.Num())
 	{
 		UE_LOG(LogTemp, Log, TEXT("[APS.Ancients] %s: chain %s complete"), *Site.Spec.Id, *APSAncients::ChainName(Site.Spec.Chain).ToString());
+		// Rio 07-09.10, ORIGIN ladder (T-09): the chains open the ladder: the monument the LAUNCH, the hull the STELLAR DRIVE,
+		// the last site of the road the GALAXY HULLS.
+		if (APSWorldRules::IsLadder(World.Get()))
+		{
+			FName Token = NAME_None;
+			switch (Site.Spec.Chain)
+			{
+			case APSAncients::EChain::Echoes:
+				Token = APSProgressionTokens::Launch();
+				break;
+			case APSAncients::EChain::QuietHull:
+				Token = APSProgressionTokens::StellarDrive();
+				break;
+			case APSAncients::EChain::Road:
+			{
+				bool bAfter = false;
+				bool bLast = true;
+				for (const FSite& Other : Sites)
+				{
+					if (&Other == &Site)
+					{
+						bAfter = true;
+					}
+					else if (bAfter && Other.Spec.Chain == APSAncients::EChain::Road)
+					{
+						bLast = false;
+						break;
+					}
+				}
+				Token = bLast ? APSProgressionTokens::GalaxyHulls() : FName(NAME_None);
+				break;
+			}
+			default:
+				break;
+			}
+			APSProgressionTokens::Grant(World.Get(), Token, TEXT("Ancients"));
+		}
 	}
 }
 

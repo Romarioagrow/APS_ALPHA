@@ -659,6 +659,17 @@ int32 FAPSMissionBoard::GetEarnedLevels(const APSInfrastructure::EDepartment Dep
 	return Index >= 0 && Index < APSMissionsLocal::DepartmentCount ? EarnedLevels[Index] : 0;
 }
 
+void FAPSMissionBoard::Unlock(const FName Type)
+{
+	if (Type.IsNone() || Unlocked.Contains(Type))
+	{
+		return;
+	}
+	Unlocked.Add(Type);
+	++Revision;
+	UE_LOG(LogTemp, Log, TEXT("[APS.Missions] unlocked %s"), *Type.ToString());
+}
+
 void FAPSMissionBoard::CaptureSave(FAPSMissionSaveData& OutData) const
 {
 	OutData = FAPSMissionSaveData();

@@ -27,6 +27,9 @@
 #include "APS_ALPHA/Core/Interfaces/ItemInfoInterface.h"
 #include "APS_ALPHA/Core/Model/SpawnParameters.h"
 #include "APS_ALPHA/Core/Model/GeneratedWorld.h"
+#include "APS_ALPHA/Core/Model/APSWorldRules.h"
+#include "APS_ALPHA/Core/Worlds/APSAuthoredWorlds.h"
+#include "APS_ALPHA/Gameplay/Origins/APSOrigins.h"
 #include "APS_ALPHA/Core/Saves/GameSave.h"
 #include "APS_ALPHA/Core/Saves/GeneratedWorldData.h"
 #include "APS_ALPHA/Pawns/Characters/CustomGravityCharacter.h"
@@ -1538,13 +1541,13 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildAuthoredMapGrid()
 		MapPreviewBrush = MakeShared<FSlateImageBrush>(FName(*PreviewPath), FVector2D(1600.0f, 900.0f));
 	}
 	const auto MapCard = [this](const FText& Title, const FText& Description, const FText& Place, const FSlateBrush* Preview,
-		const bool bPlayable) -> TSharedRef<SWidget>
+		const bool bPlayable, const FOnClicked& OnClicked) -> TSharedRef<SWidget>
 	{
 		const TSharedRef<SButton> Button = SNew(SButton)
 			.ButtonStyle(FAppStyle::Get(), "NoBorder")
 			.ContentPadding(0.0f)
 			.IsEnabled(bPlayable)
-			.OnClicked(this, &SAPSMainMenuRoot::StartSingleGame);
+			.OnClicked(OnClicked);
 		const TWeakPtr<SButton> Weak = Button;
 		const auto Lit = [Weak]()
 		{
@@ -1624,31 +1627,239 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildAuthoredMapGrid()
 		return Button;
 	};
 
+	// Rio 09.10 (AUTHORED_WORLDS §2): the hand-made map first, then one card per authored world of the generator; three
+	// columns, scrolled. A card's thumb.png (Worlds/Authored/<id>/thumb.png) is its picture, else the glyph.
+	const TArray<APSAuthoredWorlds::FCard>& Worlds = APSAuthoredWorlds::Catalogue();
+	const TSharedRef<SUniformGridPanel> Grid = SNew(SUniformGridPanel).SlotPadding(FMargin(8.0f));
+	int32 Index = 0;
+	const auto AddCard = [&Grid, &Index](const TSharedRef<SWidget>& Card)
+	{
+		Grid->AddSlot(Index % 3, Index / 3)[Card];
+		++Index;
+	};
+	AddCard(MapCard(LOCTEXT("NewWorldMapStart", "START LOCATION"),
+		LOCTEXT("NewWorldMapStartDesc", "The Alpha map: a set start with ships ready to fly."),
+		LOCTEXT("NewWorldMapStartPlace", "ALPHA"), MapPreviewBrush.Get(), true,
+		FOnClicked::CreateSP(this, &SAPSMainMenuRoot::StartSingleGame)));
+	for (const APSAuthoredWorlds::FCard& World : Worlds)
+	{
+		const FString ThumbPath = World.Directory / TEXT("thumb.png");
+		TSharedPtr<FSlateBrush>& Brush = AuthoredWorldBrushes.FindOrAdd(World.Id);
+		if (!Brush.IsValid() && FPaths::FileExists(ThumbPath))
+		{
+			Brush = MakeShared<FSlateImageBrush>(FName(*ThumbPath), FVector2D(1600.0f, 900.0f));
+		}
+		const bool bPlayable = World.bPlayable && World.bHasWorld;
+		FString Place = World.Place;
+		if (!World.Readiness.IsEmpty() && !World.Readiness.Equals(TEXT("ready"), ESearchCase::IgnoreCase))
+		{
+			Place = Place.IsEmpty() ? World.Readiness.ToUpper() : Place + TEXT("   ·   ") + World.Readiness.ToUpper();
+		}
+		AddCard(MapCard(FText::FromString(World.Name), FText::FromString(World.Subtitle), FText::FromString(Place),
+			Brush.Get(), bPlayable, FOnClicked::CreateSP(this, &SAPSMainMenuRoot::PlayAuthoredWorld, World.Id)));
+	}
+	AddCard(MapCard(LOCTEXT("NewWorldMapsSoon", "MORE WORLDS"),
+		LOCTEXT("NewWorldMapsSoonDesc", "New authored worlds arrive with the next versions."),
+		FText::GetEmpty(), nullptr, false, FOnClicked()));
+
 	return SNew(SVerticalBox)
 		+ SVerticalBox::Slot().AutoHeight()
 		[
 			SNew(SHorizontalBox)
 			+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
-			[SNew(STextBlock).Text(LOCTEXT("NewWorldMaps", "AUTHORED MAPS")).Font(APSMenu::Font("Bold", 12)).ColorAndOpacity(APSMenu::Cyan)]
+			[SNew(STextBlock).Text(LOCTEXT("NewWorldMaps", "AUTHORED WORLDS")).Font(APSMenu::Font("Bold", 12)).ColorAndOpacity(APSMenu::Cyan)]
 			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
-			[SNew(STextBlock).Text(LOCTEXT("NewWorldMapsCount", "1 MAP")).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::Quiet)]
+			[
+				SNew(STextBlock).Text(FText::Format(LOCTEXT("NewWorldMapsCount", "{0} WORLDS"), FText::AsNumber(Worlds.Num() + 1)))
+				.Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::Quiet)
+			]
+		]
+		+ SVerticalBox::Slot().FillHeight(1.0f).Padding(0.0f, 14.0f, 0.0f, 0.0f)
+		[
+			SNew(SBox).MaxDesiredHeight(720.0f)
+			[
+				SNew(SScrollBox).ScrollBarStyle(&ScrollBarStyle)
+				+ SScrollBox::Slot()
+				[
+					Grid
+				]
+			]
+		];
+}
+
+FReply SAPSMainMenuRoot::PlayAuthoredWorld(const FString Id)
+{
+	const APSAuthoredWorlds::FCard* Card = APSAuthoredWorlds::Find(Id);
+	UGeneratedWorld* World = ViewModel.IsValid() ? ViewModel->GetGeneratedWorld() : nullptr;
+	if (!Card || !World)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[APS.Worlds] cannot open '%s': %s"), *Id, Card ? TEXT("no world model") : TEXT("unknown card"));
+		return FReply::Handled();
+	}
+	FString Failure;
+	if (!APSAuthoredWorlds::Apply(*Card, *World, ViewModel->SpawnParameters, &Failure))
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[APS.Worlds] cannot open '%s': %s"), *Id, *Failure);
+		return FReply::Handled();
+	}
+	// The card recommends an origin only; the mode stays what NEW WORLD holds (SANDBOX unless picked otherwise).
+	NewWorldPath = Card->bSpaceRoute ? EAPSNewWorldPath::Space : EAPSNewWorldPath::Civilization;
+	return OpenAstronomicalGeneration(Card->bSpaceRoute ? EAstroPreviewFocus::StarCluster : EAstroPreviewFocus::HomePlanet,
+		Card->bSpaceRoute ? EAPSGenerationRoute::Space : EAPSGenerationRoute::Civilization);
+}
+
+TSharedRef<SWidget> SAPSMainMenuRoot::BuildNewWorldRulesRows()
+{
+	// Rio 07–09.10 (GAME_CONCEPT_ORIGIN §2, §2.1): MODE picks a preset of the world's rules; ORIGIN, for the ORIGIN mode,
+	// the start. Both live on the menu's world model, so a save carries them. Shown for CIVILIZATION and SPACE.
+	const auto Rules = [this]() -> APSWorldRules::FRules
+	{
+		return APSWorldRules::Of(ViewModel.IsValid() ? ViewModel->GetGeneratedWorld() : nullptr);
+	};
+	const auto Chip = [this](const FText& Label, const TFunction<bool()>& Picked, const FOnClicked& OnClicked, const bool bEnabled,
+		const FText& Tip) -> TSharedRef<SWidget>
+	{
+		return SNew(SButton)
+			.ButtonStyle(&SecondaryButtonStyle)
+			.IsEnabled(bEnabled)
+			.ToolTipText(Tip)
+			.ButtonColorAndOpacity_Lambda([Picked]()
+			{
+				return Picked() ? APSMenu::RetintAction(FLinearColor(0.72f, 0.32f, 0.03f, 1.0f)) : FLinearColor::White;
+			})
+			.ContentPadding(APSMenu::ButtonPadding("Bold", 12, 12.0f))
+			.OnClicked(OnClicked)
+			[
+				SNew(STextBlock).Text(Label).Font(APSMenu::Font("Bold", 12)).RenderTransform(APSMenu::CapsShift("Bold", 12))
+				.ColorAndOpacity_Lambda([Picked, bEnabled]() { return FSlateColor(!bEnabled ? APSMenu::Quiet : Picked() ? APSMenu::White : APSMenu::Readable); })
+			];
+	};
+	const auto ModeChip = [&](const APSWorldRules::EMode Mode, const FText& Label, const FText& Tip)
+	{
+		return Chip(Label, [Rules, Mode]() { return Rules().Mode == Mode; },
+			FOnClicked::CreateSP(this, &SAPSMainMenuRoot::SetNewWorldMode, static_cast<uint8>(Mode)), true, Tip);
+	};
+	const TSharedRef<SHorizontalBox> Modes = SNew(SHorizontalBox);
+	Modes->AddSlot().AutoWidth().Padding(0.0f, 0.0f, 8.0f, 0.0f)
+	[ModeChip(APSWorldRules::EMode::Origin, LOCTEXT("ModeOrigin", "ORIGIN"), LOCTEXT("ModeOriginTip", "Start with nothing; reach, knowledge and resources open step by step"))];
+	Modes->AddSlot().AutoWidth().Padding(0.0f, 0.0f, 8.0f, 0.0f)
+	[ModeChip(APSWorldRules::EMode::Sandbox, LOCTEXT("ModeSandbox", "SANDBOX"), LOCTEXT("ModeSandboxTip", "Everything from the first minute: the game as it is"))];
+	Modes->AddSlot().AutoWidth()
+	[ModeChip(APSWorldRules::EMode::SpaceTrips, LOCTEXT("ModeTrips", "SPACE TRIPS"), LOCTEXT("ModeTripsTip", "A ship, a route and nothing to do but look"))];
+
+	const TSharedRef<SHorizontalBox> Origins = SNew(SHorizontalBox);
+	for (const APSOrigins::FDefinition& Origin : APSOrigins::All())
+	{
+		const APSWorldRules::EOrigin Id = Origin.Id;
+		const FText Label = FText::FromString(FString(APSWorldRules::OriginName(Id)));
+		Origins->AddSlot().AutoWidth().Padding(0.0f, 0.0f, 8.0f, 0.0f)
+		[
+			Chip(Label, [Rules, Id]() { return Rules().Origin == Id; },
+				FOnClicked::CreateSP(this, &SAPSMainMenuRoot::SetNewWorldOrigin, static_cast<uint8>(Id)), Origin.bAvailable,
+				Origin.bAvailable ? Origin.Subtitle : LOCTEXT("OriginLater", "Later: waits for the galaxy modes of the generator"))
+		];
+	}
+
+	const auto ModeText = [Rules]() -> FText
+	{
+		switch (Rules().Mode)
+		{
+		case APSWorldRules::EMode::Origin:
+			return LOCTEXT("ModeOriginDesc", "Start with nothing. Reach, knowledge and resources open step by step along the ladder.");
+		case APSWorldRules::EMode::SpaceTrips:
+			return LOCTEXT("ModeTripsDesc", "A ship, a route, and nothing to do but look. No economy, no goals.");
+		case APSWorldRules::EMode::Custom:
+			return LOCTEXT("ModeCustomDesc", "Your own mix of the rules.");
+		case APSWorldRules::EMode::Sandbox:
+		default:
+			return LOCTEXT("ModeSandboxDesc", "Everything from the first minute. Build, fly, explore: the game as it is today.");
+		}
+	};
+	const auto OriginText = [Rules]() -> FText
+	{
+		const APSOrigins::FDefinition* Origin = APSOrigins::Find(Rules().Origin);
+		return Origin ? Origin->Description : FText::GetEmpty();
+	};
+	const auto Shown = [this]() { return NewWorldPath == EAPSNewWorldPath::Civilization || NewWorldPath == EAPSNewWorldPath::Space; };
+	const auto OriginShown = [Rules, Shown]() { return Shown() && Rules().Mode == APSWorldRules::EMode::Origin; };
+
+	return SNew(SVerticalBox)
+		.Visibility_Lambda([Shown]() { return Shown() ? EVisibility::Visible : EVisibility::Collapsed; })
+		+ SVerticalBox::Slot().AutoHeight()
+		[
+			SNew(STextBlock).Text(LOCTEXT("NewWorldModeLabel", "MODE")).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::Cyan)
+			.RenderTransform(APSMenu::CapsShift("Bold", 11))
+		]
+		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)
+		[Modes]
+		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)
+		[
+			SNew(STextBlock).Font(APSMenu::Font("Regular", 14)).ColorAndOpacity(APSMenu::Readable).AutoWrapText(true)
+			.Text_Lambda(ModeText)
 		]
 		+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 14.0f, 0.0f, 0.0f)
 		[
-			SNew(SUniformGridPanel).SlotPadding(FMargin(8.0f))
-			+ SUniformGridPanel::Slot(0, 0)
+			SNew(SVerticalBox)
+			.Visibility_Lambda([OriginShown]() { return OriginShown() ? EVisibility::Visible : EVisibility::Collapsed; })
+			+ SVerticalBox::Slot().AutoHeight()
 			[
-				MapCard(LOCTEXT("NewWorldMapStart", "START LOCATION"),
-					LOCTEXT("NewWorldMapStartDesc", "The Alpha map: a set start with ships ready to fly."),
-					LOCTEXT("NewWorldMapStartPlace", "ALPHA"), MapPreviewBrush.Get(), true)
+				SNew(STextBlock).Text(LOCTEXT("NewWorldOriginLabel", "ORIGIN")).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::Cyan)
+				.RenderTransform(APSMenu::CapsShift("Bold", 11))
 			]
-			+ SUniformGridPanel::Slot(1, 0)
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)
+			[Origins]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)
 			[
-				MapCard(LOCTEXT("NewWorldMapsSoon", "MORE MAPS"),
-					LOCTEXT("NewWorldMapsSoonDesc", "New maps arrive with the next versions."),
-					FText::GetEmpty(), nullptr, false)
+				SNew(STextBlock).Font(APSMenu::Font("Regular", 14)).ColorAndOpacity(APSMenu::Readable).AutoWrapText(true)
+				.Text_Lambda(OriginText)
 			]
 		];
+}
+
+FReply SAPSMainMenuRoot::SetNewWorldMode(const uint8 Mode)
+{
+	UGeneratedWorld* World = ViewModel.IsValid() ? ViewModel->GetGeneratedWorld() : nullptr;
+	if (!World)
+	{
+		return FReply::Handled();
+	}
+	const APSWorldRules::EMode Picked = static_cast<APSWorldRules::EMode>(FMath::Clamp(static_cast<int32>(Mode), 0, 3));
+	APSWorldRules::ApplyPreset(*World, Picked);
+	// SPACE TRIPS flies the SPACE route (no civilization); ORIGIN and SANDBOX found one.
+	if (Picked == APSWorldRules::EMode::SpaceTrips)
+	{
+		NewWorldPath = EAPSNewWorldPath::Space;
+	}
+	else if (NewWorldPath == EAPSNewWorldPath::Space)
+	{
+		NewWorldPath = EAPSNewWorldPath::Civilization;
+	}
+	if (Picked == APSWorldRules::EMode::Origin)
+	{
+		if (const APSOrigins::FDefinition* Origin = APSOrigins::Find(APSWorldRules::Of(World).Origin))
+		{
+			ViewModel->SetCharacterSpawnPlace(static_cast<int32>(Origin->StartPlace));
+		}
+	}
+	UE_LOG(LogTemp, Log, TEXT("[APS.WorldRules] NEW WORLD mode %s: %s"), APSWorldRules::ModeName(Picked), *APSWorldRules::Describe(APSWorldRules::Of(World)));
+	return FReply::Handled();
+}
+
+FReply SAPSMainMenuRoot::SetNewWorldOrigin(const uint8 Origin)
+{
+	UGeneratedWorld* World = ViewModel.IsValid() ? ViewModel->GetGeneratedWorld() : nullptr;
+	const APSOrigins::FDefinition* Definition = APSOrigins::Find(static_cast<APSWorldRules::EOrigin>(Origin));
+	if (!World || !Definition || !Definition->bAvailable)
+	{
+		return FReply::Handled();
+	}
+	APSWorldRules::FRules Rules = APSWorldRules::Of(World);
+	Rules.Mode = APSWorldRules::EMode::Origin;
+	Rules.Origin = Definition->Id;
+	APSWorldRules::Write(*World, Rules);
+	ViewModel->SetCharacterSpawnPlace(static_cast<int32>(Definition->StartPlace));
+	UE_LOG(LogTemp, Log, TEXT("[APS.WorldRules] NEW WORLD origin %s"), *APSWorldRules::Describe(Rules));
+	return FReply::Handled();
 }
 
 bool SAPSMainMenuRoot::OpenPageByName(const FString& Page, const FString& Tab)
@@ -2618,6 +2829,10 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildChoosePathPage()
 			[
 				SNew(STextBlock).Font(APSMenu::Font("Regular", 18)).ColorAndOpacity(APSMenu::Readable).AutoWrapText(true)
 				.Text_Lambda([this]() { return NewWorldCopy(NewWorldPath).Description; })
+			]
+			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 22.0f, 0.0f, 0.0f)
+			[
+				BuildNewWorldRulesRows()
 			]
 			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Left).Padding(0.0f, 30.0f, 0.0f, 0.0f)
 			[

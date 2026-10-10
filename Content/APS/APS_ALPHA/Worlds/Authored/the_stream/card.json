@@ -1,0 +1,15 @@
+{
+  "id": "the_stream",
+  "order": 70,
+  "name": "THE STREAM",
+  "subtitle": "A river of stars from horizon to horizon",
+  "lore": "A river of stars runs through the sky from horizon to horizon, and the sand below remembers the wind of a thousand years. Everything here points one way: upstream.",
+  "place": "SAND   ·   A STAR   ·   STREAM",
+  "tags": ["STREAM", "DESERT", "WHITE SUN"],
+  "locks": ["all"],
+  "origin": "ark",
+  "route": "civilization",
+  "spawn": "MoonOrbit",
+  "playable": true,
+  "readiness": "ready"
+}

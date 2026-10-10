@@ -1,0 +1,15 @@
+{
+  "id": "ten_thousand_islands",
+  "order": 40,
+  "name": "TEN THOUSAND ISLANDS",
+  "subtitle": "No continent, only shores",
+  "lore": "No continent, only shores. Ten thousand islands and a sea that never freezes; whatever you build here will be a harbour first.",
+  "place": "ARCHIPELAGO   ·   G STAR",
+  "tags": ["ARCHIPELAGO", "OCEAN", "SUPER-EARTH"],
+  "locks": ["all"],
+  "origin": "ark",
+  "route": "civilization",
+  "spawn": "PlanetSurface",
+  "playable": true,
+  "readiness": "ready"
+}
