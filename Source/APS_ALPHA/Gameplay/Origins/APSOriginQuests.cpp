@@ -392,7 +392,9 @@ namespace APSOriginQuestsLocal
 			UE_LOG(LogTemp, Log, TEXT("[APS.Origin] aps.Origin.Advance: %s"), APSOriginQuests::Advance(World) ? TEXT("advanced") : TEXT("nothing to advance"));
 		}));
 
-	FAutoConsoleCommandWithWorld StatusCommand(TEXT("aps.Origin.Story"),
+	// APS DEV 13.10: "aps.Origin.Story" is the variable above; a command under the same name is a Fatal in the console
+	// manager at static initialization (the packaged game exited with CrashDuringStaticInit before writing a log).
+	FAutoConsoleCommandWithWorld StatusCommand(TEXT("aps.Origin.StoryStatus"),
 		TEXT("Logs the origin's story: the chain, the steps done, the current objective."),
 		FConsoleCommandWithWorldDelegate::CreateLambda([](UWorld* World)
 		{

@@ -41,7 +41,7 @@ Claude (сессия «Аналитика»), 13.10 22:49 → ночь. Ветк
 2. NEW WORLD → ORIGIN → чип ARK → OPEN THE ORIGIN: экран ORIGIN (лестница, правила, BEGIN). ARK: старт на поверхности
    у колонии; журнал Origin «POWER THE ARK…», уведомление HUD; терминал (Tab) → вкладка ORIGIN; шаги идут: Tab → выйти
    на 40 м → SOLAR ARRAY → HABITAT → COMMS MAST → сигнал Древних → FABRICATION BAY → монумент до конца (LAUNCH) →
-   LAUNCH YARD → корпус S → 60 км над колонией → QUIET HULL → STELLAR DRIVE. `aps.Origin.Story` в консоли показывает шаг,
+   LAUNCH YARD → корпус S → 60 км над колонией → QUIET HULL → STELLAR DRIVE. `aps.Origin.StoryStatus` в консоли показывает шаг,
    `aps.Origin.Advance` прокручивает.
 3. ADRIFT: старт в кресле корабля (лог `[APS.Start] ship start (attempt 1): … in the pilot seat`), никакого падения;
    шаги DRIFT → NOT HERE (3 обследования) → DOWN (сесть на живой мир и выйти) → дальше как ARK без верфи.
