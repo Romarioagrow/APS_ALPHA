@@ -1898,6 +1898,48 @@ void SAPSMainMenuRoot::BackFromGeneration()
 	Navigate(EAPSMenuPage::ChoosePath);
 }
 
+TSharedPtr<FAPSWorldCardInfo> SAPSMainMenuRoot::MakeTripCard() const
+{
+	const TSharedPtr<FAPSWorldCardInfo> Info = MakeShared<FAPSWorldCardInfo>();
+	Info->HeaderSubtitle = LOCTEXT("CardHeaderTrips", "S P A C E   T R I P S");
+	Info->Kicker = LOCTEXT("CardKickerTrips", "SPACE TRIPS   ·   THE THIRD WAY TO PLAY");
+	Info->Title = LOCTEXT("CardTitleTrips", "NOTHING TO DO BUT LOOK");
+	Info->Subtitle = LOCTEXT("CardSubTrips", "A ship, a route, the sky");
+	Info->Lore = LOCTEXT("CardLoreTrips", "A ship, a route and nothing to do but look. The guide flies from world to world and holds at each for the view; take the helm whenever you like, and the guide steps back until you call it. No stocks, no goals, no one to answer to.");
+	Info->Tags.Add(LOCTEXT("TagTrips", "SPACE TRIPS"));
+	Info->Tags.Add(LOCTEXT("TagNoGoals", "NO GOALS"));
+	Info->Tags.Add(LOCTEXT("TagTripShip", "HOME SHIP"));
+	Info->Start.Add({LOCTEXT("StartPlace", "PLACE"), LOCTEXT("TripPlace", "In the pilot's seat of the home ship, in orbit of the home world")});
+	Info->Start.Add({LOCTEXT("StartShip", "SHIP"), LOCTEXT("TripShip", "The home ship of the start. A class M hull flies the star drive between suns; a smaller one folds the distance")});
+	Info->Start.Add({LOCTEXT("TripRoutes", "ROUTES"), LOCTEXT("TripRoutesLine", "HOME WATERS  ·  THE NEAREST SUNS  ·  RED AND COLD  ·  BLUE AND WHITE  ·  DOUBLES AND TRIPLES  ·  THE DARK  ·  THE CROWDED SKIES")});
+	Info->Start.Add({LOCTEXT("TripGuide", "GUIDE"), LOCTEXT("TripGuideLine", "HOME WATERS starts by itself once the engine runs; the others from the console: aps.Trip.Routes, aps.Trip.Start <route>")});
+	Info->Start.Add({LOCTEXT("TripPhoto", "PHOTO"), LOCTEXT("TripPhotoLine", "aps.Trip.Photo: a still of the view without the instruments")});
+	const APSWorldRules::FRules Rules = APSWorldRules::Of(ViewModel.IsValid() ? ViewModel->GetGeneratedWorld() : nullptr);
+	APSMenuCards::AddRuleChips(Rules, Info->Rules);
+	Info->StartLabel = LOCTEXT("CardStartTrips", "SET OUT   >");
+	Info->Hint = LOCTEXT("CardHintTrips", "Look around: RMB drag, wheel to zoom, double-click to focus   ·   the sky is rolled for the trip");
+	return Info;
+}
+
+FReply SAPSMainMenuRoot::OpenTripCard()
+{
+	UGeneratedWorld* World = ViewModel.IsValid() ? ViewModel->GetGeneratedWorld() : nullptr;
+	if (!World)
+	{
+		return FReply::Handled();
+	}
+	// The trip's rules (no goals, open reach, all known) and the pilot in the home ship; the rolled sky stays editable
+	// only through SANDBOX, so the card clears any preset left behind.
+	ClearWorldCard();
+	APSWorldRules::ApplyPreset(*World, APSWorldRules::EMode::SpaceTrips);
+	ViewModel->SetCharacterSpawnPlace(static_cast<int32>(ECharSpawnPlace::SpaceShip));
+	NewWorldPath = EAPSNewWorldPath::Civilization;
+	PendingWorldCard = MakeTripCard();
+	DiscoverSpawnClassOptions();
+	UE_LOG(LogTemp, Log, TEXT("[APS.Trip] card: %s"), *APSWorldRules::Describe(APSWorldRules::Of(World)));
+	return OpenAstronomicalGeneration(EAstroPreviewFocus::HomeSystem, EAPSGenerationRoute::Civilization);
+}
+
 TSharedRef<SWidget> SAPSMainMenuRoot::BuildNewWorldRulesRows()
 {
 	// Rio 07–09.10 (GAME_CONCEPT_ORIGIN §2, §2.1): MODE picks a preset of the world's rules; ORIGIN, for the ORIGIN mode,
@@ -2015,14 +2057,15 @@ FReply SAPSMainMenuRoot::SetNewWorldMode(const uint8 Mode)
 	}
 	const APSWorldRules::EMode Picked = static_cast<APSWorldRules::EMode>(FMath::Clamp(static_cast<int32>(Mode), 0, 3));
 	APSWorldRules::ApplyPreset(*World, Picked);
-	// SPACE TRIPS flies the SPACE route (no civilization); ORIGIN and SANDBOX found one.
-	if (Picked == APSWorldRules::EMode::SpaceTrips)
-	{
-		NewWorldPath = EAPSNewWorldPath::Space;
-	}
-	else if (NewWorldPath == EAPSNewWorldPath::Space)
+	// Rio 13.10: SPACE TRIPS flies the civilization route in the home ship (the SPACE route spawns no ship to fly);
+	// ORIGIN and SANDBOX found a colony on the same route.
+	if (NewWorldPath == EAPSNewWorldPath::Space)
 	{
 		NewWorldPath = EAPSNewWorldPath::Civilization;
+	}
+	if (Picked == APSWorldRules::EMode::SpaceTrips)
+	{
+		ViewModel->SetCharacterSpawnPlace(static_cast<int32>(ECharSpawnPlace::SpaceShip));
 	}
 	if (Picked == APSWorldRules::EMode::Origin)
 	{
@@ -2856,6 +2899,13 @@ namespace
 			Copy.Description = LOCTEXT("NewWorldOriginDesc", "A ready world and a story: the ark, the first ground, the first hull. Reach, knowledge and the stocks open step by step. Pick an origin, then open its card.");
 			Copy.Action = LOCTEXT("NewWorldOriginAction", "OPEN THE ORIGIN");
 		}
+		else if (Path == EAPSNewWorldPath::Civilization && Rules.Mode == APSWorldRules::EMode::SpaceTrips)
+		{
+			Copy.Kicker = LOCTEXT("NewWorldTripsKicker", "SPACE TRIPS");
+			Copy.Title = LOCTEXT("NewWorldTripsTitle", "NOTHING TO DO BUT LOOK");
+			Copy.Description = LOCTEXT("NewWorldTripsDesc", "A ship, a route and the sky. The guide flies you from world to world; take the helm whenever you like. No stocks, no goals.");
+			Copy.Action = LOCTEXT("NewWorldTripsAction", "OPEN THE ROUTE");
+		}
 		return Copy;
 	}
 }
@@ -3167,6 +3217,10 @@ FReply SAPSMainMenuRoot::RunNewWorldPath()
 	if (NewWorldPath == EAPSNewWorldPath::Civilization && Rules.Mode == APSWorldRules::EMode::Origin)
 	{
 		return OpenOriginCard(static_cast<uint8>(Rules.Origin == APSWorldRules::EOrigin::None ? APSWorldRules::EOrigin::Ark : Rules.Origin));
+	}
+	if (NewWorldPath == EAPSNewWorldPath::Civilization && Rules.Mode == APSWorldRules::EMode::SpaceTrips)
+	{
+		return OpenTripCard();
 	}
 	ClearWorldCard();
 	switch (NewWorldPath)

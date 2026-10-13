@@ -166,6 +166,9 @@ private:
 	 * when the screen is left; the model's authored id and locks go with it.
 	 */
 	FReply OpenOriginCard(uint8 Origin);
+	/** Rio 13.10: SPACE TRIPS as a card too: the home ship, the routes, the guide; SET OUT starts the world. */
+	FReply OpenTripCard();
+	TSharedPtr<FAPSWorldCardInfo> MakeTripCard() const;
 	void ClearWorldCard();
 	void BackFromGeneration();
 	TSharedPtr<FAPSWorldCardInfo> MakeAuthoredWorldCard(const APSAuthoredWorlds::FCard& Card) const;

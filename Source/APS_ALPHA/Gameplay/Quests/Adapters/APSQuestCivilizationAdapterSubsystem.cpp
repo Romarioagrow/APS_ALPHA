@@ -1,6 +1,7 @@
 #include "APSQuestCivilizationAdapterSubsystem.h"
 
 #include "APSCivilizationQuestAdapter.h"
+#include "APS_ALPHA/Core/Model/APSWorldRules.h"
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationMaterializationSubsystem.h"
 #include "APS_ALPHA/Gameplay/Quests/APSEarlyAccessOnboardingDefinition.h"
 #include "APS_ALPHA/Gameplay/Quests/APSQuestSubsystem.h"
@@ -99,6 +100,13 @@ bool UAPSQuestCivilizationAdapterSubsystem::TryConsumeReadyManifest(
 		return false;
 	};
 	using Contract = FAPSEarlyAccessOnboardingContract;
+	// Rio 09.10 / 13.10 (SPACE TRIPS: no goals): the tutorial route stays off in a trip world; the guide (APSSpaceTrips)
+	// leads there instead.
+	if (APSWorldRules::IsTrip(GetWorld()))
+	{
+		UE_LOG(LogTemp, Log, TEXT("[APS.Quest.CivilizationAdapter] space trips: the onboarding route stays off"));
+		return true;
+	}
 	// The quest runtime lives on the game instance: a new world in the same game session found the previous world's
 	// onboarding and could not start its own (audit B5). Another manifest's instance gives way; a load restored this
 	// manifest's own instance before this point and keeps it.
