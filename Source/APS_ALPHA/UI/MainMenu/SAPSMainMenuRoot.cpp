@@ -1432,6 +1432,28 @@ namespace APSMenuChecks
 	/** The menu on screen, for the check commands below. */
 	TWeakPtr<SAPSMainMenuRoot> GActiveRoot;
 
+	/**
+	 * APS DEV 13.10 (offscreen smoke runs give their commands with -ExecCmds, before the menu stands): a test start asked
+	 * while there is no root waits for it; one request, the last one wins. The root applies it when it has built its page.
+	 */
+	struct FPendingStart
+	{
+		FString Kind;
+		FString Id;
+	};
+	TOptional<FPendingStart> GPendingStart;
+
+	void StartCardOrArm(const TCHAR* Kind, const FString& Id)
+	{
+		if (const TSharedPtr<SAPSMainMenuRoot> Root = GActiveRoot.Pin())
+		{
+			Root->StartCardForTest(Kind, Id);
+			return;
+		}
+		GPendingStart = FPendingStart{Kind, Id};
+		UE_LOG(LogTemp, Log, TEXT("[APS.Test] start %s=%s: armed, waiting for the main menu"), Kind, *Id);
+	}
+
 	FAutoConsoleCommand OpenCommand(TEXT("aps.Menu.Open"),
 		TEXT("aps.Menu.Open <Landing|NewWorld|Worlds|Settings|Profile> [Video|Graphics|Audio|Interface]: opens a menu page (checks)."),
 		FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
@@ -1447,39 +1469,31 @@ namespace APSMenuChecks
 		TEXT("aps.Test.StartOrigin <ark|adrift|ring>: opens the origin's card from the main menu and presses BEGIN once the preview stands."),
 		FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
 		{
-			const TSharedPtr<SAPSMainMenuRoot> Root = GActiveRoot.Pin();
-			if (!Root.IsValid() || Args.Num() == 0)
+			if (Args.Num() == 0)
 			{
-				UE_LOG(LogTemp, Warning, TEXT("[APS.Test] StartOrigin: %s"), Root.IsValid() ? TEXT("usage: aps.Test.StartOrigin <ark|adrift|ring>") : TEXT("no main menu on screen"));
+				UE_LOG(LogTemp, Warning, TEXT("[APS.Test] StartOrigin: usage: aps.Test.StartOrigin <ark|adrift|ring>"));
 				return;
 			}
-			Root->StartCardForTest(TEXT("origin"), Args[0]);
+			StartCardOrArm(TEXT("origin"), Args[0]);
 		}));
 
 	FAutoConsoleCommand StartWorldCardCommand(TEXT("aps.Test.StartWorldCard"),
 		TEXT("aps.Test.StartWorldCard <id>: opens the authored world's card (Content/APS/APS_ALPHA/Worlds/Authored/<id>) from the main menu and presses START once the preview stands."),
 		FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
 		{
-			const TSharedPtr<SAPSMainMenuRoot> Root = GActiveRoot.Pin();
-			if (!Root.IsValid() || Args.Num() == 0)
+			if (Args.Num() == 0)
 			{
-				UE_LOG(LogTemp, Warning, TEXT("[APS.Test] StartWorldCard: %s"), Root.IsValid() ? TEXT("usage: aps.Test.StartWorldCard <id>") : TEXT("no main menu on screen"));
+				UE_LOG(LogTemp, Warning, TEXT("[APS.Test] StartWorldCard: usage: aps.Test.StartWorldCard <id>"));
 				return;
 			}
-			Root->StartCardForTest(TEXT("world"), Args[0]);
+			StartCardOrArm(TEXT("world"), Args[0]);
 		}));
 
 	FAutoConsoleCommand StartTripCommand(TEXT("aps.Test.StartTrip"),
 		TEXT("aps.Test.StartTrip: picks SPACE TRIPS on NEW WORLD, opens its card and presses SET OUT once the preview stands."),
 		FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>&)
 		{
-			const TSharedPtr<SAPSMainMenuRoot> Root = GActiveRoot.Pin();
-			if (!Root.IsValid())
-			{
-				UE_LOG(LogTemp, Warning, TEXT("[APS.Test] StartTrip: no main menu on screen"));
-				return;
-			}
-			Root->StartCardForTest(TEXT("trip"), FString());
+			StartCardOrArm(TEXT("trip"), FString());
 		}));
 #endif
 
@@ -2000,6 +2014,23 @@ bool SAPSMainMenuRoot::StartCardForTest(const FString& Kind, const FString& Id)
 	return true;
 }
 
+EActiveTimerReturnType SAPSMainMenuRoot::ApplyPendingTestStart(double, float)
+{
+	if (!APSMenuChecks::GPendingStart.IsSet())
+	{
+		return EActiveTimerReturnType::Stop;
+	}
+	if (!ContentHost.IsValid() || !ViewModel.IsValid() || !bHasBuiltCurrentPage)
+	{
+		return EActiveTimerReturnType::Continue;
+	}
+	const APSMenuChecks::FPendingStart Pending = APSMenuChecks::GPendingStart.GetValue();
+	APSMenuChecks::GPendingStart.Reset();
+	UE_LOG(LogTemp, Log, TEXT("[APS.Test] start %s=%s: the main menu stands, starting"), *Pending.Kind, *Pending.Id);
+	StartCardForTest(Pending.Kind, Pending.Id);
+	return EActiveTimerReturnType::Stop;
+}
+
 EActiveTimerReturnType SAPSMainMenuRoot::StartCardWhenReady(double, float)
 {
 	if (!PendingWorldCard.IsValid() || !ViewModel.IsValid() || CurrentPage != EAPSMenuPage::AstronomicalGeneration)
@@ -2281,6 +2312,11 @@ void SAPSMainMenuRoot::Construct(const FArguments& InArgs)
 	APSMenuChecks::GActiveRoot = StaticCastSharedRef<SAPSMainMenuRoot>(AsShared());
 	LoadVisualResources();
 	BeginAuxiliaryMenuLoad();
+	if (APSMenuChecks::GPendingStart.IsSet())
+	{
+		// APS DEV 13.10: a test start asked before this root stood (-ExecCmds) runs once the first page is built.
+		RegisterActiveTimer(0.5f, FWidgetActiveTimerDelegate::CreateSP(this, &SAPSMainMenuRoot::ApplyPendingTestStart));
+	}
 
 	ChildSlot
 	[

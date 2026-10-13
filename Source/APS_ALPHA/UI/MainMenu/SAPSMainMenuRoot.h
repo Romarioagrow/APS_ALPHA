@@ -178,6 +178,8 @@ private:
 	void ClearWorldCard();
 	/** StartCardForTest's wait: START once the preview stands (or the deadline passes). */
 	EActiveTimerReturnType StartCardWhenReady(double CurrentTime, float DeltaTime);
+	/** A test start asked before this root stood (-ExecCmds): applied once the first page is built. */
+	EActiveTimerReturnType ApplyPendingTestStart(double CurrentTime, float DeltaTime);
 	double CardStartDeadline{0.0};
 	FString CardStartLabel;
 	void BackFromGeneration();
