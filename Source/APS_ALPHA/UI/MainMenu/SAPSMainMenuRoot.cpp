@@ -2450,6 +2450,7 @@ void SAPSMainMenuRoot::Navigate(EAPSMenuPage NewPage)
 		// a queued edit can rebuild it and move the camera underneath Civilization
 		// or the newly visible menu page.
 		ViewModel->CancelPendingPreview();
+		ViewModel->CancelPendingTravel();
 	}
 	if (CurrentPage == EAPSMenuPage::ExistingWorlds && NewPage != EAPSMenuPage::ExistingWorlds)
 	{
@@ -2461,7 +2462,13 @@ void SAPSMainMenuRoot::Navigate(EAPSMenuPage NewPage)
 		PendingBulkDelete.Reset();
 		WorldFilterAnchors.Reset();
 	}
-	PreviousPage = CurrentPage;
+	// APS DEV 14.10 (audit): PROFILE and SETTINGS remember the page they were opened from, not each other, so BACK does not
+	// bounce between them for ever.
+	const auto IsSidePage = [](const EAPSMenuPage Page) { return Page == EAPSMenuPage::Profile || Page == EAPSMenuPage::Settings; };
+	if (!(IsSidePage(NewPage) && IsSidePage(CurrentPage)))
+	{
+		PreviousPage = CurrentPage;
+	}
 	CurrentPage = NewPage;
 	if (CurrentPage != EAPSMenuPage::Landing && IsSplashVisible())
 	{
@@ -5757,7 +5764,8 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 	DiscoverSpawnClassOptions();
 	bSpawnPickerOpen = false;
 	const TWeakObjectPtr<UWorldGenerationViewModel> VM = ViewModel;
-	CivilizationEditorSection = FMath::Clamp(CivilizationEditorSection, 0, 3);
+	// APS DEV 14.10 (audit): five sections (identity, manifest, divisions, start, ground); the clamp hid GROUND.
+	CivilizationEditorSection = FMath::Clamp(CivilizationEditorSection, 0, 4);
 
 	const auto EnumControl = [this](const FText& Label, const UEnum* Enum,
 		TFunction<int32()> Getter, TFunction<void(int32)> Setter, TFunction<bool(int32)> IsAvailable = nullptr)

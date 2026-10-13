@@ -1466,6 +1466,24 @@ void UWorldGenerationViewModel::CancelPendingPreview()
 	bPendingSurfaceAppearanceRefresh = false;
 }
 
+void UWorldGenerationViewModel::CancelPendingTravel()
+{
+	// START, BACK, another card: the drain timer kept firing and the first world opened later anyway.
+	if (PendingTravelLevelName.IsNone())
+	{
+		return;
+	}
+	if (UWorld* World = WorldContext.IsValid() ? WorldContext->GetWorld() : nullptr)
+	{
+		World->GetTimerManager().ClearTimer(PreviewTravelTimerHandle);
+	}
+	UE_LOG(LogTemp, Log, TEXT("[APS.WorldGeneration] Pending travel to %s cancelled: the generation screen was left"),
+		*PendingTravelLevelName.ToString());
+	PendingTravelLevelName = NAME_None;
+	PreviewTravelDrainAttempts = 0;
+	SetPreviewStatus(LOCTEXT("PreviewTravelCancelled", "START CANCELLED"), bPreviewReady);
+}
+
 void UWorldGenerationViewModel::RegeneratePreviewVariant()
 {
 	if (GeneratedWorld)

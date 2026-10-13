@@ -481,7 +481,8 @@ void SAPSColonyTerminal::Construct(const FArguments& InArgs)
 				]
 				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f, 0.0f, 0.0f)
 				[
-					SNew(STextBlock).Text(Details).Font(Font("Regular", 10)).ColorAndOpacity(Muted())
+					// Rio 14.10 (screenshots: "current tas", "object pa"): the details wrap instead of being cut mid-word.
+					SNew(STextBlock).Text(Details).Font(Font("Regular", 10)).ColorAndOpacity(Muted()).AutoWrapText(true)
 				]
 			],
 			FOnClicked::CreateLambda([this, Tab]()
@@ -1960,8 +1961,9 @@ TSharedRef<SWidget> SAPSColonyTerminal::BuildScheme()
 					]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 10.0f, 0.0f, 0.0f)
 					[
+						// APS DEV 14.10 (audit: SET COURSE dead with a star picked): lit by the pick; the handler explains a missing ship.
 						PrimaryButton(LOCTEXT("SchemeSetCourse", "SET COURSE"), FOnClicked::CreateLambda(SetCourse),
-							TAttribute<bool>::CreateLambda([this]() { return Scheme.IsValid() && Scheme->GetPicked() && GetCourseShip(); }))
+							TAttribute<bool>::CreateLambda([this]() { return Scheme.IsValid() && Scheme->GetPicked() != nullptr; }))
 					]
 					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)
 					[
@@ -3565,7 +3567,8 @@ FReply SAPSColonyTerminal::OnKeyDown(const FGeometry& Geometry, const FKeyEvent&
 	{
 		return HotKeyReply.GetValue();
 	}
-	return SCompoundWidget::OnKeyDown(Geometry, Event);
+	// APS DEV 14.10 (audit: F left the seat, keys reached the ship under the terminal): nothing falls through.
+	return FReply::Handled();
 }
 
 FReply SAPSColonyTerminal::OnPreviewKeyDown(const FGeometry& Geometry, const FKeyEvent& Event)
@@ -3649,11 +3652,31 @@ void SAPSColonyTerminal::Tick(const FGeometry& AllottedGeometry, const double In
 ASpaceship* SAPSColonyTerminal::GetCourseShip() const
 {
 	const APlayerController* Controller = World.IsValid() ? World->GetFirstPlayerController() : nullptr;
-	if (ASpaceship* Piloted = Controller ? Cast<ASpaceship>(Controller->GetPawn()) : nullptr)
+	APawn* Pawn = Controller ? Controller->GetPawn() : nullptr;
+	if (ASpaceship* Piloted = Cast<ASpaceship>(Pawn))
 	{
 		return Piloted;
 	}
-	return Cast<ASpaceship>(ColonyActors[2].Get());
+	// APS DEV 14.10 (audit): the ship the pilot walks in, then the colony's ship, then the fleet's flagship.
+	if (ASpaceship* Aboard = Pawn ? Cast<ASpaceship>(Pawn->GetAttachParentActor()) : nullptr)
+	{
+		return Aboard;
+	}
+	if (ASpaceship* Home = Cast<ASpaceship>(ColonyActors[2].Get()))
+	{
+		return Home;
+	}
+	if (const FAPSFleetCommand* Fleet = APSFleetFind(World.Get()))
+	{
+		for (const FAPSFleetUnit& Unit : Fleet->GetUnits())
+		{
+			if (Unit.bFlagship && Unit.Ship.IsValid())
+			{
+				return Unit.Ship.Get();
+			}
+		}
+	}
+	return nullptr;
 }
 
 TSharedRef<SWidget> SAPSColonyTerminal::BuildMap()

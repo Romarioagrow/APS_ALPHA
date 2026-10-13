@@ -276,6 +276,16 @@ namespace APSAuthoredWorlds
 		{
 			Json->RemoveField(Key);
 		}
+		// APS DEV 14.10 (audit, 0.6.5.1): a card used to land on top of the live model, so the previous card's or SANDBOX's
+		// stars, planets, home and the five preview edit maps went into the game with it. The model goes back to its
+		// class defaults first; the rules NEW WORLD holds (mode, origin) stay, then the preset writes its own fields.
+		const APSWorldRules::FRules Rules = APSWorldRules::Of(&World);
+		const UGeneratedWorld* Defaults = GetDefault<UGeneratedWorld>();
+		for (TFieldIterator<FProperty> It(UGeneratedWorld::StaticClass()); It; ++It)
+		{
+			It->CopyCompleteValue_InContainer(&World, Defaults);
+		}
+		APSWorldRules::Write(World, Rules);
 		FText Reason;
 		if (!FJsonObjectConverter::JsonObjectToUStruct(Json.ToSharedRef(), UGeneratedWorld::StaticClass(), &World, 0, 0, false, &Reason))
 		{

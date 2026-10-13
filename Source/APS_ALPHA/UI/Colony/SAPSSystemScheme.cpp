@@ -549,9 +549,11 @@ int32 SAPSSystemScheme::OnPaint(const FPaintArgs&, const FGeometry& Geometry, co
 		const double Width = NameLineWidth(Body.Name, Body.Designation);
 		const double Left = bCentred ? LineTop.X - Width * 0.5 : LineTop.X;
 		const double Middle = LineTop.Y + LineHeight(NameFont) * 0.5;
-		Text(Body.Name, FVector2D(Left, Middle), NameFont, bIsPicked ? APSChrome::Amber() : APSChrome::White(), false, true);
+		// Rio 14.10 (screenshot: a red name over the star's yellow disc): names always white, designations muted (the
+		// accent when picked); the pick itself is the frame or the ring, never the text colour.
+		Text(Body.Name, FVector2D(Left, Middle), NameFont, APSChrome::White(), false, true);
 		Text(Body.Designation, FVector2D(Left + APSSystemSchemePrivate::Measure(Body.Name, NameFont).X + NameDesignationGap, Middle),
-			DesignationFont, bIsPicked ? APSChrome::Amber() : Body.Color, false, true);
+			DesignationFont, bIsPicked ? APSChrome::Cyan() : APSChrome::Muted(), false, true);
 	};
 	if (Bodies.IsEmpty())
 	{
@@ -638,9 +640,14 @@ int32 SAPSSystemScheme::OnPaint(const FPaintArgs&, const FGeometry& Geometry, co
 				LabelAt = FVector2D(FMath::Max(VisibleLeft + 4.0, Left) + 10.0, Centre.Y - PlateHeight * 0.5 + 6.0);
 			}
 			{
+				// An opaque plate with a one-pixel frame (the highlight when picked), so the name reads over any disc.
+				const FAPSUIThemePalette& Palette = APSUITheme::Palette();
+				FSlateDrawElement::MakeBox(Elements, LayerId + 3, Geometry.ToPaintGeometry(FVector2D(PlateWidth + 2.0, PlateHeight + 2.0),
+					FSlateLayoutTransform(LabelAt - FVector2D(11.0, 7.0))), FAppStyle::GetBrush("WhiteBrush"), ESlateDrawEffect::None,
+					bPicked ? Palette.Highlight : Palette.Frame);
 				FSlateDrawElement::MakeBox(Elements, LayerId + 3, Geometry.ToPaintGeometry(FVector2D(PlateWidth, PlateHeight),
 					FSlateLayoutTransform(LabelAt - FVector2D(10.0, 6.0))), FAppStyle::GetBrush("WhiteBrush"), ESlateDrawEffect::None,
-					APSUITheme::Retint(FLinearColor(0.004f, 0.016f, 0.026f, 0.82f)));
+					FLinearColor(Palette.InsetFill.R, Palette.InsetFill.G, Palette.InsetFill.B, 1.0f));
 			}
 			NameLineAt(Body, LabelAt, false, bPicked);
 			Text(Body.Detail, LabelAt + FVector2D(0.0, NameLine + LabelLineGap), DetailFont, Soft(), false);
@@ -651,7 +658,7 @@ int32 SAPSSystemScheme::OnPaint(const FPaintArgs&, const FGeometry& Geometry, co
 			FSlateLayoutTransform(Centre - FVector2D(Radius))), Disc(), ESlateDrawEffect::None, Body.Color);
 		if (bPicked)
 		{
-			Arc(Elements, LayerId + 3, Geometry, Centre, Radius + 4.0f, 0.0f, UE_TWO_PI, APSChrome::Amber(), 1.6f);
+			Arc(Elements, LayerId + 3, Geometry, Centre, Radius + 4.0f, 0.0f, UE_TWO_PI, APSChrome::Cyan(), 1.6f);
 		}
 		if (!Body.bMoon)
 		{

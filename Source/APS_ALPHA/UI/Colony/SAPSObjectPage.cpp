@@ -1240,11 +1240,12 @@ void SAPSObjectPage::RefreshActions()
 	}
 	TArray<FAPSObjectAction> Actions;
 	GatherActions(Actions);
+	// APS DEV 14.10 (audit): a changing detail (a distance in flight) rebuilt the buttons every second and ate the click;
+	// the signature is the set of actions, their labels and whether they are lit.
 	FString Signature = TEXT("A:");
 	for (const FAPSObjectAction& Action : Actions)
 	{
-		Signature += Action.Id.ToString() + (Action.bEnabled ? TEXT("+") : TEXT("-")) + Action.Label.ToString() + TEXT("~")
-			+ Action.Detail.ToString() + TEXT(";");
+		Signature += Action.Id.ToString() + (Action.bEnabled ? TEXT("+") : TEXT("-")) + Action.Label.ToString() + TEXT(";");
 	}
 	if (Signature == ActionsSignature)
 	{
