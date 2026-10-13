@@ -815,7 +815,14 @@ void SAPSStarMapPanel::ReadCard()
 		Card.bHasOrder = true;
 		Card.OrderLabel = OrderLabel(NextOrder, AnomalyKind != INDEX_NONE ? FAPSStarSystems::AnomalyName(AnomalyKind) : FText::GetEmpty());
 		const FAPSFleetCommand* Fleet = APSFleetFind(LiveWorld);
-		AActor* Anchor = Stars->GetAnchor(Picked);
+		// APS DEV 14.10 (audit): a look at a star stands no anchor up by itself; the fleet's pick and the ETA need the
+		// actor, so one stands up only where an order can be given (a fleet), and NEAREST keeps only the systems the
+		// civilization knows, holds or sends ships to (ShipNavigationComponent).
+		AActor* Anchor = Stars->FindAnchor(Picked);
+		if (!Anchor && Fleet)
+		{
+			Anchor = Stars->GetAnchor(Picked);
+		}
 		FText Refusal = Fleet ? FText::GetEmpty() : LOCTEXT("NoFleet", "Fleet command is not running in this world.");
 		ASpaceship* Ship = Fleet && Anchor ? APSStarMap::PickShip(*Fleet, NextOrder, Anchor, Refusal) : nullptr;
 		const FAPSFleetUnit* Unit = Ship ? Fleet->FindUnit(Ship) : nullptr;

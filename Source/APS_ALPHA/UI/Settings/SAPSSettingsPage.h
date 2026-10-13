@@ -1,6 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
+#include "GenericPlatform/GenericWindow.h"
 #include "Widgets/SCompoundWidget.h"
 
 class SWidgetSwitcher;
@@ -59,4 +60,14 @@ private:
 	/** Display choices wait for APPLY, so a wrong mode never traps the player; everything else applies at once. */
 	bool bVideoDirty{false};
 	FText VideoStatus;
+	/**
+	 * APS DEV 14.10 (audit): the display choices waiting for APPLY live here, not in UGameUserSettings, so a GRAPHICS
+	 * chip's save or a BACK without APPLY never carries an unapplied window mode into the config.
+	 */
+	EWindowMode::Type PendingMode{EWindowMode::WindowedFullscreen};
+	FIntPoint PendingResolution{FIntPoint::ZeroValue};
+	float PendingFrameRateLimit{0.0f};
+	bool bPendingVSync{false};
+	/** The pending choices from the settings as they stand (on construction, after APPLY and RESTORE DEFAULTS). */
+	void ReadPendingVideo();
 };

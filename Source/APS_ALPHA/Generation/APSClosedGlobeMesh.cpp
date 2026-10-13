@@ -92,53 +92,57 @@ namespace APSClosedGlobeMesh
 		SampleDirections.SetNumUninitialized(TotalVertices);
 		TArray<FNoiseData> SurfaceSamples;
 		SurfaceSamples.SetNumUninitialized(TotalVertices);
-		TArray<uint8> FaceSamplesValid;
-		FaceSamplesValid.SetNumZeroed(UE_ARRAY_COUNT(Faces));
+		// APS DEV 14.10 (audit: a 106 ms tick on the selected globe): one task per row of a face, not one per face, so
+		// every worker has a share of the ~100k samples; each row owns a copy of the seeded noise (its tables; sampling
+		// moves no state), the same samples in the same slots as before.
+		const int32 RowsPerFace = FaceResolution + 1;
+		const int32 TotalRows = UE_ARRAY_COUNT(Faces) * RowsPerFace;
+		TArray<uint8> RowSamplesValid;
+		RowSamplesValid.SetNumZeroed(TotalRows);
 		FVector* DirectionData = SampleDirections.GetData();
 		FNoiseData* SurfaceData = SurfaceSamples.GetData();
-		uint8* FaceValidityData = FaceSamplesValid.GetData();
+		uint8* RowValidityData = RowSamplesValid.GetData();
 		const CustomNoise SeededNoise = Frame.SeededNoise;
 		const FAPSResolvedPlanetSurfaceProfile SurfaceProfile = Frame.Profile;
 		const bool bCoastalReliefCandidate = Frame.bCoastalReliefCandidate;
 		const double NoiseScale = Frame.NoiseScale;
 		const double NoiseIntensity = Frame.NoiseIntensity;
-		ParallelFor(UE_ARRAY_COUNT(Faces), [Radius, FaceResolution,
-			VerticesPerFace, DirectionData, SurfaceData, FaceValidityData,
-			SeededNoise, &SurfaceProfile, NoiseScale, NoiseIntensity, bCoastalReliefCandidate](const int32 FaceIndex)
+		ParallelFor(TotalRows, [Radius, FaceResolution, RowsPerFace,
+			VerticesPerFace, DirectionData, SurfaceData, RowValidityData,
+			SeededNoise, &SurfaceProfile, NoiseScale, NoiseIntensity, bCoastalReliefCandidate](const int32 RowIndex)
 		{
+			const int32 FaceIndex = RowIndex / RowsPerFace;
+			const int32 Y = RowIndex - FaceIndex * RowsPerFace;
 			const FCubeFace& Face = Faces[FaceIndex];
-			CustomNoise FaceNoise = SeededNoise;
-			bool bFaceSamplesValid = true;
-			for (int32 Y = 0; Y <= FaceResolution; ++Y)
+			CustomNoise RowNoise = SeededNoise;
+			bool bRowSamplesValid = true;
+			const double V = -1.0 + 2.0 * static_cast<double>(Y) / FaceResolution;
+			for (int32 X = 0; X <= FaceResolution; ++X)
 			{
-				const double V = -1.0 + 2.0 * static_cast<double>(Y) / FaceResolution;
-				for (int32 X = 0; X <= FaceResolution; ++X)
-				{
-					const double U = -1.0 + 2.0 * static_cast<double>(X) / FaceResolution;
-					const int32 SampleIndex = FaceIndex * VerticesPerFace
-						+ Y * (FaceResolution + 1) + X;
-					const FVector Direction = (Face.Normal + Face.AxisU * U + Face.AxisV * V)
-						.GetSafeNormal();
-					DVector NoisePosition;
-					const FNoiseData Surface =
-						UAPSWorldScapePlanetNoise::SampleResolvedProfile(
-						SurfaceProfile, FaceNoise, DVector(Direction * Radius),
-						DVector(0.0, 0.0, 0.0),
-						NoiseScale, NoiseIntensity, Radius, Direction.Z, NoisePosition, bCoastalReliefCandidate);
-					DirectionData[SampleIndex] = Direction;
-					SurfaceData[SampleIndex] = Surface;
-					bFaceSamplesValid = bFaceSamplesValid
-						&& FMath::IsFinite(Surface.Height)
-						&& FMath::IsFinite(Surface.HeightNormalize)
-						&& FMath::IsFinite(Surface.Temperature)
-						&& FMath::IsFinite(Surface.Humidity)
-						&& FMath::IsFinite(Surface.WaterMask);
-				}
+				const double U = -1.0 + 2.0 * static_cast<double>(X) / FaceResolution;
+				const int32 SampleIndex = FaceIndex * VerticesPerFace
+					+ Y * (FaceResolution + 1) + X;
+				const FVector Direction = (Face.Normal + Face.AxisU * U + Face.AxisV * V)
+					.GetSafeNormal();
+				DVector NoisePosition;
+				const FNoiseData Surface =
+					UAPSWorldScapePlanetNoise::SampleResolvedProfile(
+					SurfaceProfile, RowNoise, DVector(Direction * Radius),
+					DVector(0.0, 0.0, 0.0),
+					NoiseScale, NoiseIntensity, Radius, Direction.Z, NoisePosition, bCoastalReliefCandidate);
+				DirectionData[SampleIndex] = Direction;
+				SurfaceData[SampleIndex] = Surface;
+				bRowSamplesValid = bRowSamplesValid
+					&& FMath::IsFinite(Surface.Height)
+					&& FMath::IsFinite(Surface.HeightNormalize)
+					&& FMath::IsFinite(Surface.Temperature)
+					&& FMath::IsFinite(Surface.Humidity)
+					&& FMath::IsFinite(Surface.WaterMask);
 			}
-			FaceValidityData[FaceIndex] = bFaceSamplesValid ? 1 : 0;
+			RowValidityData[RowIndex] = bRowSamplesValid ? 1 : 0;
 		});
-		if (!Algo::AllOf(FaceSamplesValid,
-			[](const uint8 bFaceValid) { return bFaceValid != 0; }))
+		if (!Algo::AllOf(RowSamplesValid,
+			[](const uint8 bRowValid) { return bRowValid != 0; }))
 		{
 			return false;
 		}

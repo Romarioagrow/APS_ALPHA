@@ -5,6 +5,7 @@
 #include "APS_ALPHA/Actors/Astro/Star.h"
 #include "APS_ALPHA/Core/Enums/PlanetType.h"
 #include "APS_ALPHA/Core/Rendering/APSGalaxyGpuStars.h"
+#include "APS_ALPHA/Core/World/APSWorldOriginSubsystem.h"
 #include "APS_ALPHA/Gameplay/Expansion/APSInfrastructure.h"
 #include "APS_ALPHA/Gameplay/Expansion/APSSystemMaterializer.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
@@ -724,11 +725,13 @@ bool FAPSStarMapModel::LocateShip(UWorld* World, const AActor* Ship, int32& OutS
 	{
 		return false;
 	}
-	const int32 Containing = Stars->FindContaining(Ship->GetActorLocation());
+	// APS DEV 14.10 (audit: YOU stale in flight): the catalogue's places are the sky's (the world place plus the sky
+	// offset, as the fleet measures them), and the centre they are laid out from is read live in UpdateLive.
+	const FVector SkyPlace = Ship->GetActorLocation() + UAPSWorldOriginSubsystem::SkyOffsetOf(World);
+	const int32 Containing = Stars->FindContaining(SkyPlace);
 	const FAPSStarSystemInfo* Info = Stars->Get(Containing);
 	OutSystem = Info ? IndexOf(Info->Id) : INDEX_NONE;
-	OutPosition = Snapshot.Systems.IsValidIndex(OutSystem) ? Snapshot.Systems[OutSystem].Slot.Position
-		: PlaceAt(Ship->GetActorLocation());
+	OutPosition = Snapshot.Systems.IsValidIndex(OutSystem) ? Snapshot.Systems[OutSystem].Slot.Position : PlaceAt(SkyPlace);
 	return true;
 }
 
@@ -1226,6 +1229,11 @@ void FAPSStarMapModel::UpdateLive(UWorld* World)
 	}
 	const FAPSStarSystems* Stars = APSStarSystemsFind(World);
 	const FAPSFleetCommand* Fleet = APSFleetFind(World);
+	// The centre follows the sky (an origin shift, the still ship's owed travel), so the pilot's place stays true.
+	if (const FAPSStarSystemInfo* Centre = Stars ? Stars->Find(Snapshot.CentreId) : nullptr)
+	{
+		Snapshot.CentreLocation = Centre->Location;
+	}
 	if (Fleet)
 	{
 		for (FRoute& Route : Snapshot.Routes)

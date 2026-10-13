@@ -2451,6 +2451,7 @@ void SAPSMainMenuRoot::Navigate(EAPSMenuPage NewPage)
 		// or the newly visible menu page.
 		ViewModel->CancelPendingPreview();
 		ViewModel->CancelPendingTravel();
+		bCivilizationCommitTried = false;
 	}
 	if (CurrentPage == EAPSMenuPage::ExistingWorlds && NewPage != EAPSMenuPage::ExistingWorlds)
 	{
@@ -6409,6 +6410,17 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 					]
 				]
 			]
+		]
+		// APS DEV 14.10 (audit): what the commit said (a refusal, the start's progress) under the button, not only in the log.
+		+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(24.0f, 0.0f, 24.0f, 16.0f)
+		[
+			SNew(STextBlock)
+			.Text_Lambda([this]() { return ViewModel.IsValid() ? ViewModel->PreviewStatus : FText::GetEmpty(); })
+			.Visibility_Lambda([this]()
+			{
+				return bCivilizationCommitTried && ViewModel.IsValid() && !ViewModel->PreviewStatus.IsEmpty() ? EVisibility::Visible : EVisibility::Collapsed;
+			})
+			.Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::White).AutoWrapText(true)
 		];
 
 	return SNew(SOverlay)
@@ -6885,7 +6897,13 @@ void SAPSMainMenuRoot::ContinueAstronomicalGeneration()
 FReply SAPSMainMenuRoot::OpenCivilization() { Navigate(EAPSMenuPage::Civilization); return FReply::Handled(); }
 FReply SAPSMainMenuRoot::OpenProfile() { Navigate(EAPSMenuPage::Profile); return FReply::Handled(); }
 FReply SAPSMainMenuRoot::OpenSettings() { Navigate(EAPSMenuPage::Settings); return FReply::Handled(); }
-FReply SAPSMainMenuRoot::CommitCivilization() { if (ViewModel.IsValid()) ViewModel->CommitAndOpenLevel(); return FReply::Handled(); }
+FReply SAPSMainMenuRoot::CommitCivilization()
+{
+	// APS DEV 14.10 (audit): a refused commit (a gas giant home, no surface) only went to the log; its status shows now.
+	bCivilizationCommitTried = true;
+	if (ViewModel.IsValid()) ViewModel->CommitAndOpenLevel();
+	return FReply::Handled();
+}
 FReply SAPSMainMenuRoot::ContinueExistingWorld() { if (SelectedWorld.IsValid()) if (AMainMenuController* PC = Controller.Get()) PC->LoadWorldSlot(SelectedWorld->SaveFileName); return FReply::Handled(); }
 FReply SAPSMainMenuRoot::SelectExistingWorld(TSharedPtr<FAPSExistingWorldEntry> Entry) { SelectedWorld = Entry; WorldBrowserNotice = FText::GetEmpty(); RebuildExistingWorldDetails(); return FReply::Handled(); }
 FReply SAPSMainMenuRoot::QuitGame() { if (AMainMenuController* PC = Controller.Get()) UKismetSystemLibrary::QuitGame(PC, PC, EQuitPreference::Quit, false); return FReply::Handled(); }
