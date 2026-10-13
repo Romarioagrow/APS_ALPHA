@@ -2953,6 +2953,18 @@ void ASpaceship::UpdateFlightEnvironment(float DeltaTime, bool bForce)
 			EnforceDriveModeForEnvironment();
 			UE_LOG(LogTemp, Log, TEXT("[APS.Ships] Environment ship=%s environment=%s gravity=%s acceleration=%.2f m/s2"),
 				*GetName(), *GetFlightEnvironmentName(), *GetGravitySourceName(), ActiveGravityAcceleration / 100.0);
+			// Rio 10.10: the player's own ship in a world's atmosphere or on its ground maps that world in full.
+			if ((CurrentFlightEnvironment == EShipFlightEnvironment::Atmosphere || CurrentFlightEnvironment == EShipFlightEnvironment::Surface)
+				&& GetController() && GetController()->IsLocalPlayerController())
+			{
+				if (APlanetaryBody* Body = Cast<APlanetaryBody>(ActiveGravitySource.Get()))
+				{
+					if (FAPSFleetCommand* Fleet = APSFleetFind(GetWorld()))
+					{
+						Fleet->MarkVisited(Body);
+					}
+				}
+			}
 		}
 	}
 	if (OnboardComputer)

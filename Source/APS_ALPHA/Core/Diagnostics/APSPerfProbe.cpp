@@ -13,7 +13,12 @@ namespace APSPerfProbePrivate
 		TEXT("Seconds between [APS.Perf] lines in a game world (0 = off)."));
 	TAutoConsoleVariable<float> CVarHitchMs(TEXT("aps.Perf.HitchMs"), 50.0f,
 		TEXT("A frame whose game, render or GPU time is longer than this logs its own [APS.Perf] hitch line (0 = off)."));
-	TAutoConsoleVariable<int32> CVarAutoDump(TEXT("aps.Perf.AutoDumpHitches"), 3,
+	// 13.10 (Rio's 11.10 log: the three dumps went to the menu and the boarding; the 200-360 ms render frames near planets
+	// never got one): a minimum busiest-thread time for a dump to start, and more dumps per world.
+	TAutoConsoleVariable<float> CVarDumpMinMs(TEXT("aps.Perf.DumpMinMs"), 45.0f,
+		TEXT("A hitch frame starts an automatic 'stat dumphitches' only when its busiest thread took at least this many ms ")
+		TEXT("(0: any hitch, as before 13.10)."));
+	TAutoConsoleVariable<int32> CVarAutoDump(TEXT("aps.Perf.AutoDumpHitches"), 12,
 		TEXT("How many times per world a hitch (after the world's first 20 s, and 30 s after the last dump) turns on ")
 		TEXT("'stat dumphitches' for aps.Perf.DumpSeconds, so the log names what each hitch frame spent its time on. The ")
 		TEXT("editor going to the background or the world ending ends a dump at once. 0: off; set 0 when using ")
@@ -157,7 +162,9 @@ void APSPerfProbe::Tick(UWorld* World, const float DeltaSeconds)
 			// tree of every hitch frame, so the log says which system spent the time. Rio 05.10 (the one dump was spent in
 			// the menu): up to aps.Perf.AutoDumpHitches times per world, 30 s apart.
 			const int32 MaxDumps = CVarAutoDump.GetValueOnGameThread();
-			if (MaxDumps > GDumpsUsed && !bGDumpRunning && Now - GWorldStart > 20.0 && Now - GDumpEnd > 30.0)
+			if (MaxDumps > GDumpsUsed && !bGDumpRunning && Now - GWorldStart > 20.0 && Now - GDumpEnd > 30.0
+				// The wall-time frame, not the thread stat: a screenshot's read-back makes the last frame's game time read 500 ms.
+				&& FrameMs >= CVarDumpMinMs.GetValueOnGameThread())
 			{
 				++GDumpsUsed;
 				GDumpEnd = Now + FMath::Max(CVarDumpSeconds.GetValueOnGameThread(), 5.0f);

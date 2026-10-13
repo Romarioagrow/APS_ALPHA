@@ -20,6 +20,8 @@
 #include "Serialization/ObjectAndNameAsStringProxyArchive.h"
 #include "APS_ALPHA/UI/StrategicMap/SAPSStrategicMapPanel.h"
 #include "APS_ALPHA/UI/MainMenu/APSWorldBrowserMetadata.h"
+#include "APS_ALPHA/UI/Hud/APSPauseMenuSubsystem.h"
+#include "HAL/IConsoleManager.h"
 #include "Engine/GameViewportClient.h"
 #include "GameFramework/Pawn.h"
 #include "APS_ALPHA/Gameplay/Fleet/APSFleetCommand.h"
@@ -42,12 +44,37 @@ namespace
 	}
 }
 
+namespace APSGravityController
+{
+	TAutoConsoleVariable<int32> CVarPauseMenu(
+		TEXT("aps.UI.PauseMenu"), 1,
+		TEXT("Rio 10.10: 1: Escape opens the native pause menu (CONTINUE / SETTINGS / LEAVE GAME / QUIT GAME in the interface ")
+		TEXT("theme). 0: the level Blueprint's old WBP_PauseMenu, as before. Read when the controller sets up its input."),
+		ECVF_Default);
+}
+
 void AGravityPlayerController::SetupInputComponent()
 {
 	Super::SetupInputComponent();
 	if (InputComponent)
 	{
 		InputComponent->BindKey(EKeys::F10, IE_Pressed, this, &AGravityPlayerController::ToggleStrategicMap);
+		// Rio 10.10 ("the Escape menu is still the old one"): the controller's input component is read first, so the
+		// consuming binding here keeps Toggle_PauseMenu from the level Blueprint's WBP_PauseMenu. aps.UI.PauseMenu 0: the old menu.
+		if (APSGravityController::CVarPauseMenu.GetValueOnGameThread() != 0)
+		{
+			FInputActionBinding& Pause = InputComponent->BindAction(TEXT("Toggle_PauseMenu"), IE_Pressed, this, &AGravityPlayerController::TogglePauseMenu);
+			Pause.bConsumeInput = true;
+			Pause.bExecuteWhenPaused = true;
+		}
+	}
+}
+
+void AGravityPlayerController::TogglePauseMenu()
+{
+	if (UAPSPauseMenuSubsystem* PauseMenu = GetWorld() ? GetWorld()->GetSubsystem<UAPSPauseMenuSubsystem>() : nullptr)
+	{
+		PauseMenu->Toggle(this);
 	}
 }
 

@@ -1736,7 +1736,10 @@ namespace APSShipBenchmark
 		bool bHandled = Slate.ProcessKeyDownEvent(FKeyEvent(Key, FModifierKeysState(), User, false, 0, 0));
 		Slate.ProcessKeyUpEvent(FKeyEvent(Key, FModifierKeysState(), User, false, 0, 0));
 		// An offscreen run's viewport may hold no Slate focus: the key then goes to the player's input as the game's own.
-		APlayerController* Controller = !bHandled && World ? World->GetFirstPlayerController() : nullptr;
+		// 13.10: 'noplayer' skips that fallback: a key the viewport routed to the player input but reported unhandled (the
+		// character's own BindKey C) was otherwise pressed twice in one frame (first person on, then off again).
+		const bool bNoPlayer = Args.Num() > 1 && Args[1].Equals(TEXT("noplayer"), ESearchCase::IgnoreCase);
+		APlayerController* Controller = !bHandled && !bNoPlayer && World ? World->GetFirstPlayerController() : nullptr;
 		if (Controller)
 		{
 			bHandled = Controller->InputKey(FInputKeyParams(Key, IE_Pressed, 1.0, false));
@@ -1758,7 +1761,11 @@ namespace APSShipBenchmark
 		double Seconds{30.0};
 		bool bSprint{false};
 		bool bZeroG{false};
+		bool bStill{false};
 		bool bQuit{false};
+		/** at=<s>:<console command> tokens ('+' = space), run once at that second of the walk (keys, shots). */
+		TArray<TPair<double, FString>> At;
+		int32 NextAt{0};
 		double Waited{0.0};
 		double Elapsed{0.0};
 		bool bWalking{false};
@@ -1831,6 +1838,16 @@ namespace APSShipBenchmark
 			return false;
 		}
 		GTestWalk.Elapsed += DeltaTime;
+		while (GTestWalk.At.IsValidIndex(GTestWalk.NextAt) && GTestWalk.Elapsed >= GTestWalk.At[GTestWalk.NextAt].Key)
+		{
+			const FString& Command = GTestWalk.At[GTestWalk.NextAt].Value;
+			UE_LOG(LogTemp, Log, TEXT("[APS.TestWalk] t=%.1f: %s"), GTestWalk.Elapsed, *Command);
+			if (GEngine)
+			{
+				GEngine->Exec(World, *Command);
+			}
+			++GTestWalk.NextAt;
+		}
 		// Straight on, kept on the gravity plane on the ground (pace and sprint as the player). A walker that made under
 		// 30 cm in half a second (a wall of the base it starts beside) turns 75 deg about its up and goes on.
 		const FVector Up = Walker->GetActorUpVector();
@@ -1857,7 +1874,11 @@ namespace APSShipBenchmark
 			GTestWalk.Dir = FVector::VectorPlaneProject(GTestWalk.Dir, Up).GetSafeNormal();
 		}
 		// Forced: a run's start screens may leave the controller ignoring move input; the walker itself still walks.
-		Walker->AddMovementInput(GTestWalk.Dir, 1.0f, true);
+		// still=1 (10.10, Rio's log: 200 ms render frames while standing at the colony): no input, the walker stands.
+		if (!GTestWalk.bStill)
+		{
+			Walker->AddMovementInput(GTestWalk.Dir, 1.0f, true);
+		}
 		// Last frame's walker and camera (both final for that frame): the camera's motion against the walker's.
 		const FVector Pawn = Walker->GetActorLocation();
 		const FVector Cam = Controller->PlayerCameraManager ? Controller->PlayerCameraManager->GetCameraLocation() : FVector::ZeroVector;
@@ -1878,12 +1899,22 @@ namespace APSShipBenchmark
 				else if (Key == TEXT("duration")) GTestWalk.Seconds = FCString::Atod(*Value);
 				else if (Key == TEXT("sprint")) GTestWalk.bSprint = FCString::Atoi(*Value) != 0;
 				else if (Key == TEXT("zerog")) GTestWalk.bZeroG = FCString::Atoi(*Value) != 0;
+				else if (Key == TEXT("still")) GTestWalk.bStill = FCString::Atoi(*Value) != 0;
+				else if (Key == TEXT("at"))
+				{
+					FString Seconds, Command;
+					if (Value.Split(TEXT(":"), &Seconds, &Command))
+					{
+						GTestWalk.At.Emplace(FCString::Atod(*Seconds), Command.Replace(TEXT("+"), TEXT(" ")));
+					}
+				}
 			}
 			else if (Arg.Equals(TEXT("quit"), ESearchCase::IgnoreCase))
 			{
 				GTestWalk.bQuit = true;
 			}
 		}
+		GTestWalk.At.Sort([](const TPair<double, FString>& A, const TPair<double, FString>& B) { return A.Key < B.Key; });
 		GTestWalk.Handle = FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateStatic(&TickTestWalk));
 		UE_LOG(LogTemp, Log, TEXT("[APS.TestWalk] armed: warmup=%.0f duration=%.0f sprint=%d zeroG=%d quit=%d"), GTestWalk.Warmup,
 			GTestWalk.Seconds, GTestWalk.bSprint ? 1 : 0, GTestWalk.bZeroG ? 1 : 0, GTestWalk.bQuit ? 1 : 0);

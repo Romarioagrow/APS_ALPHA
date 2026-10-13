@@ -375,6 +375,12 @@ public:
 	void CancelOrder(const ASpaceship* Ship);
 
 	APSFleet::ESurvey GetSurvey(const AActor* Body) const;
+	/**
+	 * Rio 10.10 ("the planet was explored, the map is still pixel blocks"): the pilot's own presence in a world's
+	 * atmosphere or on its ground counts as its study for the map (the surface in full); the anomaly stays as it was
+	 * (a science ship's study still locates it).
+	 */
+	void MarkVisited(APlanetaryBody* Body);
 	const FAPSFleetBodyRecord* FindBody(const AActor* Body) const;
 	int32 CountOutposts(const AActor* Body) const;
 	const TArray<FAPSFleetBodyRecord>& GetBodies() const { return Bodies; }

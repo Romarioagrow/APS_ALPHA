@@ -16,6 +16,7 @@
 #include "APS_ALPHA/Gameplay/Construction/APSConstructionMode.h"
 #include "APS_ALPHA/Pawns/Characters/GravityDetectorComponent.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
+#include "APS_ALPHA/Gameplay/Fleet/APSFleetCommand.h"
 #include "APS_ALPHA/UI/Colony/APSColonyTerminalSubsystem.h"
 #include "APS_ALPHA/UI/Hud/SAPSWalkerHud.h"
 #include "Components/InputComponent.h"
@@ -1987,6 +1988,17 @@ void ACustomGravityCharacter::HandleGravitySourceChanged(AActor* NewSource)
 	if (bManualGravityOverride)
 	{
 		return;
+	}
+	// Rio 10.10: the player on foot under a world's gravity maps that world in full (the surface map).
+	if (IsPlayerControlled())
+	{
+		if (APlanetaryBody* Body = Cast<APlanetaryBody>(NewSource))
+		{
+			if (FAPSFleetCommand* Fleet = APSFleetFind(GetWorld()))
+			{
+				Fleet->MarkVisited(Body);
+			}
+		}
 	}
 
 	GravityTarget = NewSource;

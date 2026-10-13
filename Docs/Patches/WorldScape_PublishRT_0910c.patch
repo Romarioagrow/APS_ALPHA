@@ -1,4 +1,4 @@
-﻿--- a/Public/WorldScapePreparedMesh.h
+--- a/Public/WorldScapePreparedMesh.h
 +++ b/Public/WorldScapePreparedMesh.h
 @@ -47,4 +47,8 @@
      WORLDSCAPECORE_API void LogStats();
@@ -69,15 +69,16 @@
  void WorldScapePreparedMesh::Published() { ++Applied; }
 --- a/Private/WorldScapeMeshComponent.cpp
 +++ b/Private/WorldScapeMeshComponent.cpp
-@@ -30,6 +30,7 @@
+@@ -30,6 +30,8 @@
  #include "Materials/MaterialRenderProxy.h"
  #include "RenderUtils.h"
  #include "SceneInterface.h"
 +#include "Tasks/Task.h"
++#include "Misc/CoreDelegates.h"
  
  
  
-@@ -46,6 +47,23 @@
+@@ -46,6 +48,30 @@
  DECLARE_CYCLE_STAT(TEXT("Create Mesh Section"), STAT_WorldScapeMesh_CreateMeshSection, STATGROUP_WorldScapeMesh);
  DECLARE_CYCLE_STAT(TEXT("UpdateSection GT"), STAT_WorldScapeMesh_UpdateSectionGT, STATGROUP_WorldScapeMesh);
  DECLARE_CYCLE_STAT(TEXT("UpdateSection RT"), STAT_WorldScapeMesh_UpdateSectionRT, STATGROUP_WorldScapeMesh);
@@ -95,13 +96,20 @@
 +	TEXT("0: copy into the CPU arrays first, then upload (before 09.10)."),
 +	ECVF_RenderThreadSafe);
 +static TAutoConsoleVariable<int32> CVarAPSPublishFreeAsync(
-+	TEXT("worldscape.PublishFreeAsync"), 1,
-+	TEXT("1: free the transient section arrays on a background task instead of the render thread. 0: before 09.10."),
++	TEXT("worldscape.PublishFreeAsync"), 2,
++	TEXT("2: queue the published sections' transient arrays and free them on one background task at the end of the render ")
++	TEXT("frame, after the upload burst (10.10: frees running beside the uploads made each copy ~2.3x slower). 1: a ")
++	TEXT("background task per section at once. 0: free on the render thread (before 09.10)."),
 +	ECVF_RenderThreadSafe);
++
++// worldscape.PublishFreeAsync 2: render-thread-only queue, emptied by FCoreDelegates::OnEndFrameRT.
++static TArray<class FWorldScapeMeshSectionUpdateData*> GAPSPendingSectionFrees;
++static bool GAPSPendingSectionFreesHooked = false;
++static void APSFlushPendingSectionFreesRT();
  DECLARE_CYCLE_STAT(TEXT("Get WorldScapeMesh Elements"), STAT_WorldScapeMesh_GetMeshElements, STATGROUP_WorldScapeMesh);
  DECLARE_CYCLE_STAT(TEXT("Update bCollision"), STAT_WorldScapeMesh_UpdateCollision, STATGROUP_WorldScapeMesh);
  
-@@ -350,6 +368,17 @@
+@@ -350,6 +376,17 @@
  				// Lock vertex buffer
  				const int32 NumVerts = SectionData->NewVertexBuffer.Num();
  
@@ -119,7 +127,7 @@
  				// Iterate through vertex data, copying in new info
  				const bool bCopied = SectionData->PackedBuffers && WorldScapePreparedMesh::CopyPreparedRenderBuffers(Section->VertexBuffers, *SectionData->PackedBuffers);
  				if (!bCopied)
-@@ -367,36 +396,44 @@
+@@ -367,36 +404,44 @@
  					Section->VertexBuffers.StaticMeshVertexBuffer.SetVertexUV(i, 3, Vertex.TextureCoordinate[3]);
  					Section->VertexBuffers.ColorVertexBuffer.VertexColor(i) = Vertex.Color;
  				}
@@ -168,7 +176,7 @@
  
  
  #if RHI_RAYTRACING && ENGINE_MAJOR_VERSION == 5
-@@ -429,7 +466,21 @@
+@@ -429,7 +474,32 @@
  
  
  			// Free data sent from game thread
@@ -176,10 +184,21 @@
 +			// APS 09.10: the arrays are plain CPU memory (the packed buffers never had InitResource), so a background
 +			// task may free them; the reservation is released there too.
 +			SCOPE_CYCLE_COUNTER(STAT_WorldScapeMesh_UpdateSectionRT_Free);
-+			if (CVarAPSPublishFreeAsync.GetValueOnRenderThread() != 0)
++			const int32 FreeMode = CVarAPSPublishFreeAsync.GetValueOnRenderThread();
++			if (FreeMode >= 2)
 +			{
 +				// The section is published: give its budget back now, so the next batch is not pushed onto the legacy
-+				// path while the background task is still freeing (10.10 A/B: 0 -> 26 budget fallbacks otherwise).
++				// path while the arrays wait to be freed (10.10 A/B: 0 -> 26 budget fallbacks otherwise).
++				SectionData->Reservation.Reset();
++				if (!GAPSPendingSectionFreesHooked)
++				{
++					GAPSPendingSectionFreesHooked = true;
++					FCoreDelegates::OnEndFrameRT.AddStatic(&APSFlushPendingSectionFreesRT);
++				}
++				GAPSPendingSectionFrees.Add(SectionData);
++			}
++			else if (FreeMode == 1)
++			{
 +				SectionData->Reservation.Reset();
 +				UE::Tasks::Launch(UE_SOURCE_LOCATION, [SectionData]() { delete SectionData; },
 +					UE::Tasks::ETaskPriority::BackgroundNormal);
@@ -191,3 +210,159 @@
  		}
  	}
  
+@@ -899,6 +969,24 @@
+ 	}
+ }
+ 
++static void APSFlushPendingSectionFreesRT()
++{
++	check(IsInRenderingThread());
++	if (GAPSPendingSectionFrees.IsEmpty())
++	{
++		return;
++	}
++	TArray<FWorldScapeMeshSectionUpdateData*> Batch = MoveTemp(GAPSPendingSectionFrees);
++	GAPSPendingSectionFrees.Reset();
++	UE::Tasks::Launch(UE_SOURCE_LOCATION, [Batch = MoveTemp(Batch)]()
++	{
++		for (FWorldScapeMeshSectionUpdateData* Data : Batch)
++		{
++			delete Data;
++		}
++	}, UE::Tasks::ETaskPriority::BackgroundNormal);
++}
++
+ bool UWorldScapeMeshComponent::CanPublishPreparedSection(int32 SectionIndex, const FWorldScapePreparedMeshSection& Payload) const
+ {
+ 	if (GetCollisionEnabled() != ECollisionEnabled::NoCollision || !WorldScapeMeshSections.IsValidIndex(SectionIndex)) return false;
+--- a/Private/WorldScapeRoot_Main.cpp
++++ b/Private/WorldScapeRoot_Main.cpp
+@@ -6,6 +6,35 @@
+ static TAutoConsoleVariable<int32> CVarAPSWorldScapePublishPerFrame(TEXT("worldscape.PublishPerFrame"), 0,
+ 	TEXT("APS planets v2: finished terrain rings published per frame (0 = the whole batch in one frame, stock); "
+ 	     "2-3 spreads the render-thread upload of a batch over frames."));
++#include "Misc/QueuedThreadPoolWrapper.h"
++#include "Tasks/Task.h"
++// APS 13.10 (Rio's 11.10 log: 230 frames with the game thread at 50-80 ms in six minutes of low flight over a wet
++// planet, one per ring batch): a finished batch's tasks were deleted on the game thread, each with its three LodData
++// copies (~8 MB a ring, up to 20 rings), and freeing that much in one frame costs tens of ms. 1: a background task
++// frees them. 0: on the game thread (before 13.10).
++static TAutoConsoleVariable<float> CVarAPSWorldScapePublishLogMs(TEXT("worldscape.PublishLogMs"), 15.0f,
++	TEXT("APS: a published ring batch whose game-thread work took longer than this logs its breakdown ([WS.Publish]); 0 = off."));
++static TAutoConsoleVariable<int32> CVarAPSWorldScapeTaskFreeAsync(TEXT("worldscape.TaskFreeAsync"), 1,
++	TEXT("APS: 1 frees a published ring batch's worker tasks on a background task; 0 on the game thread (before 13.10)."));
++// APS 10.10 night (traced far approach): the ring workers start as uncapped background tasks; a batch of ~20 rings at
++// ~0.4 s each took every logical core, and the renderer's own tasks (occlusion culling, dynamic mesh gathering) left the
++// render thread waiting 15-40 ms a few frames after each publication. > 0 caps how many rings generate at once, at low
++// task priority. 0: no cap (before 10.10).
++static TAutoConsoleVariable<int32> CVarAPSWorldScapeGenerationThreads(TEXT("worldscape.GenerationThreads"), 0,
++	TEXT("APS: rings of one WorldScape batch generated at once, at low priority (0 = no cap, all cores, before 10.10)."));
++static FQueuedThreadPool* APSWorldScapeGenerationPool()
++{
++	const int32 Cap = CVarAPSWorldScapeGenerationThreads.GetValueOnGameThread();
++	if (Cap <= 0 || !GThreadPool)
++	{
++		return GThreadPool;
++	}
++	// Never deleted: tasks may still sit in it at shutdown; the wrapper only forwards to GThreadPool.
++	static FQueuedThreadPoolWrapper* Pool = new FQueuedThreadPoolWrapper(GThreadPool, Cap,
++		[](EQueuedWorkPriority) { return EQueuedWorkPriority::Low; });
++	Pool->SetMaxConcurrency(Cap);
++	return Pool;
++}
+ #include "DSP/Osc.h"
+ #include <Runtime/Engine/Classes/Kismet/GameplayStatics.h>
+ 
+@@ -1574,6 +1603,7 @@
+ // ----------------------------------------------------------------------------
+ void AWorldScapeRoot::UpdatePosition()
+ {
++	TRACE_CPUPROFILER_EVENT_SCOPE(WS_UpdatePosition);
+ 	FVector PlayerPositionNormal;
+ 
+ 	bool DoCollision = bGenerateCollision;
+@@ -1782,7 +1812,7 @@
+ 					WorldScapeLod[i], this, SnappedPosition, PlanetLocation, SubPosition, PlanetScaleCode, i,
+ 					TriangleSize * LandAltitudeMultiplier, LodResolution, PlayerDistanceToGround, PlayerPositionNormal,
+ 					bFlatWorld, IsInViewPort));
+-				LodGenerationThreadPool.Last()->StartBackgroundTask();
++				LodGenerationThreadPool.Last()->StartBackgroundTask(APSWorldScapeGenerationPool());
+ 			}
+ 		}
+ 		if (bOcean)
+@@ -1812,7 +1842,7 @@
+ 					WorldScapeLodInGeneration.Add(WorldScapeLodOcean[i], false);
+ 					LodGenerationThreadPool.Add(new FAsyncTask <LodGenerationThread>(WorldScapeLodOcean[i], this, SnappedPosition, PlanetLocation, SubPosition, PlanetScaleCode, i,
+ 						OceanTriangleSize * WaterAltitudeMultiplier, OceanLodResolution, PlayerDistanceToGround, PlayerPositionNormal, bFlatWorld, IsInViewPort));
+-					LodGenerationThreadPool.Last()->StartBackgroundTask();
++					LodGenerationThreadPool.Last()->StartBackgroundTask(APSWorldScapeGenerationPool());
+ 				}
+ 			}
+ 		}
+@@ -1828,6 +1858,7 @@
+ // ----------------------------------------------------------------------------
+ void AWorldScapeRoot::CheckForLodGeneration()
+ {
++	TRACE_CPUPROFILER_EVENT_SCOPE(WS_CheckForLodGeneration);
+ 	bool DoneGenerating = true;
+ 	
+ 	// The pending TMap is game-thread-owned. Workers must never read/write it
+@@ -1843,6 +1874,8 @@
+ 	}
+ 	if (DoneGenerating)
+ 	{
++		const double APS_T0 = FPlatformTime::Seconds();
++		double APS_TPublish = APS_T0, APS_TDelete = APS_T0, APS_TMaterial = APS_T0;
+ 		// APS planets v2 (P3): at most worldscape.PublishPerFrame rings per frame (0 = all at once, stock).
+ 		const int32 APS_Budget = CVarAPSWorldScapePublishPerFrame.GetValueOnGameThread();
+ 		bool updateMaterial = false;
+@@ -1867,14 +1900,32 @@
+ 			++APS_PublishedNow;
+ 		}
+ 		for (UWorldScapeLod* APS_Lod : APS_Published) WorldScapeLodInGeneration.Remove(APS_Lod);
++		APS_TPublish = FPlatformTime::Seconds();
+ 		if (WorldScapeLodInGeneration.Num() == 0)
+ 		{
+-			for (FAsyncTask<LodGenerationThread>* Task : LodGenerationThreadPool)
++			TRACE_CPUPROFILER_EVENT_SCOPE(WS_TaskDelete);
++			if (CVarAPSWorldScapeTaskFreeAsync.GetValueOnGameThread() != 0)
++			{
++				// All tasks passed IsDone and their payloads are published: only plain memory dies here.
++				TArray<FAsyncTask<LodGenerationThread>*> Finished = MoveTemp(LodGenerationThreadPool);
++				UE::Tasks::Launch(UE_SOURCE_LOCATION, [Finished = MoveTemp(Finished)]()
++				{
++					for (FAsyncTask<LodGenerationThread>* Task : Finished)
++					{
++						delete Task;
++					}
++				}, UE::Tasks::ETaskPriority::BackgroundNormal);
++			}
++			else
+ 			{
+-				delete Task; // All tasks passed IsDone; do not leak one task per LOD update.
++				for (FAsyncTask<LodGenerationThread>* Task : LodGenerationThreadPool)
++				{
++					delete Task; // All tasks passed IsDone; do not leak one task per LOD update.
++				}
+ 			}
+ 			LodGenerationThreadPool.Empty();
+ 		}
++		APS_TDelete = FPlatformTime::Seconds();
+ 		if (PreparedCount > 0) WorldScapePreparedMesh::LogStats();
+ 
+ 		TransformKeeper->UpdateBounds();
+@@ -1884,6 +1935,14 @@
+ 			UpdateTerrainMaterial(TerrainMaterial);
+ 			UpdateOceanMaterial(OceanMaterial);
+ 		}
++		APS_TMaterial = FPlatformTime::Seconds();
++		const float APS_LogMs = CVarAPSWorldScapePublishLogMs.GetValueOnGameThread();
++		if (APS_LogMs > 0.f && (APS_TMaterial - APS_T0) * 1000.0 >= APS_LogMs)
++		{
++			UE_LOG(LogWorldScapeCore, Display, TEXT("[WS.Publish] %s: rings=%d prepared=%d total=%.1f ms (publish %.1f, delete %.1f, bounds+material %.1f)"),
++				*GetNameSafe(GetOwner()), APS_PublishedNow, PreparedCount, (APS_TMaterial - APS_T0) * 1000.0,
++				(APS_TPublish - APS_T0) * 1000.0, (APS_TDelete - APS_TPublish) * 1000.0, (APS_TMaterial - APS_TDelete) * 1000.0);
++		}
+ 	}
+ }
+ // ----------------------------------------------------------------------------

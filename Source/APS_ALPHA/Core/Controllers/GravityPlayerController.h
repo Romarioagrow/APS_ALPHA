@@ -35,6 +35,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "SaveLoad")
 	void SaveCurrentWorld();
 
+	/** Rio 10.10: Escape / Shift+Escape (Toggle_PauseMenu) opens the native pause menu (UAPSPauseMenuSubsystem). */
+	UFUNCTION(BlueprintCallable, Category = "UI")
+	void TogglePauseMenu();
+
 	UFUNCTION(BlueprintCallable, Category = "SaveLoad")
 	void LoadWorld();
 	

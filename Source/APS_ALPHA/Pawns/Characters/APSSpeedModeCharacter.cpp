@@ -50,6 +50,19 @@ namespace APSSpeedModeFeel
 	TAutoConsoleVariable<int32> CVarFirstPersonInvertPitch(
 		TEXT("aps.Character.FirstPersonInvertPitch"), 1,
 		TEXT("Rio 09.10: 1 inverts the vertical mouse look in first person (as the third-person orbit felt). 0: not inverted."));
+	// Rio 10.10 ("the first-person camera sits on the body, walking and weightless"): the eye was a fixed point on the
+	// capsule axis, inside the skull behind the face; with the head hidden the view showed the neck, shoulders and the
+	// pack. Now it is the head bone's place in actor space plus a forward/up offset to the eyes, so it follows the pose
+	// (the weightless lean too).
+	TAutoConsoleVariable<int32> CVarFirstPersonEyeFromHead(
+		TEXT("aps.Character.FirstPersonEyeFromHead"), 1,
+		TEXT("1: the first-person eye follows the head bone (plus the forward/up offsets below). 0: a fixed point on the capsule axis (0.6.4.4)."));
+	TAutoConsoleVariable<float> CVarFirstPersonEyeForwardCm(
+		TEXT("aps.Character.FirstPersonEyeForwardCm"), 14.f,
+		TEXT("Eye offset forward of the head bone, cm (the face is in front of the skull's base)."));
+	TAutoConsoleVariable<float> CVarFirstPersonEyeUpCm(
+		TEXT("aps.Character.FirstPersonEyeUpCm"), 8.f,
+		TEXT("Eye offset up from the head bone, cm."));
 	TAutoConsoleVariable<int32> CVarFirstPerson(
 		TEXT("aps.Character.FirstPerson"), 1,
 		TEXT("Rio 09.10: 1: C toggles a first-person view on foot and in zero-G (smooth move of the camera to eye height, ")
@@ -508,7 +521,39 @@ void AAPSSpeedModeCharacter::UpdateFirstPersonCamera(float DeltaTime)
 	const float Alpha = FMath::SmoothStep(0.f, 1.f, FirstPersonAlpha);
 	const UCapsuleComponent* Capsule = GetCapsuleComponent();
 	const float HalfHeight = Capsule ? FMath::Max(Capsule->GetUnscaledCapsuleHalfHeight(), 40.f) : 88.f;
-	const FVector EyeLocation(0.0, 0.0, HalfHeight * APSSpeedModeFeel::FirstPersonEyeShare);
+	FVector EyeLocation(0.0, 0.0, HalfHeight * APSSpeedModeFeel::FirstPersonEyeShare);
+	const USkeletalMeshComponent* MeshComponent = GetMesh();
+	if (APSSpeedModeFeel::CVarFirstPersonEyeFromHead.GetValueOnGameThread() != 0 && MeshComponent && FirstPersonAlpha > 0.f)
+	{
+		FName Head = FirstPersonHiddenBone;
+		if (Head.IsNone())
+		{
+			for (const TCHAR* Bone : {TEXT("head"), TEXT("Head"), TEXT("head_01"), TEXT("neck_02")})
+			{
+				if (MeshComponent->GetBoneIndex(FName(Bone)) != INDEX_NONE)
+				{
+					Head = FName(Bone);
+					break;
+				}
+			}
+		}
+		if (!Head.IsNone())
+		{
+			// The pose is last frame's (components tick after the actor), which in actor space is millimetres; the
+			// actor's own motion does not enter. A little smoothing takes the animation's head bob out of the view.
+			const FVector HeadLocal = MeshComponent->GetRelativeTransform().TransformPosition(
+				MeshComponent->GetBoneLocation(Head, EBoneSpaces::ComponentSpace));
+			const FVector Wanted = HeadLocal + FVector(APSSpeedModeFeel::CVarFirstPersonEyeForwardCm.GetValueOnGameThread(), 0.f,
+				APSSpeedModeFeel::CVarFirstPersonEyeUpCm.GetValueOnGameThread());
+			FirstPersonEyeLocal = bFirstPersonEyeValid ? FMath::VInterpTo(FirstPersonEyeLocal, Wanted, DeltaTime, 14.f) : Wanted;
+			bFirstPersonEyeValid = true;
+			EyeLocation = FirstPersonEyeLocal;
+		}
+	}
+	if (FirstPersonAlpha <= 0.f)
+	{
+		bFirstPersonEyeValid = false;
+	}
 	CameraBoom->SetRelativeLocation(FMath::Lerp(ThirdPersonBoomLocation, EyeLocation, Alpha));
 	if (!bBuildMode)
 	{

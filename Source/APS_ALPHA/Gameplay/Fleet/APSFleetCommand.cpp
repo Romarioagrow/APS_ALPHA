@@ -3911,4 +3911,26 @@ namespace APSFleetPrivate
 		}));
 }
 
+void FAPSFleetCommand::MarkVisited(APlanetaryBody* Body)
+{
+	using namespace APSFleet;
+	if (!IsValid(Body) || !World.IsValid())
+	{
+		return;
+	}
+	FAPSFleetBodyRecord& Record = BodyRecord(Body);
+	if (Record.Survey >= ESurvey::Studied)
+	{
+		return;
+	}
+	const ESurvey Before = Record.Survey;
+	TArray<FText> Lines;
+	APSFleetPrivate::AddFindings(Body, Before, ESurvey::Studied, Lines);
+	Record.Findings.Append(Lines);
+	Record.Survey = ESurvey::Studied;
+	if (Before < ESurvey::Surveyed) APSMissionsNotify(World.Get(), APSMissions::EObjective::SurveyWorld, KeyOf(Body));
+	Post(FText::Format(LOCTEXT("VisitMapped", "{0}: the pilot's own visit maps its surface in full."), APSFleetPrivate::NameOf(Body)));
+	UE_LOG(LogTemp, Log, TEXT("[APS.Fleet] visited %s: survey %d -> studied (the map in full)"), *GetNameSafe(Body), static_cast<int32>(Before));
+}
+
 #undef LOCTEXT_NAMESPACE

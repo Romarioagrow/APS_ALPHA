@@ -174,6 +174,9 @@ private:
 	virtual bool DefersExactCameraLag() const override { return true; }
 	/** Rio 09.10: in first person the body stays visible; only the head bone and what hangs on it are hidden. */
 	FName FirstPersonHiddenBone;
+	/** Rio 10.10: the eye in actor space, from the head bone (smoothed); valid while first person is on. */
+	FVector FirstPersonEyeLocal = FVector::ZeroVector;
+	bool bFirstPersonEyeValid = false;
 
 	bool bBaseMovementCached = false;
 	bool bZeroGPaceApplied = false;

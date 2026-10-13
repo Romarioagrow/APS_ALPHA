@@ -1,6 +1,7 @@
 #include "APSMissionTracker.h"
 #include "APS_ALPHA/UI/Style/APSUITheme.h"
 #include "APS_ALPHA/UI/Hud/APSHudKit.h"
+#include "APS_ALPHA/UI/Hud/APSPauseMenuSubsystem.h"
 
 #include "APSColonyTerminalSubsystem.h"
 #include "APS_ALPHA/Gameplay/Ancients/APSAncients.h"
@@ -373,7 +374,13 @@ namespace APSMissionTrackerPrivate
 			.VAlign(VAlign_Top)
 			// The objective panel's corner: the ship HUD holds the top right (navigation) and the bottom (flight).
 			.Padding(FMargin(22.0f, 22.0f, 0.0f, 0.0f))
-			.Visibility_Lambda([World]() { return VisibleIf(IsObjectiveShown(World) || IsMissionShown(World)); })
+			// Rio 10.10: the card hides under the pause menu (the game pauses) instead of drawing over it.
+			.Visibility_Lambda([World]()
+			{
+				const UWorld* Live = World.Get();
+				const bool bPaused = Live && (Live->IsPaused() || UAPSPauseMenuSubsystem::IsOpenIn(Live));
+				return VisibleIf(!bPaused && (IsObjectiveShown(World) || IsMissionShown(World)));
+			})
 			[
 				SNew(SBox)
 				.WidthOverride(CardWidth)
