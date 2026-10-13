@@ -1984,6 +1984,10 @@ void ACustomGravityCharacter::SettleAfterVehicleExit(const FVector& Facing, AAct
 		SetZeroGravityEnabled(false);
 	}
 	// While seated the character did not tick: its gravity frame is the one it boarded in, possibly another body.
+	// Rio 14.10: the stand-up re-initialises gravity from the detector (below); clearing the flag before the check makes the
+	// source-change callback inside it re-initialise as well instead of starting a blend that the re-initialisation drops
+	// in the same frame (the A/B logs showed it as a 94-99 deg "aboard ... gravity blend" line at every stand-up).
+	bGravityDirectionInitialized = false;
 	if (GravityDetector)
 	{
 		GravityDetector->RunGravityCheckForActor(this);
