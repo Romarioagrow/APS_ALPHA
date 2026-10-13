@@ -291,6 +291,17 @@ namespace APSWorldOrigin
 		TEXT("view riding it then tells the renderer it moved only with the ship (as on a flow frame) once a step is longer ")
 		TEXT("than this, km, so TSR keeps its history instead of cutting or smearing it on those frames. Keep it at most half ")
 		TEXT("of aps.Ship.TsrHistoryMaxStepKm. 0: off."));
+	TAutoConsoleVariable<float> CVarFlowRideKeepShare(
+		TEXT("aps.RealScale.FlowRideKeepShare"), 0.6f,
+		TEXT("Rio 14.10 (0.6.5: \"some speed slips into the wrong mode and the visuals lag\"): a view already riding its ship's ")
+		TEXT("step keeps riding while the step stays above this share of aps.RealScale.FlowRideKm. The ride was decided per ")
+		TEXT("frame at one threshold, so at a steady speed near 250 km x fps it flipped with the frame times and the nearby ")
+		TEXT("planets, air and stations alternated between true and zero motion vectors (TSR smear). 1: as 0.6.5."));
+	TAutoConsoleVariable<float> CVarFloatLeadMinKm(
+		TEXT("aps.WorldOrigin.FloatLeadMinKm"), 20000.0f,
+		TEXT("Rio 14.10 (0.6.5 log: a whole-world shift every ~4 s in system cruise, each re-creating every Nanite mesh, the ")
+		TEXT("star HISMs and the TSR history): in a REAL SCALE world a fast ship's lead shift waits until it is at least this ")
+		TEXT("far from 0,0,0 (the renderer's error there is ~0.1 mm; the flow already accepts 100 000 km). 0: as 0.6.5."));
 	TAutoConsoleVariable<int32> CVarFlowDefer(
 		TEXT("aps.RealScale.FlowDefer"), 1,
 		TEXT("Rio 06.10 (still ship: \"move our whole high-speed travel onto this system\"): 1 keeps the world still far from ")
@@ -1172,8 +1183,16 @@ FVector UAPSWorldOriginSubsystem::FlowPastShip(AActor& Ship, const FVector& InDe
 		// step now reads like a flow frame's: the view moved with the ship, and the ship's own move (MoveShipKinematic)
 		// gives its parts and riders their previous transforms where they are (FinishFlowMove).
 		const double RideCm = FMath::Max(APSWorldOrigin::CVarFlowRideKm.GetValueOnGameThread(), 0.0f) * 1.0e5;
-		if (bViewRides && RideCm > 0.0 && Delta.SizeSquared() > FMath::Square(RideCm))
+		// Rio 14.10 (aps.RealScale.FlowRideKeepShare): once riding, the view keeps riding down to a share of the threshold.
+		const bool bWasRiding = bFlowRiding && GFrameCounter <= FlowRideFrame + 2;
+		const double RideLimitCm = bWasRiding
+			? RideCm * FMath::Clamp(static_cast<double>(APSWorldOrigin::CVarFlowRideKeepShare.GetValueOnGameThread()), 0.0, 1.0)
+			: RideCm;
+		bFlowRiding = false;
+		if (bViewRides && RideCm > 0.0 && Delta.SizeSquared() > FMath::Square(RideLimitCm))
 		{
+			bFlowRiding = true;
+			FlowRideFrame = GFrameCounter;
 			World->OriginOffsetThisFrame += Delta;
 			bFlowViewStill = true;
 			APSWorldOrigin::SetFlowViewStep(World, Delta);
@@ -1854,6 +1873,10 @@ void UAPSWorldOriginSubsystem::FinishFlowMove(AActor& Ship)
 void UAPSWorldOriginSubsystem::UpdateFloatingOrigin(const float DeltaSeconds)
 {
 	SinceFloatShiftSeconds += DeltaSeconds;
+	// Rio 14.10 (audit): a flow or owed travel inside this frame's ship tick reset the clock to 0; adding this frame's own
+	// time first made any frame longer than 0.25 s settle the whole still-ship debt (light years) or re-file every Nanite
+	// mesh in mid-flight. The quiet tests read the time up to the previous frame.
+	const auto FlowQuietSeconds = SinceFlowShiftSeconds;
 	SinceFlowShiftSeconds += DeltaSeconds;
 	// Rio 06.10 (still ship): a debt nobody adds to any more (the carrier is gone or stopped flying fast without a move
 	// through FlowPastShip) is paid now; so is one under the strategic map or with the experiment switched off.
@@ -1861,7 +1884,7 @@ void UAPSWorldOriginSubsystem::UpdateFloatingOrigin(const float DeltaSeconds)
 	{
 		const APawn* Player = APSWorldOrigin::PlayerPawn(GetWorld());
 		const AGravityPlayerController* Owner = Player ? Cast<AGravityPlayerController>(Player->GetController()) : nullptr;
-		if (!DeferredCarrier.IsValid() || SinceFlowShiftSeconds > 0.25 || (Owner && Owner->IsStrategicMapOpen())
+		if (!DeferredCarrier.IsValid() || FlowQuietSeconds > 0.25 || (Owner && Owner->IsStrategicMapOpen())
 			|| APSWorldOrigin::IsColonyTerminalOpen(GetWorld()) || APSWorldOrigin::CVarFlowDefer.GetValueOnGameThread() == 0)
 		{
 			SettleDeferredTravel(TEXT("the owed travel stopped growing"));
@@ -1875,7 +1898,7 @@ void UAPSWorldOriginSubsystem::UpdateFloatingOrigin(const float DeltaSeconds)
 		APSWorldOrigin::PayKeptFlowRest(GetWorld(), TEXT("no step took it"));
 	}
 	// Rio 05.10 afternoon: the far Nanite meshes the flow shifts skipped are re-filed once it has stopped for a moment.
-	if (bNaniteRefileOwed && SinceFlowShiftSeconds > 0.25)
+	if (bNaniteRefileOwed && FlowQuietSeconds > 0.25)
 	{
 		RefileNanite(nullptr, TArray<AActor*>());
 	}
@@ -1991,7 +2014,12 @@ void UAPSWorldOriginSubsystem::UpdateFloatingOrigin(const float DeltaSeconds)
 	{
 		const double LeadSeconds = APSWorldOrigin::CVarFloatLeadSeconds.GetValueOnGameThread();
 		// Rio 05.10 (real scale, stage 2): a REAL SCALE ship's lead never reaches past aps.RealScale.FloatDriftLy.
-		const double LeadCm = RealDriftCm > 0.0 ? FMath::Min(SpeedCm * LeadSeconds, RealDriftCm) : SpeedCm * LeadSeconds;
+		double LeadCm = RealDriftCm > 0.0 ? FMath::Min(SpeedCm * LeadSeconds, RealDriftCm) : SpeedCm * LeadSeconds;
+		// Rio 14.10 (aps.WorldOrigin.FloatLeadMinKm): no lead shift every few seconds in system cruise.
+		if (const double FloorCm = APSWorldOrigin::CVarFloatLeadMinKm.GetValueOnGameThread() * 1.0e5; RealDriftCm > 0.0 && FloorCm > 0.0)
+		{
+			LeadCm = FMath::Max(LeadCm, FMath::Min(FloorCm, RealDriftCm));
+		}
 		if (LeadSeconds <= 0.0 || Location.SizeSquared() <= FMath::Square(FMath::Max(LimitCm, LeadCm)))
 		{
 			return;

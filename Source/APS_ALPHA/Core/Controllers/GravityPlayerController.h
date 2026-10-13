@@ -35,6 +35,10 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "SaveLoad")
 	void SaveCurrentWorld();
 
+	/** Rio 14.10 (audit): set by the pause menu's LEAVE GAME / QUIT after its own save; the EndPlay autosave then skips (it ran
+	 * after the map change had destroyed the possessed ship and overwrote the good save without that hull). */
+	bool bSavedForExit = false;
+
 	/** Rio 10.10: Escape / Shift+Escape (Toggle_PauseMenu) opens the native pause menu (UAPSPauseMenuSubsystem). */
 	UFUNCTION(BlueprintCallable, Category = "UI")
 	void TogglePauseMenu();

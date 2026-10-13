@@ -150,6 +150,9 @@ private:
 	double SinceFlowShiftSeconds{1000.0};
 	/** The last flow told the renderer its view stayed with the ship (aps.RealScale.FlowViewStill); FinishFlowMove resets. */
 	bool bFlowViewStill{false};
+	/** Rio 14.10 (aps.RealScale.FlowRideKeepShare): the view rode the ship's step on this frame (hysteresis of the ride). */
+	bool bFlowRiding{false};
+	uint64 FlowRideFrame{0};
 	double LastFlowViewLogSeconds{0.0};
 	/** Rio 06.10 (still ship): the owed travel (whole grains + the rest) of DeferredCarrier, and its bookkeeping. */
 	FVector OwedGrains{FVector::ZeroVector};

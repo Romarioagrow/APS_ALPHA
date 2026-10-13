@@ -2425,7 +2425,14 @@ void FAPSFleetCommand::ApplyPendingRestore()
 	}
 	// The saved units come back with the generated hierarchy; wait for them, but not forever.
 	const FAPSFleetSaveData Data = PendingRestore.GetValue();
-	if (Units.Num() < Data.Units.Num() && LiveWorld->GetTimeSeconds() - PendingRestoreSince < 20.0)
+	// Rio 14.10 (audit): only the generator's own ships come back by themselves; shipyard-built hulls (SpawnClassPath) are
+	// respawned below, so counting them made every load with a built hull wait the full 20 s without orders.
+	int32 GeneratorUnits = 0;
+	for (const FAPSFleetUnitRecord& Saved : Data.Units)
+	{
+		GeneratorUnits += Saved.SpawnClassPath.IsEmpty() ? 1 : 0;
+	}
+	if (Units.Num() < GeneratorUnits && LiveWorld->GetTimeSeconds() - PendingRestoreSince < 20.0)
 	{
 		return;
 	}

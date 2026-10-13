@@ -1052,6 +1052,10 @@ void ASpaceship::UpdateNavigatableActorsForInterplanetary()
 
 namespace APSShipPerf
 {
+	TAutoConsoleVariable<int32> CVarNoPhysicsInBandFlight(
+		TEXT("aps.Ship.NoPhysicsInBandFlight"), 1,
+		TEXT("Rio 14.10: 1 = the hull never simulates physics while the band flight model flies it (no one-tick physics on ")
+		TEXT("standing up from the seat). 0: as 0.6.5."));
 	TAutoConsoleVariable<int32> CVarShipPerfLog(
 		TEXT("aps.Ship.PerfLog"), 0,
 		TEXT("1 logs the piloted ship's tick cost per section (environment, navigation, move/sweep, rotation, camera, HUD) every 2 s."));
@@ -2517,8 +2521,9 @@ void ASpaceship::RebuildSimpleHullCollision()
 
 		FVector BoxCenter = Center;
 		BoxCenter[MajorAxis] = LocalMin[MajorAxis] + (SliceIndex * 2.0 + 1.0) * HalfSliceLength;
-		UBoxComponent* Box = NewObject<UBoxComponent>(this,
-			*FString::Printf(TEXT("SimpleHullCollision_%02d"), SliceIndex), RF_Transient);
+		// Rio 14.10 (audit, 0.6.5 log "overwrite took 10.65ms" on re-seating): a unique name, the old boxes wait for GC.
+		UBoxComponent* Box = NewObject<UBoxComponent>(this, MakeUniqueObjectName(this, UBoxComponent::StaticClass(),
+			*FString::Printf(TEXT("SimpleHullCollision_%02d"), SliceIndex)), RF_Transient);
 		Box->SetupAttachment(MainMesh);
 		Box->SetMobility(EComponentMobility::Movable);
 		Box->SetBoxExtent(BoxExtent, false);
@@ -4554,8 +4559,12 @@ void ASpaceship::ApplyEngineState()
 		return;
 	}
 
+	// Rio 14.10 (audit: a pilot standing up restored the class preset while the ship was still possessed and switched the
+	// detailed hull to simulated physics for a tick before EnsureKinematicHull took it back): never while the band flight
+	// model flies the hull kinematically (aps.Ship.NoPhysicsInBandFlight; 0: as 0.6.5).
 	const bool bUsePhysics = OnboardComputer->EngineSystem.CurrentEngineMode == EEngineMode::Impulse
-		&& ActiveClassPreset.bUsesPhysicalImpulse;
+		&& ActiveClassPreset.bUsesPhysicalImpulse
+		&& !(APSShipPerf::CVarNoPhysicsInBandFlight.GetValueOnGameThread() != 0 && FlightModel && FlightModel->IsBandFlightActive());
 	if (bUsePhysics)
 	{
 		SpaceshipHull->SetSimulatePhysics(true);
@@ -6925,9 +6934,8 @@ void ASpaceship::SwitchEngines()
 	}
 	ApplyEngineState();
 	SetActorTickEnabled(IsValid(Pilot) || bEngineRunning);
-	GEngine->AddOnScreenDebugMessage(-1, 5.0f, FColor::Green,
-	                                 FString::Printf(
-		                                 TEXT("Engine running: %s"), bEngineRunning ? TEXT("true") : TEXT("false")));
+	// Rio 14.10 (0.6.5 screenshot: green "Engine running: true" over the TASKS card): a log line, the HUD shows the engine.
+	UE_LOG(LogTemp, Log, TEXT("[APS.Ships] %s engine %s"), *GetName(), bEngineRunning ? TEXT("on") : TEXT("off"));
 }
 
 void ASpaceship::ThrustForward(float Value)
@@ -7303,7 +7311,8 @@ void ASpaceship::ComputeProximity()
 
 void ASpaceship::UpdateNavigatableActors()
 {
-	GEngine->AddOnScreenDebugMessage(-1, 1.0f, FColor::Red, FString::Printf(TEXT("UpdateNavigatableActors!!!")));
+	// Rio 14.10 (audit): was a red on-screen debug line on every drive mode change.
+	UE_LOG(LogTemp, Verbose, TEXT("[APS.Ships] UpdateNavigatableActors"));
 }
 
 void ASpaceship::CheckFlightModeChange()

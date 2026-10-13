@@ -329,7 +329,11 @@ void FAPSInfrastructure::Tick(const float DeltaSeconds)
 	using namespace APSInfrastructureLocal;
 	for (int32 Index = 0; Index < ResourceCount; ++Index)
 	{
-		Stocks[Index] = FMath::Max(0.0f, Stocks[Index] + Rates[Index] * DeltaSeconds / 60.0f);
+		// Rio 14.10 (audit): a 1/min income at 120 fps is ~1e-4 a frame, below a float's step past ~2048; carry the residue.
+		const double Next = FMath::Max(0.0, static_cast<double>(Stocks[Index]) + StockCarry[Index]
+			+ static_cast<double>(Rates[Index]) * DeltaSeconds / 60.0);
+		Stocks[Index] = static_cast<float>(Next);
+		StockCarry[Index] = Stocks[Index] > 0.0f ? Next - static_cast<double>(Stocks[Index]) : 0.0;
 	}
 	// Rio 07-09.10 (T-08): in the ladder the open stocks follow the mission board (a load brings its tokens back a moment
 	// after this object), once a second.
@@ -1374,6 +1378,7 @@ void FAPSInfrastructure::RestoreSave(FAPSInfrastructureSaveData&& Data)
 	for (int32 Index = 0; Index < APSInfrastructureLocal::ResourceCount && Index < Data.Stocks.Num(); ++Index)
 	{
 		Stocks[Index] = Data.Stocks[Index];
+		StockCarry[Index] = 0.0;
 	}
 	PendingRestore = MoveTemp(Data);
 	RestoreWait = 0.0f;

@@ -1,4 +1,5 @@
 #include "APSFarStarGlyphs.h"
+#include "Camera/PlayerCameraManager.h"
 
 #include "APSGalaxyGpuStars.h"
 #include "APSGameplayStarAppearance.h"
@@ -505,6 +506,21 @@ namespace APSFarStarGlyphsLocal
 	};
 	FPilotEyesCache GPilotEyes;
 
+	/** Rio 14.10 (audit, 0.6.5 log: ~40 "pilot's eyes" flips a second in a flow ride): the stellar view's camera is the camera
+	 * manager's view of the previous frame, one ship step behind a pawn moving 300-6600 km a frame. Only a view target other
+	 * than the pilot (the map's or another camera) may stand detached by distance; the pilot's own camera never does. */
+	bool IsPilotsOwnView(const APlayerController* Player, const APawn* Pilot)
+	{
+		const AActor* ViewTarget = Player && Player->PlayerCameraManager ? Player->PlayerCameraManager->GetViewTarget() : nullptr;
+		if (!ViewTarget || !Pilot || ViewTarget == Pilot)
+		{
+			return true;
+		}
+		const AActor* TargetParent = ViewTarget->GetAttachParentActor();
+		const AActor* PilotParent = Pilot->GetAttachParentActor();
+		return TargetParent == Pilot || PilotParent == ViewTarget || (TargetParent && TargetParent == PilotParent);
+	}
+
 	/**
 	 * Rio 06.10 (star approach v2, stage B, change 12 "pilot's eyes"; aps.Stars.ApproachPilotView): who decides and who
 	 * draws for the approach points this frame. The view is (Camera, PixelTangent), the stellar view's. It is not the
@@ -538,7 +554,7 @@ namespace APSFarStarGlyphsLocal
 			ApartCm = FVector::Distance(Camera, Eye);
 			// Rio 06.10 (review): at least 1 km, so 0 or below cannot detach the pilot's own camera every frame.
 			const double MaxApartCm = FMath::Max(static_cast<double>(CVarApproachPilotViewKm.GetValueOnGameThread()), 1.0) * 1.0e5;
-			if (!Eye.ContainsNaN() && (bMapOpen || ApartCm > MaxApartCm))
+			if (!Eye.ContainsNaN() && (bMapOpen || (!IsPilotsOwnView(Player, Pilot) && ApartCm > MaxApartCm)))
 			{
 				Result.bDetached = true;
 				Result.PilotCamera = Eye;

@@ -55,6 +55,22 @@ namespace APSCharacterQueryThrottle
 		ECVF_Default);
 	// Rio 09.10 (playtest 08.10 item 3, "sometimes no gravity"): a pilot who sat weightless stood up into
 	// UpdateGravityDirection's zero-G branch, which keeps zero-G at the first missed floor probe without the 0.2 s grace.
+	// Rio 14.10 (0.6.5: "aboard, gravity throws me to the walls, then it returns"): aboard a turning ship the gravity
+	// direction, its blend and the walker's velocity turn with the deck, as the view already did; the old world-space blend
+	// lagged the floor by ~0.4 s of the turn (autopilot turns 35 deg/s plus bank) and every long frame restarted it.
+	TAutoConsoleVariable<int32> CVarShipTurnCarriesGravity(TEXT("aps.Character.ShipTurnCarriesGravity"), 1,
+		TEXT("1: aboard, the ship's turn also turns the gravity direction/blend and the walker's velocity. 0: as 0.6.5."),
+		ECVF_Default);
+	// Rio 14.10: leaving zero-G on a ship's deck no longer starts gravity from the floating pose's own down (a view at the
+	// floor pointed it into a wall): it starts from the deck's down.
+	TAutoConsoleVariable<int32> CVarZeroGExitOnDeck(TEXT("aps.Character.ZeroGExitOnDeck"), 1,
+		TEXT("1: leaving zero-G aboard a ship starts gravity from the deck's down, not from the floating body. 0: as 0.6.5."),
+		ECVF_Default);
+	// Rio 14.10 (screenshot: the third-person camera on the chest right after standing up in a class-L ship): the view
+	// state turns with the ship while seated is not ticked; on standing up the view is set from the facing again.
+	TAutoConsoleVariable<int32> CVarExitResetsView(TEXT("aps.Character.ExitResetsView"), 1,
+		TEXT("1: standing up from a seat resets the view (heading, pitch, zero-G view, camera lag trail) to the exit facing. 0: as 0.6.5."),
+		ECVF_Default);
 	// Rio 09.10 night (zero-G "small jerks", ACustomGravityCharacter::UpdateExactCameraLag).
 	TAutoConsoleVariable<int32> CVarExactCameraLag(
 		TEXT("aps.Character.ExactCameraLag"), 1,
@@ -1055,7 +1071,8 @@ void ACustomGravityCharacter::UpdateGravityDirection(float DeltaTime)
 		}
 		else
 		{
-			SurfaceSupportLossElapsed += FMath::Max(DeltaTime, 0.0f);
+			// Rio 14.10 (audit): a single 200+ ms frame in the air no longer spends the whole grace (instant zero-G).
+			SurfaceSupportLossElapsed += FMath::Clamp(DeltaTime, 0.0f, 0.05f);
 			if (SurfaceSupportLossElapsed >= SurfaceSupportLossGracePeriod)
 			{
 				SetZeroGravityEnabled(true);
@@ -1087,7 +1104,10 @@ void ACustomGravityCharacter::UpdateGravityDirection(float DeltaTime)
 			FMath::Cos(FMath::DegreesToRadians(1.0));
 		if (bWasZeroG)
 		{
-			StartGravityDirectionTransition(DesiredGravityDir, true);
+			// Rio 14.10 (aps.Character.ZeroGExitOnDeck): on a ship's deck from the deck's own down, not the floating body's.
+			const bool bOnDeck = APSCharacterQueryThrottle::CVarZeroGExitOnDeck.GetValueOnGameThread() != 0
+				&& AboardShip.IsValid() && CurrentGravityType == EGravityType::OnShip && !CurrentGravityDir.IsNearlyZero();
+			StartGravityDirectionTransition(DesiredGravityDir, !bOnDeck);
 		}
 		else if (GravityTransitionElapsed < GravityTransitionDuration)
 		{
@@ -1136,6 +1156,17 @@ void ACustomGravityCharacter::StartGravityDirectionTransition(
 		CurrentGravityDir = -GetActorUpVector();
 	}
 	CurrentGravityDir = CurrentGravityDir.GetSafeNormal();
+	// Rio 14.10: a blend started aboard a ship is what threw the walker at the walls; each one is logged (angle, source).
+	if (AboardShip.IsValid())
+	{
+		const double BlendDeg = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(
+			FVector::DotProduct(CurrentGravityDir, SafeTarget), -1.0, 1.0)));
+		if (BlendDeg >= 1.0)
+		{
+			UE_LOG(LogTemp, Log, TEXT("[APS.Gravity] aboard %s: gravity blend %.1f deg (%s)"), *GetNameSafe(AboardShip.Get()),
+				BlendDeg, bStartFromActorUp ? TEXT("from the body's up") : TEXT("from the current down"));
+		}
+	}
 	GravityTransitionStartDir = CurrentGravityDir;
 	GravityTransitionTargetDir = SafeTarget;
 	GravityTransitionElapsed = 0.0f;
@@ -1794,7 +1825,9 @@ void ACustomGravityCharacter::UpdateGravityAnimationParameters()
 void ACustomGravityCharacter::SetBase(UPrimitiveComponent* NewBase, const FName BoneName, bool bNotifyActor)
 {
 	const ASpaceship* Ship = AboardShip.Get();
-	if (Ship && NewBase && NewBase->GetOwner() == Ship)
+	// Rio 14.10 (audit): also anything carried by the ship (a rover in its bay, a child-actor prop): based movement plus the
+	// attachment moved the walker twice.
+	if (Ship && NewBase && (NewBase->GetOwner() == Ship || (Ship->GetRootComponent() && NewBase->IsAttachedTo(Ship->GetRootComponent()))))
 	{
 		NewBase = nullptr;
 	}
@@ -1825,12 +1858,29 @@ void ACustomGravityCharacter::UpdateShipPassenger()
 			CameraForwardOnGravityPlane = Delta.RotateVector(CameraForwardOnGravityPlane);
 			CameraReferenceUp = Delta.RotateVector(CameraReferenceUp);
 			ZeroGViewRotation = Delta * ZeroGViewRotation;
+			// Rio 14.10 (aps.Character.ShipTurnCarriesGravity): so do gravity, its blend and the walker's own velocity.
+			if (APSCharacterQueryThrottle::CVarShipTurnCarriesGravity.GetValueOnGameThread() != 0)
+			{
+				CurrentGravityDir = Delta.RotateVector(CurrentGravityDir);
+				DesiredGravityDir = Delta.RotateVector(DesiredGravityDir);
+				GravityTransitionStartDir = Delta.RotateVector(GravityTransitionStartDir);
+				GravityTransitionTargetDir = Delta.RotateVector(GravityTransitionTargetDir);
+				if (UCharacterMovementComponent* DeckMovement = GetCharacterMovement())
+				{
+					DeckMovement->Velocity = Delta.RotateVector(DeckMovement->Velocity);
+				}
+			}
 		}
 	}
 }
 
 void ACustomGravityCharacter::BoardShip(ASpaceship& Ship)
 {
+	// Rio 14.10 (audit): boarding B while aboard A left A's saved camera lag overwritten and A still ignoring the walker.
+	if (AboardShip.IsValid() && AboardShip.Get() != &Ship)
+	{
+		LeaveShip();
+	}
 	const bool bAlreadyAboard = AboardShip.Get() == &Ship;
 	AboardShip = &Ship;
 	AboardShipLastQuat = Ship.GetActorQuat();
@@ -1974,7 +2024,30 @@ void ACustomGravityCharacter::SettleAfterVehicleExit(const FVector& Facing, AAct
 		}
 		if (!Forward.IsNearlyZero())
 		{
-			SetActorRotation(FRotationMatrix::MakeFromXZ(Forward, Up).ToQuat(), ETeleportType::TeleportPhysics);
+			if (APSCharacterQueryThrottle::CVarExitResetsView.GetValueOnGameThread() != 0)
+			{
+				// Rio 14.10 (aps.Character.ExitResetsView): heading, pitch and arm from the exit facing (the view state kept
+				// from before the seat pointed the 3 m arm into the console in front of him).
+				SetViewDirection(Forward, -10.f);
+			}
+			else
+			{
+				SetActorRotation(FRotationMatrix::MakeFromXZ(Forward, Up).ToQuat(), ETeleportType::TeleportPhysics);
+			}
+		}
+	}
+	if (APSCharacterQueryThrottle::CVarExitResetsView.GetValueOnGameThread() != 0)
+	{
+		if (bIsZeroG)
+		{
+			ZeroGViewRotation = GetActorQuat();
+			bZeroGViewRotationInitialized = true;
+		}
+		// The exact lag's trail was measured before the seat: start it again here.
+		bExactLagValid = false;
+		if (CameraBoom)
+		{
+			CameraBoom->TargetOffset = FVector::ZeroVector;
 		}
 	}
 	if (UCharacterMovementComponent* Movement = GetCharacterMovement())

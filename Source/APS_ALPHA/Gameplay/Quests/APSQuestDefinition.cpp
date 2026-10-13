@@ -239,7 +239,13 @@ bool UAPSQuestDefinition::ValidateDefinition(TArray<FString>& OutErrors) const
 		GetSuccessors(Current, Successors);
 		for (FName Successor : Successors)
 		{
-			int32& Degree = InDegree.FindChecked(Successor);
+			// Rio 14.10 (audit): an edge to a missing node is reported above; skip it instead of a FindChecked crash.
+			int32* DegreePtr = InDegree.Find(Successor);
+			if (!DegreePtr)
+			{
+				continue;
+			}
+			int32& Degree = *DegreePtr;
 			if (--Degree == 0)
 			{
 				ZeroInDegree.Add(Successor);

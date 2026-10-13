@@ -98,6 +98,7 @@ void UAPSPauseMenuSubsystem::SaveBeforeLeaving()
 	if (AGravityPlayerController* Controller = Cast<AGravityPlayerController>(BoundController.Get()))
 	{
 		Controller->SaveCurrentWorld();
+		Controller->bSavedForExit = true;
 	}
 }
 

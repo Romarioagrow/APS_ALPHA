@@ -153,7 +153,12 @@ void AGravityPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
 	// alive. The initial slot is already created synchronously by SaveNewWorld.
 	UMainGameplayInstance* GameplayState = GetWorld() && GetWorld()->GetGameInstance()
 		? GetWorld()->GetGameInstance()->GetSubsystem<UMainGameplayInstance>() : nullptr;
-	if (!GIsAutomationTesting && !FApp::IsUnattended()
+	if (bSavedForExit)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[APS.Save] Lifecycle autosave skipped: saved on the way out (reason=%d)"),
+			static_cast<int32>(EndPlayReason));
+	}
+	else if (!GIsAutomationTesting && !FApp::IsUnattended()
 		&& GameplayState && !GameplayState->bPendingSavedWorldReplay
 		&& IsValid(GameplayState->NewGeneratedWorld))
 	{

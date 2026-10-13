@@ -2241,48 +2241,72 @@ namespace APSGalaxyGpuStars
 		// (The ratio is clamped as a double first: an "unbounded" distance of 1e30 cm would overflow the int conversion.)
 		const int32 MaxRing = FMath::Min(FMath::CeilToInt(FMath::Min(MaxLocal / Index.CellSize, static_cast<double>(Index.Resolution))) + 1,
 			NearRingLimit);
+		// Rio 14.10 (0.6.5 log: 15-33 ms a call near home, from the stellar view at 10 Hz, the ship in CRUISE at 10 Hz, the fleet
+		// and the world origin; most callers pass an unbounded radius): the MaxCount nearest are kept in a bounded max-heap (the
+		// farthest kept one on top); a cell whose box is past the current bound and a star past it are skipped, and the rings
+		// stop once the next one cannot hold a nearer star. The same stars as the full gather and sort it replaces.
+		const auto Farther = [](const TPair<double, int32>& A, const TPair<double, int32>& B) { return A.Key > B.Key; };
 		TArray<TPair<double, int32>> Found;
+		Found.Reserve(FMath::Min(MaxCount, 4096));
+		double BoundSq = MaxLocalSq;
+		const double CellSize = Index.CellSize;
+		const FVector IndexMin(Index.Min);
+		const auto AxisGap = [](const double Value, const double Low, const double High)
+		{
+			return Value < Low ? Low - Value : (Value > High ? Value - High : 0.0);
+		};
 		for (int32 Ring = 0; Ring <= MaxRing; ++Ring)
 		{
 			for (int32 Z = Home.Z - Ring; Z <= Home.Z + Ring; ++Z)
 			{
 				if (Z < 0 || Z >= Index.Resolution) continue;
+				const double GapZ = AxisGap(LocalCentre.Z, IndexMin.Z + Z * CellSize, IndexMin.Z + (Z + 1) * CellSize);
 				for (int32 Y = Home.Y - Ring; Y <= Home.Y + Ring; ++Y)
 				{
 					if (Y < 0 || Y >= Index.Resolution) continue;
+					const double GapY = AxisGap(LocalCentre.Y, IndexMin.Y + Y * CellSize, IndexMin.Y + (Y + 1) * CellSize);
 					const bool bShellYZ = FMath::Abs(Z - Home.Z) == Ring || FMath::Abs(Y - Home.Y) == Ring;
 					for (int32 X = Home.X - Ring; X <= Home.X + Ring; X += (bShellYZ || Ring == 0) ? 1 : 2 * Ring)
 					{
 						if (X < 0 || X >= Index.Resolution) continue;
+						const double GapX = AxisGap(LocalCentre.X, IndexMin.X + X * CellSize, IndexMin.X + (X + 1) * CellSize);
+						if (GapX * GapX + GapY * GapY + GapZ * GapZ > BoundSq)
+						{
+							continue;
+						}
 						const int32 Cell = Index.LinearOf(FIntVector(X, Y, Z));
 						for (int32 Slot = Index.CellStart[Cell]; Slot < Index.CellStart[Cell + 1]; ++Slot)
 						{
 							const double DistanceSq = FVector::DistSquared(LocalCentre, FVector(Index.Positions[Slot]));
-							if (DistanceSq <= MaxLocalSq)
+							if (DistanceSq > BoundSq)
 							{
-								Found.Emplace(DistanceSq, Slot);
+								continue;
+							}
+							if (Found.Num() < MaxCount)
+							{
+								Found.HeapPush(TPair<double, int32>(DistanceSq, Slot), Farther);
+							}
+							else if (DistanceSq < Found.HeapTop().Key)
+							{
+								Found.HeapPopDiscard(Farther, EAllowShrinking::No);
+								Found.HeapPush(TPair<double, int32>(DistanceSq, Slot), Farther);
+							}
+							if (Found.Num() >= MaxCount)
+							{
+								BoundSq = FMath::Min(MaxLocalSq, Found.HeapTop().Key);
 							}
 						}
 					}
 				}
 			}
-			// Every star in a further ring is at least Ring cells away: stop once MaxCount nearer ones are known.
-			if (Found.Num() >= MaxCount)
+			// Every star in a further ring is at least Ring cells away: stop once nothing there can be nearer than the bound.
+			const double Reach = static_cast<double>(Ring) * CellSize;
+			if (Reach * Reach >= BoundSq)
 			{
-				Found.Sort([](const TPair<double, int32>& A, const TPair<double, int32>& B) { return A.Key < B.Key; });
-				Found.SetNum(MaxCount, EAllowShrinking::No);
-				const double Reach = static_cast<double>(Ring) * Index.CellSize;
-				if (Found.Last().Key <= Reach * Reach)
-				{
-					break;
-				}
+				break;
 			}
 		}
 		Found.Sort([](const TPair<double, int32>& A, const TPair<double, int32>& B) { return A.Key < B.Key; });
-		if (Found.Num() > MaxCount)
-		{
-			Found.SetNum(MaxCount, EAllowShrinking::No);
-		}
 		OutStars.Reserve(Found.Num());
 		// Rio 05.10 (real scale, stage 2): the index keeps float positions, ~10 AU off at REAL SCALE; the stars found are
 		// placed exactly from their catalogue record (as RegisterGalaxyStar and the materializer place them), sorted again.

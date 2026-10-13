@@ -2716,6 +2716,9 @@ void UWorldGenerationViewModel::CommitAndOpenLevel(FName LevelName)
 			// selected save slot. Explicitly reset both modes before travel.
 			GameplayInstance->bIsLoadingMode = false;
 			GameplayInstance->bUseAuthoredSinglePlayWorld = false;
+			// Rio 14.10 (audit): a replay flag left by an aborted or abandoned load made every save of this new world refused.
+			GameplayInstance->bPendingSavedWorldReplay = false;
+			GameplayInstance->bSavedWorldHierarchyReady = false;
 			GameplayInstance->bSpawnGeneratedCivilization =
 				GenerationRoute == EAPSGenerationRoute::Civilization;
 			GameplayInstance->SaveSlotName.Reset();

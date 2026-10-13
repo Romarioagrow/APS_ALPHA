@@ -11,6 +11,7 @@
 #include "APS_ALPHA/Core/Planetary/APSWorldScapeStreamingPolicy.h"
 #include "APS_ALPHA/Core/Controllers/GravityPlayerController.h"
 #include "Camera/PlayerCameraManager.h"
+#include "Engine/GameViewportClient.h"
 #include "EngineUtils.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/PlayerController.h"
@@ -91,7 +92,9 @@ namespace APSSurfacePolicyPrivate
 	// share of the finest ring's half-width away from where the rings were last centred (the ship then still sits well
 	// inside ring 0), so batches come several times less often at speed. 0: the fixed step above only.
 	TAutoConsoleVariable<float> CVarNearObserverStepRing0Share(
-		TEXT("aps.Surface.NearObserverStepRing0Share"), 0.0f,
+		// 14.10 (0.6.5.1): on by default at 0.25 (A/B 13.10, a minute's sprint on Pangea: 21 -> 4 ring batches, the same
+		// hitches and frames; at speed the share changes nothing, the rings follow the path).
+		TEXT("aps.Surface.NearObserverStepRing0Share"), 0.25f,
 		TEXT("Below aps.Surface.NearObserverAltitudeKm the observer step is at least this share of the finest ring's half-width ")
 		TEXT("(TriangleSize * altitude level * LodResolution / 2): fewer ring batches at speed. 0: off (8 m steps only)."),
 		ECVF_Default);
@@ -185,6 +188,26 @@ namespace APSSurfacePolicyPrivate
 		TEXT("aps.Surface.FreezeLiftCoverDeg"), 85.0f,
 		TEXT("See aps.Surface.FreezeLiftRadii: the angle from a kept observer's direction its terrain is trusted to cover ")
 		TEXT("(WorldScape's saturated coarsest ring reaches about 89 deg, less the grid snap of its plane)."),
+		ECVF_Default);
+
+	TAutoConsoleVariable<float> CVarFreezeLiftTolerancePx(
+		TEXT("aps.Surface.FreezeLiftTolerancePx"), 1.0f,
+		TEXT("Rio 14.10 (0.6.5: freezes flying through the system): a kept observer moves to the camera only once the part of the ")
+		TEXT("visible disc its terrain cannot cover would be wider than this many pixels; a moon a few pixels wide no longer ")
+		TEXT("rebuilds every ring for a 2 deg turn. 0: the 0.6.5 rule only (aps.Surface.FreezeLiftCoverDeg minus the visible cap)."),
+		ECVF_Default);
+
+	TAutoConsoleVariable<float> CVarFreezeLiftMaxRadii(
+		TEXT("aps.Surface.FreezeLiftMaxRadii"), 64.0f,
+		TEXT("Rio 14.10 (0.6.5: moons rebuilt at the finest level while the map was open): a lifted observer is kept at most this ")
+		TEXT("many radii from the body's centre. WorldScape's coarsest ring level is reached far closer; an observer beyond ~1.4 AU ")
+		TEXT("overflowed its altitude level and rebuilt the body as a patch a few km wide. 0: no limit."),
+		ECVF_Default);
+
+	TAutoConsoleVariable<float> CVarFreezeLiftRemoteCameraKm(
+		TEXT("aps.Surface.FreezeLiftRemoteCameraKm"), 50.0f,
+		TEXT("Rio 14.10 (0.6.5: 24 moon/planet rebuilds and 290-790 ms render stalls with the terminal map open): sibling lifts ")
+		TEXT("wait while the strategic map is open or the view is farther than this from the pawn (a map camera). 0: no guard."),
 		ECVF_Default);
 
 	TAutoConsoleVariable<int32> CVarMapKeepObserverOnPass(
@@ -468,8 +491,55 @@ namespace APSSurfacePolicyPrivate
 	 * observer's direction. A kept observer the far camera has turned away from leaves the rest of the visible disc empty
 	 * (only the atmosphere/ocean shells). Moves it to the camera; true when it moved.
 	 */
+	/** Pixels per radian of the player's view (horizontal FOV over the game viewport's width); 0 when unknown. */
+	double ViewPixelsPerRadian(const UWorld* World)
+	{
+		const APlayerController* Controller = World ? World->GetFirstPlayerController() : nullptr;
+		const APlayerCameraManager* CameraManager = Controller ? Controller->PlayerCameraManager : nullptr;
+		UGameViewportClient* Viewport = World ? World->GetGameViewport() : nullptr;
+		if (!IsValid(CameraManager) || !Viewport)
+		{
+			return 0.0;
+		}
+		FVector2D Size(0.0, 0.0);
+		Viewport->GetViewportSize(Size);
+		const double HalfFov = 0.5 * FMath::DegreesToRadians(FMath::Clamp(static_cast<double>(CameraManager->GetFOVAngle()), 1.0, 170.0));
+		return Size.X > 0.0 ? 0.5 * Size.X / FMath::Tan(HalfFov) : 0.0;
+	}
+
+	/** Rio 14.10: a lift writes the camera, but never farther than aps.Surface.FreezeLiftMaxRadii from the body's centre. */
+	FVector LiftObserverFor(const AWorldScapeRoot* Root, const FVector& Camera)
+	{
+		const double MaxRadii = CVarFreezeLiftMaxRadii.GetValueOnGameThread();
+		const FVector Center = Root->GetActorLocation();
+		const FVector FromCenter = Camera - Center;
+		const double MaxCm = MaxRadii * Root->PlanetScale;
+		if (MaxRadii > 0.0 && Root->PlanetScale > 0.0 && FromCenter.SizeSquared() > FMath::Square(MaxCm))
+		{
+			return Center + FromCenter.GetSafeNormal() * MaxCm;
+		}
+		return Camera;
+	}
+
+	/** Rio 14.10: true while the view is not the pawn's own (strategic map open, or a camera far from the pawn). */
+	bool IsRemoteLiftView(const UWorld* World, const FVector& Camera)
+	{
+		const double RemoteKm = CVarFreezeLiftRemoteCameraKm.GetValueOnGameThread();
+		if (!(RemoteKm > 0.0))
+		{
+			return false;
+		}
+		const APlayerController* Controller = World ? World->GetFirstPlayerController() : nullptr;
+		if (const AGravityPlayerController* Gravity = Cast<AGravityPlayerController>(Controller); Gravity && Gravity->IsStrategicMapOpen())
+		{
+			return true;
+		}
+		const APawn* Pawn = Controller ? Controller->GetPawn() : nullptr;
+		return IsValid(Pawn) && FVector::DistSquared(Camera, Pawn->GetActorLocation()) > FMath::Square(RemoteKm * 1.0e5);
+	}
+
 	bool NeedsFreezeLift(const AWorldScapeRoot* Root, const FVector& Camera, double& OutTurnDeg, double& OutAllowedDeg,
-		double& OutRadii)
+		double& OutRadii, const double PixelsPerRadian = 0.0)
 	{
 		const double LiftRadii = CVarFreezeLiftRadii.GetValueOnGameThread();
 		const double Radius = Root->PlanetScale;
@@ -487,8 +557,19 @@ namespace APSSurfacePolicyPrivate
 		const FVector KeptFromCenter = Root->OverridedPlayerPosition - Center;
 		OutTurnDeg = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(
 			FVector::DotProduct(CameraFromCenter.GetSafeNormal(), KeptFromCenter.GetSafeNormal()), -1.0, 1.0)));
-		const double VisibleDeg = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(Radius / CameraDistance, 0.0, 1.0)));
-		OutAllowedDeg = FMath::Max(2.0, CVarFreezeLiftCoverDeg.GetValueOnGameThread() - VisibleDeg);
+		const double SinVisible = FMath::Clamp(Radius / CameraDistance, 0.0, 1.0);
+		const double VisibleDeg = FMath::RadiansToDegrees(FMath::Acos(SinVisible));
+		const double CoverDeg = CVarFreezeLiftCoverDeg.GetValueOnGameThread();
+		OutAllowedDeg = FMath::Max(2.0, CoverDeg - VisibleDeg);
+		// Rio 14.10 (aps.Surface.FreezeLiftTolerancePx): far out the uncovered part is a crescent at the limb whose width is
+		// (1 - sin(cover - turn)) of the disc's radius; the turn may grow until that crescent reaches the tolerance in pixels.
+		if (const double TolerancePx = CVarFreezeLiftTolerancePx.GetValueOnGameThread(); TolerancePx > 0.0 && PixelsPerRadian > 0.0)
+		{
+			const double DiscPx = PixelsPerRadian * FMath::Tan(FMath::Asin(SinVisible));
+			const double PixelDeg = DiscPx <= TolerancePx ? 180.0
+				: CoverDeg - FMath::RadiansToDegrees(FMath::Asin(FMath::Clamp(1.0 - TolerancePx / DiscPx, 0.0, 1.0)));
+			OutAllowedDeg = FMath::Max(OutAllowedDeg, PixelDeg);
+		}
 		OutRadii = CameraDistance / Radius;
 		return OutTurnDeg > OutAllowedDeg;
 	}
@@ -496,7 +577,8 @@ namespace APSSurfacePolicyPrivate
 	bool LiftFrozenObserver(FPolicyState& State, AWorldScapeRoot* Root, const FVector& Camera)
 	{
 		double TurnDeg = 0.0, AllowedDeg = 0.0, Radii = 0.0;
-		if (Root->WorldScapeLodInGeneration.Num() > 0 || !NeedsFreezeLift(Root, Camera, TurnDeg, AllowedDeg, Radii))
+		if (Root->WorldScapeLodInGeneration.Num() > 0
+			|| !NeedsFreezeLift(Root, Camera, TurnDeg, AllowedDeg, Radii, ViewPixelsPerRadian(Root->GetWorld())))
 		{
 			return false;
 		}
@@ -514,7 +596,7 @@ namespace APSSurfacePolicyPrivate
 		{
 			++State.LiftsUnlogged;
 		}
-		Root->OverridedPlayerPosition = Camera;
+		Root->OverridedPlayerPosition = LiftObserverFor(Root, Camera);
 		return true;
 	}
 
@@ -537,6 +619,20 @@ namespace APSSurfacePolicyPrivate
 		}
 		const double Now = FPlatformTime::Seconds();
 		const double MinSeconds = FMath::Max(0.0, static_cast<double>(CVarFreezeLiftMinSeconds.GetValueOnGameThread()));
+		const UWorld* LiftWorld = IsValid(AnchoredRoot) ? AnchoredRoot->GetWorld() : nullptr;
+		for (const APlanetaryBody* Body : Bodies)
+		{
+			if (!LiftWorld && IsValid(Body))
+			{
+				LiftWorld = Body->GetWorld();
+			}
+		}
+		// Rio 14.10 (0.6.5: the terminal map's camera at 17 AU rebuilt moons and the planet 24 times): no lift for a map view.
+		if (IsRemoteLiftView(LiftWorld, Camera))
+		{
+			return;
+		}
+		const double PixelsPerRadian = ViewPixelsPerRadian(LiftWorld);
 		for (const APlanetaryBody* Body : Bodies)
 		{
 			APlanetarySurfaceGenerator* Generator = IsValid(Body) ? Body->PlanetaryEnvironmentGenerator : nullptr;
@@ -554,13 +650,13 @@ namespace APSSurfacePolicyPrivate
 				continue;
 			}
 			double TurnDeg = 0.0, AllowedDeg = 0.0, Radii = 0.0;
-			if (!Root->bOverridePlayerPosition || !NeedsFreezeLift(Root, Camera, TurnDeg, AllowedDeg, Radii))
+			if (!Root->bOverridePlayerPosition || !NeedsFreezeLift(Root, Camera, TurnDeg, AllowedDeg, Radii, PixelsPerRadian))
 			{
 				continue;
 			}
 			UE_LOG(LogAPSWorldScapeStreaming, Log, TEXT("[APS.Surface] frozen lift: %s observer %.0f km above the ground moved to the camera %.1f radii out, view turned %.1f deg (allowed %.1f), one LOD wave"),
 				*GetNameSafe(Body), Root->PlayerDistanceToGround / 1.0e5, Radii, TurnDeg, AllowedDeg);
-			Root->OverridedPlayerPosition = Camera;
+			Root->OverridedPlayerPosition = LiftObserverFor(Root, Camera);
 			Root->UpdatePosition();
 			State.FrozenLiftSeconds.Add(Root, Now);
 			State.FrozenLiftRoot = Root;

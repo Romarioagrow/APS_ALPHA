@@ -734,7 +734,7 @@
  	{
 --- a/Private/WorldScapeRoot_Main.cpp
 +++ b/Private/WorldScapeRoot_Main.cpp
-@@ -6,6 +6,41 @@
+@@ -6,6 +6,99 @@
  static TAutoConsoleVariable<int32> CVarAPSWorldScapePublishPerFrame(TEXT("worldscape.PublishPerFrame"), 0,
  	TEXT("APS planets v2: finished terrain rings published per frame (0 = the whole batch in one frame, stock); "
  	     "2-3 spreads the render-thread upload of a batch over frames."));
@@ -760,8 +760,66 @@
 +// task priority. 0: no cap (before 10.10).
 +static TAutoConsoleVariable<int32> CVarAPSWorldScapeGenerationThreads(TEXT("worldscape.GenerationThreads"), 0,
 +	TEXT("APS: rings of one WorldScape batch generated at once, at low priority (0 = no cap, all cores, before 10.10)."));
++// APS 13.10 night (traced low flight over a wet world, 3 ring batches a second): the ring tasks ran as background tasks
++// of the engine's task scheduler, 10+ of them at once for ~0.4 s each, so every background worker was busy and the
++// renderer's own tasks (occlusion cull, dynamic mesh gathering) had only the two foreground workers: the render thread
++// waited ~50 ms in InitViews in the publication frame (Rio's "render thread 200-360 ms in publication frames").
++// A pool of real threads below normal priority: all cores when the renderer is idle, preempted by its workers otherwise.
++// -1: logical cores minus two; N > 0: N threads; 0: the engine pool (before 13.10; worldscape.GenerationThreads then caps).
++static TAutoConsoleVariable<int32> CVarAPSWorldScapeGenerationPoolThreads(TEXT("worldscape.GenerationPoolThreads"), -1,
++	TEXT("APS: WorldScape ring generation runs on its own below-normal-priority threads (-1 = cores - 2, N = that many, 0 = engine pool)."));
++// APS 14.10: the observer's altitude level, 2^round(log2(height / HeightAnchor)) as before, with the exponent kept in
++// [0, 30]. An observer more than ~1.4 AU out (2^31 * HeightAnchor) overflowed the int32 to INT_MIN; the land clamp then
++// gave level 1 and a far body was rebuilt as a patch a few km wide (0.6.5 log: the terminal map camera at 17 AU).
++static int32 APSWorldScapeAltitudeLevel(const double DistanceToGround, const double Anchor)
++{
++	const double Ratio = Anchor > 0.0 ? DistanceToGround / Anchor : 1.0;
++	const double Exponent = FMath::Clamp(FMath::RoundToDouble(FMath::Max(0.0, FMath::Log2(FMath::Max(Ratio, 1.0e-30)))), 0.0, 30.0);
++	return static_cast<int32>(FMath::Pow(2.0, Exponent));
++}
++
++// APS 14.10 (Insights trace of a 165 ms render stall in low flight over a wet world): the render thread waited for the
++// occlusion cull task, whose wait for a D3D12 sync point (complete within ~10 ms, the GPU then idle) busy-waited and ran a
++// queued ring generation task inline: WS_Mesh_DoWork 164.7 ms inside FScheduler::BusyWaitInternal. Rio's 0.6.5 log has the
++// same InitViews stalls at 265-788 ms (his ring tasks take 300-550 ms). Ring, foliage and grid tasks are now launched with
++// EQueuedWorkFlags::DoNotRunInsideBusyWait: still on the engine's workers, never inside another task's wait. 0: stock.
++static TAutoConsoleVariable<int32> CVarAPSWorldScapeTasksNoBusyWait(TEXT("worldscape.TasksNoBusyWait"), 1,
++	TEXT("APS: 1 = WorldScape ring/foliage/grid tasks never run inside another task's busy wait (no render stalls behind them); 0 = stock."));
++EQueuedWorkFlags APSWorldScapeTaskFlags()
++{
++	return CVarAPSWorldScapeTasksNoBusyWait.GetValueOnAnyThread() != 0 ? EQueuedWorkFlags::DoNotRunInsideBusyWait : EQueuedWorkFlags::None;
++}
++
 +static FQueuedThreadPool* APSWorldScapeGenerationPool()
 +{
++	const int32 Want = CVarAPSWorldScapeGenerationPoolThreads.GetValueOnGameThread();
++	if (Want != 0)
++	{
++		// Created once at first use (the thread count is then fixed for the process), never destroyed: tasks may still
++		// sit in it at shutdown, like the engine pools.
++		static FQueuedThreadPool* Dedicated = nullptr;
++		static bool bTried = false;
++		if (!bTried)
++		{
++			bTried = true;
++			const int32 Threads = Want > 0 ? Want : FMath::Max(2, FPlatformMisc::NumberOfCoresIncludingHyperthreads() - 2);
++			FQueuedThreadPool* Pool = FQueuedThreadPool::Allocate();
++			if (Pool && Pool->Create(Threads, 1024 * 1024, TPri_BelowNormal, TEXT("WorldScapeGeneration")))
++			{
++				Dedicated = Pool;
++				UE_LOG(LogWorldScapeCore, Display, TEXT("[WS.Pool] ring generation on %d below-normal threads (worldscape.GenerationPoolThreads %d)"), Threads, Want);
++			}
++			else
++			{
++				delete Pool;
++				UE_LOG(LogWorldScapeCore, Warning, TEXT("[WS.Pool] could not create the ring generation pool (%d threads); the engine pool is used"), Threads);
++			}
++		}
++		if (Dedicated)
++		{
++			return Dedicated;
++		}
++	}
 +	const int32 Cap = CVarAPSWorldScapeGenerationThreads.GetValueOnGameThread();
 +	if (Cap <= 0 || !GThreadPool)
 +	{
@@ -776,7 +834,7 @@
  #include "DSP/Osc.h"
  #include <Runtime/Engine/Classes/Kismet/GameplayStatics.h>
  
-@@ -1574,6 +1609,7 @@
+@@ -1574,6 +1667,7 @@
  // ----------------------------------------------------------------------------
  void AWorldScapeRoot::UpdatePosition()
  {
@@ -784,7 +842,25 @@
  	FVector PlayerPositionNormal;
  
  	bool DoCollision = bGenerateCollision;
-@@ -1677,6 +1713,22 @@
+@@ -1617,7 +1711,7 @@
+ 		UE_LOG(LogTemp, Warning, TEXT("PlayerPositionNormal Is NAN"));
+ 		PlayerPositionNormal = FVector(0, 0, 1);
+ 	} //Prevent issues;
+-	int32 AltitudeMultiplier = pow(2, round(NoiseMathUtils::Max(0.f, log2(PlayerDistanceToGround / HeightAnchor))));
++	int32 AltitudeMultiplier = APSWorldScapeAltitudeLevel(PlayerDistanceToGround, HeightAnchor);
+ 
+ #if WITH_EDITOR
+ 	if (bProjectPosition)
+@@ -1645,7 +1739,7 @@
+ 		TemperatureAtPlayerPosition = NoiseData.Temperature;
+ 		HumidityAtPlayerPosition = NoiseData.Humidity;
+ 		PlayerPositionNormal = WorldScapeWorld::GetUpVectorSnapped(PlayerPos, GridAngle, bFlatWorld).ToFVector();
+-		AltitudeMultiplier = pow(2, round(NoiseMathUtils::Max(0.f, log2(PlayerDistanceToGround / HeightAnchor))));
++		AltitudeMultiplier = APSWorldScapeAltitudeLevel(PlayerDistanceToGround, HeightAnchor);
+ 	}
+ 	else
+ 	{
+@@ -1677,6 +1771,22 @@
  	}
  
  
@@ -807,7 +883,7 @@
  	GridAngle = GridAngleMin * AltitudeMultiplier;
  
  	if (GridAngle > GridAngleMax) GridAngle = GridAngleMax;
-@@ -1730,6 +1782,7 @@
+@@ -1730,6 +1840,7 @@
  		double StepSize;
  		bool ForceUpdate = false;
  		bool ForceUpdateWater = false;
@@ -815,7 +891,7 @@
  		if (Prev_HeightMult != LandAltitudeMultiplier)
  		{
  			Prev_HeightMult = LandAltitudeMultiplier;
-@@ -1773,6 +1826,9 @@
+@@ -1773,6 +1884,9 @@
  
  			if (DVector::Dist(WorldScapeLod[i]->RelativePosition, PrecisionCorrectedRelativePosition) > StepSize * 0.5 || ForceUpdate || (WorldScapeLod.IsValidIndex(i) && PlayerPositionNormal != WorldScapeLod[i]->SnappedAngle))
  			{
@@ -825,16 +901,16 @@
  
  
  				WorldScapeLodInGeneration.Add(WorldScapeLod[i], false);
-@@ -1782,7 +1838,7 @@
+@@ -1782,7 +1896,7 @@
  					WorldScapeLod[i], this, SnappedPosition, PlanetLocation, SubPosition, PlanetScaleCode, i,
  					TriangleSize * LandAltitudeMultiplier, LodResolution, PlayerDistanceToGround, PlayerPositionNormal,
  					bFlatWorld, IsInViewPort));
 -				LodGenerationThreadPool.Last()->StartBackgroundTask();
-+				LodGenerationThreadPool.Last()->StartBackgroundTask(APSWorldScapeGenerationPool());
++				LodGenerationThreadPool.Last()->StartBackgroundTask(APSWorldScapeGenerationPool(), EQueuedWorkPriority::Normal, APSWorldScapeTaskFlags());
  			}
  		}
  		if (bOcean)
-@@ -1809,10 +1865,11 @@
+@@ -1809,10 +1923,11 @@
  
  				if (DVector::Dist(WorldScapeLodOcean[i]->RelativePosition, PrecisionCorrectedRelativePosition) > StepSize * 0.5 || ForceUpdateWater || (WorldScapeLodOcean.IsValidIndex(i) && PlayerPositionNormal != WorldScapeLodOcean[i]->SnappedAngle))
  				{
@@ -843,11 +919,11 @@
  					LodGenerationThreadPool.Add(new FAsyncTask <LodGenerationThread>(WorldScapeLodOcean[i], this, SnappedPosition, PlanetLocation, SubPosition, PlanetScaleCode, i,
  						OceanTriangleSize * WaterAltitudeMultiplier, OceanLodResolution, PlayerDistanceToGround, PlayerPositionNormal, bFlatWorld, IsInViewPort));
 -					LodGenerationThreadPool.Last()->StartBackgroundTask();
-+					LodGenerationThreadPool.Last()->StartBackgroundTask(APSWorldScapeGenerationPool());
++					LodGenerationThreadPool.Last()->StartBackgroundTask(APSWorldScapeGenerationPool(), EQueuedWorkPriority::Normal, APSWorldScapeTaskFlags());
  				}
  			}
  		}
-@@ -1821,6 +1878,12 @@
+@@ -1821,6 +1936,12 @@
  		{
  			HMIForceUpdate = false;
  		}
@@ -860,7 +936,7 @@
  
  	}
  
-@@ -1828,6 +1891,7 @@
+@@ -1828,6 +1949,7 @@
  // ----------------------------------------------------------------------------
  void AWorldScapeRoot::CheckForLodGeneration()
  {
@@ -868,7 +944,7 @@
  	bool DoneGenerating = true;
  	
  	// The pending TMap is game-thread-owned. Workers must never read/write it
-@@ -1843,6 +1907,8 @@
+@@ -1843,6 +1965,8 @@
  	}
  	if (DoneGenerating)
  	{
@@ -877,7 +953,7 @@
  		// APS planets v2 (P3): at most worldscape.PublishPerFrame rings per frame (0 = all at once, stock).
  		const int32 APS_Budget = CVarAPSWorldScapePublishPerFrame.GetValueOnGameThread();
  		bool updateMaterial = false;
-@@ -1867,14 +1933,32 @@
+@@ -1867,14 +1991,32 @@
  			++APS_PublishedNow;
  		}
  		for (UWorldScapeLod* APS_Lod : APS_Published) WorldScapeLodInGeneration.Remove(APS_Lod);
@@ -912,7 +988,7 @@
  		if (PreparedCount > 0) WorldScapePreparedMesh::LogStats();
  
  		TransformKeeper->UpdateBounds();
-@@ -1884,6 +1968,14 @@
+@@ -1884,6 +2026,14 @@
  			UpdateTerrainMaterial(TerrainMaterial);
  			UpdateOceanMaterial(OceanMaterial);
  		}
@@ -927,3 +1003,178 @@
  	}
  }
  // ----------------------------------------------------------------------------
+@@ -2189,7 +2339,7 @@
+ 				}
+ 			}
+ 			FoliageGenerationThreadPool = new FAsyncTask <FoliageGenerationThread>(this, PlanetScaleCode, bFlatWorld, PlayerPos, FoliageDataList, PlayerDistanceToGround);
+-			FoliageGenerationThreadPool->StartBackgroundTask();
++			FoliageGenerationThreadPool->StartBackgroundTask(GThreadPool, EQueuedWorkPriority::Normal, APSWorldScapeTaskFlags());
+ 		}
+ 	}
+ }
+--- a/Private/WorldScapeRoot_Collision.cpp
++++ b/Private/WorldScapeRoot_Collision.cpp
+@@ -1,15 +1,24 @@
+ // Copyright 2021 IOLACORP STUDIO. All Rights Reserved
+-#include "WorldScapeRoot.h"
+-#include "Async/ParallelFor.h"
+-#include "HAL/IConsoleManager.h"
+-
+-namespace
+-{
+-	TAutoConsoleVariable<int32> CVarCollisionSampleTasks(
+-		TEXT("worldscape.CollisionSampleTasks"), 4,
+-		TEXT("Maximum parallel collision sample tasks (1..4), only for roots tagged APS.Collision.ParallelSamples. 1 restores serial sampling."),
+-		ECVF_Default);
+-}
++#include "WorldScapeRoot.h"
++#include "Async/ParallelFor.h"
++#include "HAL/IConsoleManager.h"
++
++namespace
++{
++	TAutoConsoleVariable<int32> CVarCollisionSampleTasks(
++		TEXT("worldscape.CollisionSampleTasks"), 8,
++		TEXT("Maximum parallel collision sample tasks (1..16), only for roots tagged APS.Collision.ParallelSamples. 1 restores serial sampling. ")
++		TEXT("APS 14.10: 8 (was 4): a patch is sampled on the game thread, so more tasks shorten that frame."),
++		ECVF_Default);
++
++	// APS 14.10 (0.6.5 log: 105-214 ms game-thread frames on arrival at a planet = 17 collision patches generated in one tick):
++	// the patch under each collision actor is still made at once, the eight around it at most this many per frame (the rest
++	// on the next frames; nothing under the pawn waits). 0: all at once (stock).
++	TAutoConsoleVariable<int32> CVarCollisionNeighbourPatchesPerFrame(
++		TEXT("worldscape.CollisionNeighbourPatchesPerFrame"), 1,
++		TEXT("APS: new collision patches around (not under) the collision actors made per frame; 0 = all at once (stock)."),
++		ECVF_Default);
++}
+ 
+ void AWorldScapeRoot::CheckCollisionDeletion(FVector HardenNormal, bool ResetCollisions)
+ {
+@@ -224,6 +233,9 @@
+ 
+ 	double AltitudeMultiplierL;
+ 	FNoiseData Data;
++	// APS 14.10 (worldscape.CollisionNeighbourPatchesPerFrame): this frame's budget of new patches around the actors.
++	const int32 APS_NeighbourCap = CVarCollisionNeighbourPatchesPerFrame.GetValueOnGameThread();
++	int32 APS_NeighbourBudget = APS_NeighbourCap > 0 ? APS_NeighbourCap : MAX_int32;
+ 
+ 	for (int32 p = 0; p < SnapedCollisionActorList.Num(); p++)
+ 	{
+@@ -297,6 +309,19 @@
+ 				}
+ 			}
+ 
++			// APS 14.10: the patch under the actor (i == 0) is made at once; the ones around it wait for this frame's budget.
++			if (MakeCollision && i != 0)
++			{
++				if (APS_NeighbourBudget <= 0)
++				{
++					MakeCollision = false;
++				}
++				else
++				{
++					--APS_NeighbourBudget;
++				}
++			}
++
+ 			if (MakeCollision)
+ 			{
+ 				int32 ID = CreateNewColisionMesh(OffSettedPos);
+@@ -346,9 +371,9 @@
+ 	}
+ }
+ 
+-void ColisionGeneration::CalculateNoise()
+-{
+-	TRACE_CPUPROFILER_EVENT_SCOPE(WS_CollisionSampleHeights);
++void ColisionGeneration::CalculateNoise()
++{
++	TRACE_CPUPROFILER_EVENT_SCOPE(WS_CollisionSampleHeights);
+ 
+ 	//FVector NoisePosition;
+ 	TArray<FHeightMapVolumeDataCopy> VolumeListVar;
+@@ -374,38 +399,38 @@
+ 
+ 	//FVector VertexWorldTransformedPosition;
+ 	//FVector VertexTransformedPosition;
+-	// Opt-in requires an immutable, thread-safe native noise implementation. Keep
+-	// unknown noise/heightmap volume implementations on their original serial path.
+-	// The joined ParallelFor never lets work outlive the root, its volume snapshot,
+-	// or this chunk. This is bounded sample parallelism, NOT asynchronous streaming.
+-	const int32 NumVertices = MainPatch.Vertices.Num();
+-	const bool bSafeParallel = IsInGameThread()
+-		&& RootRef->ActorHasTag(TEXT("APS.Collision.ParallelSamples"))
+-		&& !RootRef->bUsePlanetaryHeightMap
+-		&& VolumeListVar.IsEmpty() && NoiseVolumeListVar.IsEmpty()
+-		&& TerrainHoleVolumeListVar.IsEmpty();
+-	const int32 MaxTasks = bSafeParallel
+-		? FMath::Clamp(CVarCollisionSampleTasks.GetValueOnGameThread(), 1, 4) : 1;
+-	// Allocate once before task launch. Every task writes only its own vertex/color;
+-	// no shared Add(), resize, component access or UObject mutation in the body.
+-	MainPatch.VertexColors.SetNumUninitialized(NumVertices);
+-	auto SampleVertex = [&](int32 i)
+-	{
+-		const DVector ECEFVertexPosition = MainPatch.Vertices[i] + RelativePosition;
++	// Opt-in requires an immutable, thread-safe native noise implementation. Keep
++	// unknown noise/heightmap volume implementations on their original serial path.
++	// The joined ParallelFor never lets work outlive the root, its volume snapshot,
++	// or this chunk. This is bounded sample parallelism, NOT asynchronous streaming.
++	const int32 NumVertices = MainPatch.Vertices.Num();
++	const bool bSafeParallel = IsInGameThread()
++		&& RootRef->ActorHasTag(TEXT("APS.Collision.ParallelSamples"))
++		&& !RootRef->bUsePlanetaryHeightMap
++		&& VolumeListVar.IsEmpty() && NoiseVolumeListVar.IsEmpty()
++		&& TerrainHoleVolumeListVar.IsEmpty();
++	const int32 MaxTasks = bSafeParallel
++		? FMath::Clamp(CVarCollisionSampleTasks.GetValueOnGameThread(), 1, 16) : 1;
++	// Allocate once before task launch. Every task writes only its own vertex/color;
++	// no shared Add(), resize, component access or UObject mutation in the body.
++	MainPatch.VertexColors.SetNumUninitialized(NumVertices);
++	auto SampleVertex = [&](int32 i)
++	{
++		const DVector ECEFVertexPosition = MainPatch.Vertices[i] + RelativePosition;
+ 
+ 
+ 		FNoiseData Data = RootRef->GetNoise(ECEFVertexPosition, NoiseVolumeListVar, VolumeListVar, TerrainHoleVolumeListVar, VolumeTransformArray);
+-		MainPatch.VertexColors[i] = FLinearColor(Data.HeightNormalize, Data.Temperature, Data.Humidity, Data.FoliageMask);
++		MainPatch.VertexColors[i] = FLinearColor(Data.HeightNormalize, Data.Temperature, Data.Humidity, Data.FoliageMask);
+ 
+ 		MainPatch.Vertices[i] = WorldScapeWorld::GetVertexTransformation(Data.Height, MainPatch.Vertices[i], bFlatWorld, ECEFVertexPosition).ToFVector();
+ 
+-	};
+-	if (MaxTasks > 1 && NumVertices >= 1024)
+-		ParallelFor(TEXT("WS_CollisionSampleBatch"), NumVertices,
+-			FMath::DivideAndRoundUp(NumVertices, MaxTasks), SampleVertex);
+-	else
+-		for (int32 i = 0; i < NumVertices; ++i) SampleVertex(i);
+-}
++	};
++	if (MaxTasks > 1 && NumVertices >= 1024)
++		ParallelFor(TEXT("WS_CollisionSampleBatch"), NumVertices,
++			FMath::DivideAndRoundUp(NumVertices, MaxTasks), SampleVertex);
++	else
++		for (int32 i = 0; i < NumVertices; ++i) SampleVertex(i);
++}
+ 
+ void ColisionGeneration::SetPointPosition()
+ {
+--- a/Private/WorldScapeRoot_Grid.cpp
++++ b/Private/WorldScapeRoot_Grid.cpp
+@@ -13,6 +13,8 @@
+ #include "Algo/RandomShuffle.h"
+ #include "Async/Async.h"
+ #include "Async/ParallelFor.h"
++// APS 14.10: defined in WorldScapeRoot_Main.cpp (worldscape.TasksNoBusyWait).
++EQueuedWorkFlags APSWorldScapeTaskFlags();
+ #include "Kismet/GameplayStatics.h"
+ #include "Serialization/ObjectAndNameAsStringProxyArchive.h"
+ #include "Serialization/ObjectReader.h"
+@@ -110,7 +112,7 @@
+ 				if ( !ArrayQueue_AsyncCompute[i].IsEmpty() && Grid_ThreadPool[i]->IsDone() && ThreadValidation[i] )
+ 				{
+ 					Grid_ThreadValidation = true;
+-					Grid_ThreadPool[i]->StartBackgroundTask( GThreadPool, EQueuedWorkPriority::Highest );
++					Grid_ThreadPool[i]->StartBackgroundTask( GThreadPool, EQueuedWorkPriority::Highest, APSWorldScapeTaskFlags() ); // APS 14.10
+ 				}
+ 				else if ( Grid_ThreadPool[i]->IsDone() && !ThreadValidation[i] )
+ 				{

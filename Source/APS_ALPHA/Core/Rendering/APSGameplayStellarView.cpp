@@ -623,7 +623,14 @@ namespace APSGameplayStellarGlare
 				const double MaxApartCm = FMath::Max(GlarePilotViewKm ? static_cast<double>(GlarePilotViewKm->GetFloat()) : 1000.0,
 					1.0) * 1.0e5;
 				const FVector Eye = GlarePilot->GetPawnViewLocation();
-				bGlareDetached = bGlareMapOpen || (!Eye.ContainsNaN() && FVector::Dist(Camera, Eye) > MaxApartCm);
+				// Rio 14.10 (audit): as MakeApproachEyes, the pilot's own camera (a frame behind in a flow ride) never detaches.
+				const AActor* GlareTarget = GlarePlayer->PlayerCameraManager ? GlarePlayer->PlayerCameraManager->GetViewTarget() : nullptr;
+				const AActor* GlareTargetParent = GlareTarget ? GlareTarget->GetAttachParentActor() : nullptr;
+				const bool bGlareOwnView = !GlareTarget || GlareTarget == GlarePilot || GlareTargetParent == GlarePilot
+					|| GlarePilot->GetAttachParentActor() == GlareTarget
+					|| (GlareTargetParent && GlareTargetParent == GlarePilot->GetAttachParentActor());
+				bGlareDetached = bGlareMapOpen
+					|| (!bGlareOwnView && !Eye.ContainsNaN() && FVector::Dist(Camera, Eye) > MaxApartCm);
 			}
 			if (CVarGlareMapReturnSnap.GetValueOnGameThread() != 0)
 			{

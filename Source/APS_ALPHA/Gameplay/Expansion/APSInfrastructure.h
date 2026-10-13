@@ -247,6 +247,8 @@ private:
 	float PilotGroundedSeconds{0.0f};
 	float Stocks[static_cast<int32>(APSInfrastructure::EResource::Count)]{};
 	float Rates[static_cast<int32>(APSInfrastructure::EResource::Count)]{};
+	/** Rio 14.10 (audit): what a frame's income lost to the float stock's rounding, credited on the next frames. */
+	double StockCarry[static_cast<int32>(APSInfrastructure::EResource::Count)]{};
 	/** Rio 07-09.10 (T-08): the stocks the ladder has not opened (bits in EResource order), set in RecountRates. */
 	uint8 ClosedMask{0};
 	/** The world's resources knob says unlimited: nothing is ever taken. */

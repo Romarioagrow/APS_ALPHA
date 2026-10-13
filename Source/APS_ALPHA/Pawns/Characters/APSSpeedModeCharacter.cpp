@@ -1,6 +1,7 @@
 #include "APSSpeedModeCharacter.h"
 
 #include "Animation/AnimInstance.h"
+#include "AnimationRuntime.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "HAL/IConsoleManager.h"
@@ -63,6 +64,10 @@ namespace APSSpeedModeFeel
 	TAutoConsoleVariable<float> CVarFirstPersonEyeUpCm(
 		TEXT("aps.Character.FirstPersonEyeUpCm"), 8.f,
 		TEXT("Eye offset up from the head bone, cm."));
+	TAutoConsoleVariable<int32> CVarFirstPersonEyeHeadSpace(TEXT("aps.Character.FirstPersonEyeHeadSpace"), 1,
+		TEXT("Rio 14.10: 1 = the first-person eye offset follows the head bone's own axes (zero-G poses tilt the head); 0 = the ")
+		TEXT("actor's axes as in 0.6.5."),
+		ECVF_Default);
 	TAutoConsoleVariable<int32> CVarFirstPerson(
 		TEXT("aps.Character.FirstPerson"), 1,
 		TEXT("Rio 09.10: 1: C toggles a first-person view on foot and in zero-G (smooth move of the camera to eye height, ")
@@ -541,10 +546,26 @@ void AAPSSpeedModeCharacter::UpdateFirstPersonCamera(float DeltaTime)
 		{
 			// The pose is last frame's (components tick after the actor), which in actor space is millimetres; the
 			// actor's own motion does not enter. A little smoothing takes the animation's head bob out of the view.
-			const FVector HeadLocal = MeshComponent->GetRelativeTransform().TransformPosition(
+			const FTransform MeshRelative = MeshComponent->GetRelativeTransform();
+			const FVector HeadLocal = MeshRelative.TransformPosition(
 				MeshComponent->GetBoneLocation(Head, EBoneSpaces::ComponentSpace));
-			const FVector Wanted = HeadLocal + FVector(APSSpeedModeFeel::CVarFirstPersonEyeForwardCm.GetValueOnGameThread(), 0.f,
+			const FVector EyeOffset(APSSpeedModeFeel::CVarFirstPersonEyeForwardCm.GetValueOnGameThread(), 0.f,
 				APSSpeedModeFeel::CVarFirstPersonEyeUpCm.GetValueOnGameThread());
+			FVector Wanted = HeadLocal + EyeOffset;
+			// Rio 14.10 (0.6.5 screenshot: first person in ZERO-G looked at the inside of the collar): the zero-G poses tilt the
+			// head against the capsule, so the forward/up offset is carried in the head bone's own frame, taken from the
+			// reference pose (where it equals the actor-axis offset), not along the actor's axes.
+			const int32 HeadIndex = MeshComponent->GetBoneIndex(Head);
+			const USkinnedAsset* Asset = MeshComponent->GetSkinnedAsset();
+			if (APSSpeedModeFeel::CVarFirstPersonEyeHeadSpace.GetValueOnGameThread() != 0 && HeadIndex != INDEX_NONE && Asset
+				&& MeshComponent->GetComponentSpaceTransforms().IsValidIndex(HeadIndex))
+			{
+				const FTransform RefHead = FAnimationRuntime::GetComponentSpaceTransformRefPose(Asset->GetRefSkeleton(), HeadIndex)
+					* MeshRelative;
+				const FVector EyeInHead = RefHead.InverseTransformVectorNoScale(EyeOffset);
+				const FTransform HeadNow = MeshComponent->GetBoneTransform(HeadIndex, MeshRelative);
+				Wanted = HeadNow.GetLocation() + HeadNow.TransformVectorNoScale(EyeInHead);
+			}
 			FirstPersonEyeLocal = bFirstPersonEyeValid ? FMath::VInterpTo(FirstPersonEyeLocal, Wanted, DeltaTime, 14.f) : Wanted;
 			bFirstPersonEyeValid = true;
 			EyeLocation = FirstPersonEyeLocal;

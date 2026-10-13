@@ -551,7 +551,10 @@ void UAPSStellarVisualSubsystem::UpdateGameplayStationFillLight(
 				CharacterLocation, GravityZone->GetComponentLocation());
 			const double NormalizedDistanceSquared =
 				DistanceSquared / (RadiusCm * RadiusCm);
-			if (NormalizedDistanceSquared <= 1.0
+			// Rio 14.10 (audit): the station the fill already lights keeps it to 1.1 radii, so a pawn on the sphere's edge does
+			// not switch the light (and log) every frame.
+			const double EnterLimit = Candidate == GameplayFillStation.Get() ? 1.21 : 1.0;
+			if (NormalizedDistanceSquared <= EnterLimit
 				&& NormalizedDistanceSquared < BestNormalizedDistanceSquared)
 			{
 				ContainingStation = Candidate;
