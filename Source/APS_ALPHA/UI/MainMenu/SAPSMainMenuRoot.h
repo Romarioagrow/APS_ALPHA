@@ -116,6 +116,12 @@ public:
 	/** Rio 06.10 checks (aps.Menu.Open, aps.Menu.ThemeShots): opens a page by name (Landing, NewWorld, Worlds, Settings,
 	 * Profile) and, for Settings, a tab (Video, Graphics, Audio, Interface). False for an unknown name. */
 	bool OpenPageByName(const FString& Page, const FString& Tab);
+	/**
+	 * APS DEV 13.10 (offscreen smoke runs): opens an origin's card ("origin", ark | adrift | ring | the origin's key) or an
+	 * authored world's card ("world", the folder id) exactly as the menu does, waits for the preview, then presses BEGIN /
+	 * START. False (with a warning) for an unknown id; the start itself is logged under [APS.Test].
+	 */
+	bool StartCardForTest(const FString& Kind, const FString& Id);
 
 #if WITH_DEV_AUTOMATION_TESTS
 	/** Opens and inspects the real Choose Your Path page for rendered UI tests. */
@@ -170,6 +176,10 @@ private:
 	FReply OpenTripCard();
 	TSharedPtr<FAPSWorldCardInfo> MakeTripCard() const;
 	void ClearWorldCard();
+	/** StartCardForTest's wait: START once the preview stands (or the deadline passes). */
+	EActiveTimerReturnType StartCardWhenReady(double CurrentTime, float DeltaTime);
+	double CardStartDeadline{0.0};
+	FString CardStartLabel;
 	void BackFromGeneration();
 	TSharedPtr<FAPSWorldCardInfo> MakeAuthoredWorldCard(const APSAuthoredWorlds::FCard& Card) const;
 	TSharedPtr<FAPSWorldCardInfo> MakeOriginCard(const APSOrigins::FDefinition& Origin) const;

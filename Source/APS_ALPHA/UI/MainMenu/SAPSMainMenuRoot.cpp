@@ -1441,6 +1441,35 @@ namespace APSMenuChecks
 			UE_LOG(LogTemp, Log, TEXT("[APS.Menu] Open %s %s"), Args.Num() > 0 ? *Args[0] : TEXT("?"), bOpened ? TEXT("done") : TEXT("failed"));
 		}));
 
+#if !UE_BUILD_SHIPPING
+	// APS DEV 13.10 (offscreen smoke runs): the cards' BEGIN / START from the console, through the same menu path.
+	FAutoConsoleCommand StartOriginCommand(TEXT("aps.Test.StartOrigin"),
+		TEXT("aps.Test.StartOrigin <ark|adrift|ring>: opens the origin's card from the main menu and presses BEGIN once the preview stands."),
+		FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
+		{
+			const TSharedPtr<SAPSMainMenuRoot> Root = GActiveRoot.Pin();
+			if (!Root.IsValid() || Args.Num() == 0)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[APS.Test] StartOrigin: %s"), Root.IsValid() ? TEXT("usage: aps.Test.StartOrigin <ark|adrift|ring>") : TEXT("no main menu on screen"));
+				return;
+			}
+			Root->StartCardForTest(TEXT("origin"), Args[0]);
+		}));
+
+	FAutoConsoleCommand StartWorldCardCommand(TEXT("aps.Test.StartWorldCard"),
+		TEXT("aps.Test.StartWorldCard <id>: opens the authored world's card (Content/APS/APS_ALPHA/Worlds/Authored/<id>) from the main menu and presses START once the preview stands."),
+		FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>& Args)
+		{
+			const TSharedPtr<SAPSMainMenuRoot> Root = GActiveRoot.Pin();
+			if (!Root.IsValid() || Args.Num() == 0)
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[APS.Test] StartWorldCard: %s"), Root.IsValid() ? TEXT("usage: aps.Test.StartWorldCard <id>") : TEXT("no main menu on screen"));
+				return;
+			}
+			Root->StartCardForTest(TEXT("world"), Args[0]);
+		}));
+#endif
+
 	/**
 	 * aps.Menu.ThemeShots <label> [quit]: every theme through the landing, NEW WORLD and the four SETTINGS tabs, one
 	 * screenshot each with the UI (Saved/Screenshots/MenuThemes/<label>_<theme>_<page>.png). Rio 06.10: "check that the
@@ -1896,6 +1925,84 @@ void SAPSMainMenuRoot::BackFromGeneration()
 {
 	ClearWorldCard();
 	Navigate(EAPSMenuPage::ChoosePath);
+}
+
+bool SAPSMainMenuRoot::StartCardForTest(const FString& Kind, const FString& Id)
+{
+	PendingWorldCard.Reset();
+	if (Kind.Equals(TEXT("origin"), ESearchCase::IgnoreCase))
+	{
+		// The preset's folder id (ark, adrift, ring) or the origin's own key (Ark, UnderTheRing).
+		const APSOrigins::FDefinition* Definition = nullptr;
+		if (const APSAuthoredWorlds::FCard* Preset = APSAuthoredWorlds::FindOrigin(Id))
+		{
+			Definition = APSOrigins::Find(static_cast<APSWorldRules::EOrigin>(Preset->RecommendedOrigin));
+		}
+		for (const APSOrigins::FDefinition& Candidate : APSOrigins::All())
+		{
+			if (!Definition && Id.Equals(Candidate.Key, ESearchCase::IgnoreCase))
+			{
+				Definition = &Candidate;
+			}
+		}
+		if (!Definition || !Definition->bAvailable)
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[APS.Test] start origin=%s: unknown or unavailable origin (ark | adrift | ring)"), *Id);
+			return false;
+		}
+		OpenOriginCard(static_cast<uint8>(Definition->Id));
+		CardStartLabel = FString::Printf(TEXT("origin=%s"), Definition->Key);
+	}
+	else if (Kind.Equals(TEXT("world"), ESearchCase::IgnoreCase))
+	{
+		if (!APSAuthoredWorlds::Find(Id))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[APS.Test] start world=%s: no such authored world (aps.Worlds.List)"), *Id);
+			return false;
+		}
+		PlayAuthoredWorld(Id);
+		CardStartLabel = FString::Printf(TEXT("world=%s"), *Id);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[APS.Test] start: kind must be origin or world, not '%s'"), *Kind);
+		return false;
+	}
+	if (!PendingWorldCard.IsValid() || CurrentPage != EAPSMenuPage::AstronomicalGeneration || !ViewModel.IsValid())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[APS.Test] start %s: the card did not open (no world model, or the preset failed to apply)"), *CardStartLabel);
+		return false;
+	}
+	CardStartDeadline = FPlatformTime::Seconds() + 180.0;
+	UE_LOG(LogTemp, Log, TEXT("[APS.Test] start %s: card open, %s; START once the preview stands"), *CardStartLabel,
+		*APSWorldRules::Describe(APSWorldRules::Of(ViewModel->GetGeneratedWorld())));
+	RegisterActiveTimer(0.25f, FWidgetActiveTimerDelegate::CreateSP(this, &SAPSMainMenuRoot::StartCardWhenReady));
+	return true;
+}
+
+EActiveTimerReturnType SAPSMainMenuRoot::StartCardWhenReady(double, float)
+{
+	if (!PendingWorldCard.IsValid() || !ViewModel.IsValid() || CurrentPage != EAPSMenuPage::AstronomicalGeneration)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[APS.Test] start %s: the card closed before START"), *CardStartLabel);
+		return EActiveTimerReturnType::Stop;
+	}
+	const bool bReady = ViewModel->bPreviewReady
+		&& (ViewModel->GetGenerationRoute() != EAPSGenerationRoute::Civilization || ViewModel->GetHomeStartPlanetCount() > 0);
+	if (bReady)
+	{
+		UE_LOG(LogTemp, Log, TEXT("[APS.Test] start %s: START (spawn place %d)"), *CardStartLabel,
+			ViewModel->SpawnParameters ? static_cast<int32>(ViewModel->SpawnParameters->CharacterSpawnPlace) : -1);
+		ContinueAstronomicalGeneration();
+		return EActiveTimerReturnType::Stop;
+	}
+	if (FPlatformTime::Seconds() > CardStartDeadline)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[APS.Test] start %s: the preview did not stand in time (%s)"), *CardStartLabel,
+			*ViewModel->PreviewStatus.ToString());
+		return EActiveTimerReturnType::Stop;
+	}
+	return EActiveTimerReturnType::Continue;
 }
 
 TSharedPtr<FAPSWorldCardInfo> SAPSMainMenuRoot::MakeTripCard() const
