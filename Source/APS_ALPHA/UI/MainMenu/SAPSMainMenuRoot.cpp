@@ -1468,6 +1468,19 @@ namespace APSMenuChecks
 			}
 			Root->StartCardForTest(TEXT("world"), Args[0]);
 		}));
+
+	FAutoConsoleCommand StartTripCommand(TEXT("aps.Test.StartTrip"),
+		TEXT("aps.Test.StartTrip: picks SPACE TRIPS on NEW WORLD, opens its card and presses SET OUT once the preview stands."),
+		FConsoleCommandWithArgsDelegate::CreateLambda([](const TArray<FString>&)
+		{
+			const TSharedPtr<SAPSMainMenuRoot> Root = GActiveRoot.Pin();
+			if (!Root.IsValid())
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[APS.Test] StartTrip: no main menu on screen"));
+				return;
+			}
+			Root->StartCardForTest(TEXT("trip"), FString());
+		}));
 #endif
 
 	/**
@@ -1963,9 +1976,16 @@ bool SAPSMainMenuRoot::StartCardForTest(const FString& Kind, const FString& Id)
 		PlayAuthoredWorld(Id);
 		CardStartLabel = FString::Printf(TEXT("world=%s"), *Id);
 	}
+	else if (Kind.Equals(TEXT("trip"), ESearchCase::IgnoreCase))
+	{
+		// SPACE TRIPS: the chip, OPEN THE ROUTE and SET OUT.
+		SetNewWorldMode(static_cast<uint8>(APSWorldRules::EMode::SpaceTrips));
+		OpenTripCard();
+		CardStartLabel = TEXT("trip");
+	}
 	else
 	{
-		UE_LOG(LogTemp, Warning, TEXT("[APS.Test] start: kind must be origin or world, not '%s'"), *Kind);
+		UE_LOG(LogTemp, Warning, TEXT("[APS.Test] start: kind must be origin, world or trip, not '%s'"), *Kind);
 		return false;
 	}
 	if (!PendingWorldCard.IsValid() || CurrentPage != EAPSMenuPage::AstronomicalGeneration || !ViewModel.IsValid())
