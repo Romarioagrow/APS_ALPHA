@@ -1,44 +1,428 @@
 --- a/Public/WorldScapePreparedMesh.h
 +++ b/Public/WorldScapePreparedMesh.h
-@@ -47,4 +47,8 @@
-     WORLDSCAPECORE_API void LogStats();
-     WORLDSCAPECORE_API bool CopyPreparedRenderBuffers(FStaticMeshVertexBuffers& Destination,
-         const FStaticMeshVertexBuffers& Source);
+@@ -1,50 +1,54 @@
+-#pragma once
+-
+-#include "WorldScapeMeshComponent.h"
+-
+-class UWorldScapeLod;
+-struct FStaticMeshVertexBuffers;
+-
+-// The reservation follows the task and its render commands. It is released
+-// only after all transient arrays have died, including on the render thread.
+-struct WORLDSCAPECORE_API FWorldScapePreparedReservation
+-{
+-    explicit FWorldScapePreparedReservation(int64 InBytes) : Bytes(InBytes) {}
+-    ~FWorldScapePreparedReservation();
+-    const int64 Bytes;
+-};
+-
+-struct FWorldScapePreparedMeshSection
+-{
+-    // Borrowed under the existing root task fence, not an unbounded cache.
+-    // GT never replaces these sections until all LOD tasks have completed;
+-    // root reset/destruction must drain the same tasks before destroying meshes.
+-    TConstArrayView<FWorldScapeMeshVertex> Previous;
+-    TArray<FWorldScapeMeshVertex> CpuVertices;
+-    TArray<FWorldScapeMeshVertex> RenderVertices;
+-    // CPU storage only: never InitResource or enqueue RHI work on the worker.
+-    TSharedPtr<FStaticMeshVertexBuffers, ESPMode::ThreadSafe> PackedBuffers;
+-    FBox Bounds = FBox(ForceInit);
+-};
+-
+-struct WORLDSCAPECORE_API FWorldScapePreparedLod
+-{
+-    // Declare before arrays: reverse destruction order releases memory first.
+-    TSharedPtr<FWorldScapePreparedReservation, ESPMode::ThreadSafe> Reservation;
+-    FWorldScapePreparedMeshSection Sections[3];
+-    bool bReady = false;
+-    bool bPrepareRender = false;
+-    bool Build(const UWorldScapeLod& Lod);
+-};
+-
+-namespace WorldScapePreparedMesh
+-{
+-    // Capture on GT before dispatch; only the worker touches the new buffers.
+-    WORLDSCAPECORE_API TUniquePtr<FWorldScapePreparedLod> Capture(UWorldScapeLod& Lod);
+-    WORLDSCAPECORE_API int64 CurrentBytes();
+-    WORLDSCAPECORE_API int64 PeakBytes();
+-    WORLDSCAPECORE_API void Published();
+-    WORLDSCAPECORE_API void LogStats();
+-    WORLDSCAPECORE_API bool CopyPreparedRenderBuffers(FStaticMeshVertexBuffers& Destination,
+-        const FStaticMeshVertexBuffers& Source);
+-}
++#pragma once
++
++#include "WorldScapeMeshComponent.h"
++
++class UWorldScapeLod;
++struct FStaticMeshVertexBuffers;
++
++// The reservation follows the task and its render commands. It is released
++// only after all transient arrays have died, including on the render thread.
++struct WORLDSCAPECORE_API FWorldScapePreparedReservation
++{
++    explicit FWorldScapePreparedReservation(int64 InBytes) : Bytes(InBytes) {}
++    ~FWorldScapePreparedReservation();
++    const int64 Bytes;
++};
++
++struct FWorldScapePreparedMeshSection
++{
++    // Borrowed under the existing root task fence, not an unbounded cache.
++    // GT never replaces these sections until all LOD tasks have completed;
++    // root reset/destruction must drain the same tasks before destroying meshes.
++    TConstArrayView<FWorldScapeMeshVertex> Previous;
++    TArray<FWorldScapeMeshVertex> CpuVertices;
++    TArray<FWorldScapeMeshVertex> RenderVertices;
++    // CPU storage only: never InitResource or enqueue RHI work on the worker.
++    TSharedPtr<FStaticMeshVertexBuffers, ESPMode::ThreadSafe> PackedBuffers;
++    FBox Bounds = FBox(ForceInit);
++};
++
++struct WORLDSCAPECORE_API FWorldScapePreparedLod
++{
++    // Declare before arrays: reverse destruction order releases memory first.
++    TSharedPtr<FWorldScapePreparedReservation, ESPMode::ThreadSafe> Reservation;
++    FWorldScapePreparedMeshSection Sections[3];
++    bool bReady = false;
++    bool bPrepareRender = false;
++    bool Build(const UWorldScapeLod& Lod);
++};
++
++namespace WorldScapePreparedMesh
++{
++    // Capture on GT before dispatch; only the worker touches the new buffers.
++    WORLDSCAPECORE_API TUniquePtr<FWorldScapePreparedLod> Capture(UWorldScapeLod& Lod);
++    WORLDSCAPECORE_API int64 CurrentBytes();
++    WORLDSCAPECORE_API int64 PeakBytes();
++    WORLDSCAPECORE_API void Published();
++    WORLDSCAPECORE_API void LogStats();
++    WORLDSCAPECORE_API bool CopyPreparedRenderBuffers(FStaticMeshVertexBuffers& Destination,
++        const FStaticMeshVertexBuffers& Source);
 +    // APS 09.10 night: the same format/size validation without the CPU copy, so the render thread can upload
 +    // straight from the worker-packed buffers (one copy instead of two).
 +    WORLDSCAPECORE_API bool PreparedLayoutMatches(const FStaticMeshVertexBuffers& Destination,
 +        const FStaticMeshVertexBuffers& Source);
- }
++}
 --- a/Private/WorldScapePreparedMesh.cpp
 +++ b/Private/WorldScapePreparedMesh.cpp
-@@ -10,8 +10,11 @@
- {
-     TAutoConsoleVariable<int32> CVarPrepared(TEXT("worldscape.PreparedMesh"), -1,
-         TEXT("Worker publication: -1 approved APS roots only (default), 0 off, 1 all APS tagged visual roots."));
+@@ -1,168 +1,176 @@
+-#include "WorldScapePreparedMesh.h"
+-#include "WorldScapeLod.h"
+-#include "HAL/IConsoleManager.h"
+-#include "StaticMeshResources.h"
+-#include "DynamicMeshBuilder.h"
+-#include "ProfilingDebugging/CpuProfilerTrace.h"
+-#include <atomic>
+-
+-namespace
+-{
+-    TAutoConsoleVariable<int32> CVarPrepared(TEXT("worldscape.PreparedMesh"), -1,
+-        TEXT("Worker publication: -1 approved APS roots only (default), 0 off, 1 all APS tagged visual roots."));
 -    TAutoConsoleVariable<int32> CVarBudget(TEXT("worldscape.PreparedMeshBudgetMiB"), 384,
 -        TEXT("Global transient vertex-buffer reservation cap, 0-512 MiB. Exhaustion uses legacy publication."));
+-    TAutoConsoleVariable<int32> CVarPrepareRender(TEXT("worldscape.PreparedRender"), 1,
+-        TEXT("Also prepare packed CPU render buffers in the worker; requires PreparedMesh."));
+-    std::atomic<int64> LiveBytes{0}, HighBytes{0}, Built{0}, Applied{0}, BudgetFallbacks{0};
+-
+-    bool Reserve(int64 Bytes, int64 Limit)
+-    {
+-        int64 Prior = LiveBytes.load();
+-        do
+-        {
+-            if (Bytes <= 0 || Bytes > Limit || Prior > Limit - Bytes)
+-            { ++BudgetFallbacks; return false; }
+-        } while (!LiveBytes.compare_exchange_weak(Prior, Prior + Bytes));
+-        int64 Peak = HighBytes.load();
+-        while (Peak < Prior + Bytes && !HighBytes.compare_exchange_weak(Peak, Prior + Bytes)) {}
+-        return true;
+-    }
+-
+-    bool BuildSection(FWorldScapePreparedMeshSection& Out, bool bPack, const TArray<FVector>& Positions,
+-        const TArray<FVector>& Normals, const TArray<FVector2D>& UV0, const TArray<FVector2D>& UV1,
+-        const TArray<FLinearColor>& Colors, const TArray<FWorldScapeMeshTangent>& Tangents)
+-    {
+-        const int32 Count = Positions.Num();
+-        if (Count != Out.Previous.Num()) return false;
+-        Out.CpuVertices.Reserve(Count);
+-        Out.CpuVertices.Append(Out.Previous.GetData(), Count);
+-        Out.Bounds = FBox(Positions);
+-        for (int32 I = 0; I < Count; ++I)
+-        {
+-            auto& V = Out.CpuVertices[I];
+-            V.Position = Positions[I];
+-            if (Normals.Num() == Count) V.Normal = Normals[I];
+-            if (UV0.Num() == Count) V.UV0 = UV0[I];
+-            if (UV1.Num() == Count) V.UV1 = UV1[I];
+-            if (Colors.Num() == Count) V.Color = Colors[I].ToFColor(false);
+-            if (Tangents.Num() == Count) V.Tangent = Tangents[I];
+-            // UV2/3 and missing channels deliberately retain the published data.
+-        }
+-        Out.RenderVertices.Reserve(Count);
+-        Out.RenderVertices.Append(Out.CpuVertices);
+-        if (bPack && Count > 0)
+-        {
+-            auto Buffers = MakeShared<FStaticMeshVertexBuffers, ESPMode::ThreadSafe>();
+-            // Match InitFromDynamicVertex's CPU setup and conversion exactly.
+-            Buffers->PositionVertexBuffer.Init(Count);
+-            Buffers->StaticMeshVertexBuffer.Init(Count, 4);
+-            Buffers->ColorVertexBuffer.Init(Count);
+-            for (int32 I = 0; I < Count; ++I)
+-            {
+-                const auto& Proc = Out.RenderVertices[I];
+-                FDynamicMeshVertex V;
+-                V.Position = FVector3f(Proc.Position); V.Color = Proc.Color;
+-                V.TextureCoordinate[0] = FVector2f(Proc.UV0); V.TextureCoordinate[1] = FVector2f(Proc.UV1);
+-                V.TextureCoordinate[2] = FVector2f(Proc.UV2); V.TextureCoordinate[3] = FVector2f(Proc.UV3);
+-                V.TangentX = Proc.Tangent.TangentX; V.TangentZ = Proc.Normal;
+-                V.TangentZ.Vector.W = Proc.Tangent.bFlipTangentY ? -127 : 127;
+-                Buffers->PositionVertexBuffer.VertexPosition(I) = V.Position;
+-                Buffers->StaticMeshVertexBuffer.SetVertexTangents(I, V.TangentX.ToFVector3f(), V.GetTangentY(), V.TangentZ.ToFVector3f());
+-                for (int32 U = 0; U < 4; ++U) Buffers->StaticMeshVertexBuffer.SetVertexUV(I, U, V.TextureCoordinate[U]);
+-                Buffers->ColorVertexBuffer.VertexColor(I) = V.Color;
+-            }
+-            Out.PackedBuffers = MoveTemp(Buffers);
+-        }
+-        return true;
+-    }
+-}
+-
+-FWorldScapePreparedReservation::~FWorldScapePreparedReservation()
+-{
+-    const int64 Before = LiveBytes.fetch_sub(Bytes);
+-    check(Before >= Bytes);
+-}
+-
+-bool FWorldScapePreparedLod::Build(const UWorldScapeLod& Lod)
+-{
+-    TRACE_CPUPROFILER_EVENT_SCOPE(WS_PreparePublicationPayload);
+-    bReady = false;
+-    if (!Reservation || !BuildSection(Sections[0], bPrepareRender, Lod.Vertices, Lod.Normals, Lod.UV, Lod.UV1, Lod.VertexColors, Lod.Tangents)
+-        || !BuildSection(Sections[1], bPrepareRender, Lod.VerticesPA, Lod.VerticesNormalPA, Lod.UVPA, Lod.UV1PA, Lod.VerticesColorPA, Lod.TangentsPA)
+-        || !BuildSection(Sections[2], bPrepareRender, Lod.VerticesPB, Lod.VerticesNormalPB, Lod.UVPB, Lod.UV1PB, Lod.VerticesColorPB, Lod.TangentsPB)) return false;
+-    int64 Actual = 0;
+-    for (const auto& Section : Sections)
+-    {
+-        Actual += Section.CpuVertices.GetAllocatedSize() + Section.RenderVertices.GetAllocatedSize();
+-        if (Section.PackedBuffers)
+-        {
+-            const auto& B = *Section.PackedBuffers;
+-            Actual += B.PositionVertexBuffer.GetAllocatedSize() + B.ColorVertexBuffer.GetAllocatedSize()
+-                + B.StaticMeshVertexBuffer.GetTangentSize() + B.StaticMeshVertexBuffer.GetTexCoordSize();
+-        }
+-    }
+-    if (Actual > Reservation->Bytes) return false;
+-    bReady = true;
+-    ++Built;
+-    return true;
+-}
+-
+-TUniquePtr<FWorldScapePreparedLod> WorldScapePreparedMesh::Capture(UWorldScapeLod& Lod)
+-{
+-    check(IsInGameThread());
+-    const int32 Mode = CVarPrepared.GetValueOnGameThread();
+-    if (Mode == 0 || !IsValid(Lod.GetOwner())
+-        || (Mode < 0 && !Lod.GetOwner()->ActorHasTag(TEXT("APS.Mesh.PreparedPublication")))
+-        || !Lod.GetOwner()->ActorHasTag(TEXT("APS.Collision.ParallelSamples"))
+-        || !IsValid(Lod.Mesh) || Lod.Mesh->GetCollisionEnabled() != ECollisionEnabled::NoCollision
+-        || Lod.Mesh->GetNumSections() != 3) return {};
+-    int64 Bytes = 0;
+-    const bool bPack = CVarPrepareRender.GetValueOnGameThread() != 0;
+-    for (int32 I = 0; I < 3; ++I)
+-    {
+-        const auto* Section = Lod.Mesh->GetProcMeshSection(I);
+-        if (!Section || Section->bEnableCollision) return {};
+-        // Reserve() quantization/allocator overhead is bounded conservatively;
+-        // actual TArray allocations are checked again after preparation.
+-        Bytes += int64(Section->PlanetVertexBuffer.Num()) * (sizeof(FWorldScapeMeshVertex) * 2 + (bPack ? 64 : 0)) + 65536;
+-    }
+-    const int64 Limit = int64(FMath::Clamp(CVarBudget.GetValueOnGameThread(), 0, 512)) * 1024 * 1024;
+-    if (!Reserve(Bytes, Limit)) return {};
+-    auto Result = MakeUnique<FWorldScapePreparedLod>();
+-    Result->bPrepareRender = bPack;
+-    Result->Reservation = MakeShared<FWorldScapePreparedReservation, ESPMode::ThreadSafe>(Bytes);
+-    for (int32 I = 0; I < 3; ++I)
+-        Result->Sections[I].Previous = MakeArrayView(Lod.Mesh->GetProcMeshSection(I)->PlanetVertexBuffer);
+-    return Result;
+-}
+-
+-int64 WorldScapePreparedMesh::CurrentBytes() { return LiveBytes.load(); }
+-bool WorldScapePreparedMesh::CopyPreparedRenderBuffers(FStaticMeshVertexBuffers& D, const FStaticMeshVertexBuffers& S)
+-{
+-    // Validate every format/size before any memcpy. Unknown layouts fall back to
+-    // the original conversion loop, preserving future platform/plugin changes.
+-    if (D.PositionVertexBuffer.GetNumVertices() != S.PositionVertexBuffer.GetNumVertices()
+-        || D.PositionVertexBuffer.GetStride() != S.PositionVertexBuffer.GetStride()
+-        || D.ColorVertexBuffer.GetAllocatedSize() != S.ColorVertexBuffer.GetAllocatedSize()
+-        || D.StaticMeshVertexBuffer.GetNumVertices() != S.StaticMeshVertexBuffer.GetNumVertices()
+-        || D.StaticMeshVertexBuffer.GetNumTexCoords() != S.StaticMeshVertexBuffer.GetNumTexCoords()
+-        || D.StaticMeshVertexBuffer.GetUseFullPrecisionUVs() != S.StaticMeshVertexBuffer.GetUseFullPrecisionUVs()
+-        || D.StaticMeshVertexBuffer.GetUseHighPrecisionTangentBasis() != S.StaticMeshVertexBuffer.GetUseHighPrecisionTangentBasis()
+-        || D.StaticMeshVertexBuffer.GetTangentSize() != S.StaticMeshVertexBuffer.GetTangentSize()
+-        || D.StaticMeshVertexBuffer.GetTexCoordSize() != S.StaticMeshVertexBuffer.GetTexCoordSize()) return false;
+-    FMemory::Memcpy(D.PositionVertexBuffer.GetVertexData(), S.PositionVertexBuffer.GetVertexData(), S.PositionVertexBuffer.GetAllocatedSize());
+-    FMemory::Memcpy(D.ColorVertexBuffer.GetVertexData(), S.ColorVertexBuffer.GetVertexData(), S.ColorVertexBuffer.GetAllocatedSize());
+-    FMemory::Memcpy(D.StaticMeshVertexBuffer.GetTangentData(), S.StaticMeshVertexBuffer.GetTangentData(), S.StaticMeshVertexBuffer.GetTangentSize());
+-    FMemory::Memcpy(D.StaticMeshVertexBuffer.GetTexCoordData(), S.StaticMeshVertexBuffer.GetTexCoordData(), S.StaticMeshVertexBuffer.GetTexCoordSize());
+-    return true;
+-}
+-int64 WorldScapePreparedMesh::PeakBytes() { return HighBytes.load(); }
+-void WorldScapePreparedMesh::Published() { ++Applied; }
+-void WorldScapePreparedMesh::LogStats()
+-{
+-    UE_LOG(LogWorldScapeCore, Display, TEXT("[WS.PreparedPublication] built=%lld published=%lld liveBytes=%lld peakBytes=%lld budgetFallbacks=%lld"),
+-        Built.load(), Applied.load(), LiveBytes.load(), HighBytes.load(), BudgetFallbacks.load());
+-}
+-static FAutoConsoleCommand DumpPrepared(TEXT("worldscape.PreparedMesh.Dump"), TEXT("Prepared publication accounting"),
+-    FConsoleCommandDelegate::CreateStatic(&WorldScapePreparedMesh::LogStats));
++#include "WorldScapePreparedMesh.h"
++#include "WorldScapeLod.h"
++#include "HAL/IConsoleManager.h"
++#include "StaticMeshResources.h"
++#include "DynamicMeshBuilder.h"
++#include "ProfilingDebugging/CpuProfilerTrace.h"
++#include <atomic>
++
++namespace
++{
++    TAutoConsoleVariable<int32> CVarPrepared(TEXT("worldscape.PreparedMesh"), -1,
++        TEXT("Worker publication: -1 approved APS roots only (default), 0 off, 1 all APS tagged visual roots."));
 +    // APS 09.10 night: 384 MiB held ~10 rings of 256; a fast pass near the home planet (terrain + ocean on one lattice)
 +    // needs ~14 rings per batch, so the rest fell back to the legacy path (GT UpdateSection 23-35 ms + RT 60-83 ms in
 +    // Rio's 0.6.4.3 log). Transient memory only; 384 restores the old cap.
 +    TAutoConsoleVariable<int32> CVarBudget(TEXT("worldscape.PreparedMeshBudgetMiB"), 1024,
 +        TEXT("Global transient vertex-buffer reservation cap, 0-4096 MiB (default 1024; 384 = before 09.10). Exhaustion uses legacy publication."));
-     TAutoConsoleVariable<int32> CVarPrepareRender(TEXT("worldscape.PreparedRender"), 1,
-         TEXT("Also prepare packed CPU render buffers in the worker; requires PreparedMesh."));
-     std::atomic<int64> LiveBytes{0}, HighBytes{0}, Built{0}, Applied{0}, BudgetFallbacks{0};
-@@ -127,7 +130,7 @@
-         // actual TArray allocations are checked again after preparation.
-         Bytes += int64(Section->PlanetVertexBuffer.Num()) * (sizeof(FWorldScapeMeshVertex) * 2 + (bPack ? 64 : 0)) + 65536;
-     }
--    const int64 Limit = int64(FMath::Clamp(CVarBudget.GetValueOnGameThread(), 0, 512)) * 1024 * 1024;
++    TAutoConsoleVariable<int32> CVarPrepareRender(TEXT("worldscape.PreparedRender"), 1,
++        TEXT("Also prepare packed CPU render buffers in the worker; requires PreparedMesh."));
++    std::atomic<int64> LiveBytes{0}, HighBytes{0}, Built{0}, Applied{0}, BudgetFallbacks{0};
++
++    bool Reserve(int64 Bytes, int64 Limit)
++    {
++        int64 Prior = LiveBytes.load();
++        do
++        {
++            if (Bytes <= 0 || Bytes > Limit || Prior > Limit - Bytes)
++            { ++BudgetFallbacks; return false; }
++        } while (!LiveBytes.compare_exchange_weak(Prior, Prior + Bytes));
++        int64 Peak = HighBytes.load();
++        while (Peak < Prior + Bytes && !HighBytes.compare_exchange_weak(Peak, Prior + Bytes)) {}
++        return true;
++    }
++
++    bool BuildSection(FWorldScapePreparedMeshSection& Out, bool bPack, const TArray<FVector>& Positions,
++        const TArray<FVector>& Normals, const TArray<FVector2D>& UV0, const TArray<FVector2D>& UV1,
++        const TArray<FLinearColor>& Colors, const TArray<FWorldScapeMeshTangent>& Tangents)
++    {
++        const int32 Count = Positions.Num();
++        if (Count != Out.Previous.Num()) return false;
++        Out.CpuVertices.Reserve(Count);
++        Out.CpuVertices.Append(Out.Previous.GetData(), Count);
++        Out.Bounds = FBox(Positions);
++        for (int32 I = 0; I < Count; ++I)
++        {
++            auto& V = Out.CpuVertices[I];
++            V.Position = Positions[I];
++            if (Normals.Num() == Count) V.Normal = Normals[I];
++            if (UV0.Num() == Count) V.UV0 = UV0[I];
++            if (UV1.Num() == Count) V.UV1 = UV1[I];
++            if (Colors.Num() == Count) V.Color = Colors[I].ToFColor(false);
++            if (Tangents.Num() == Count) V.Tangent = Tangents[I];
++            // UV2/3 and missing channels deliberately retain the published data.
++        }
++        Out.RenderVertices.Reserve(Count);
++        Out.RenderVertices.Append(Out.CpuVertices);
++        if (bPack && Count > 0)
++        {
++            auto Buffers = MakeShared<FStaticMeshVertexBuffers, ESPMode::ThreadSafe>();
++            // Match InitFromDynamicVertex's CPU setup and conversion exactly.
++            Buffers->PositionVertexBuffer.Init(Count);
++            Buffers->StaticMeshVertexBuffer.Init(Count, 4);
++            Buffers->ColorVertexBuffer.Init(Count);
++            for (int32 I = 0; I < Count; ++I)
++            {
++                const auto& Proc = Out.RenderVertices[I];
++                FDynamicMeshVertex V;
++                V.Position = FVector3f(Proc.Position); V.Color = Proc.Color;
++                V.TextureCoordinate[0] = FVector2f(Proc.UV0); V.TextureCoordinate[1] = FVector2f(Proc.UV1);
++                V.TextureCoordinate[2] = FVector2f(Proc.UV2); V.TextureCoordinate[3] = FVector2f(Proc.UV3);
++                V.TangentX = Proc.Tangent.TangentX; V.TangentZ = Proc.Normal;
++                V.TangentZ.Vector.W = Proc.Tangent.bFlipTangentY ? -127 : 127;
++                Buffers->PositionVertexBuffer.VertexPosition(I) = V.Position;
++                Buffers->StaticMeshVertexBuffer.SetVertexTangents(I, V.TangentX.ToFVector3f(), V.GetTangentY(), V.TangentZ.ToFVector3f());
++                for (int32 U = 0; U < 4; ++U) Buffers->StaticMeshVertexBuffer.SetVertexUV(I, U, V.TextureCoordinate[U]);
++                Buffers->ColorVertexBuffer.VertexColor(I) = V.Color;
++            }
++            Out.PackedBuffers = MoveTemp(Buffers);
++        }
++        return true;
++    }
++}
++
++FWorldScapePreparedReservation::~FWorldScapePreparedReservation()
++{
++    const int64 Before = LiveBytes.fetch_sub(Bytes);
++    check(Before >= Bytes);
++}
++
++bool FWorldScapePreparedLod::Build(const UWorldScapeLod& Lod)
++{
++    TRACE_CPUPROFILER_EVENT_SCOPE(WS_PreparePublicationPayload);
++    bReady = false;
++    if (!Reservation || !BuildSection(Sections[0], bPrepareRender, Lod.Vertices, Lod.Normals, Lod.UV, Lod.UV1, Lod.VertexColors, Lod.Tangents)
++        || !BuildSection(Sections[1], bPrepareRender, Lod.VerticesPA, Lod.VerticesNormalPA, Lod.UVPA, Lod.UV1PA, Lod.VerticesColorPA, Lod.TangentsPA)
++        || !BuildSection(Sections[2], bPrepareRender, Lod.VerticesPB, Lod.VerticesNormalPB, Lod.UVPB, Lod.UV1PB, Lod.VerticesColorPB, Lod.TangentsPB)) return false;
++    int64 Actual = 0;
++    for (const auto& Section : Sections)
++    {
++        Actual += Section.CpuVertices.GetAllocatedSize() + Section.RenderVertices.GetAllocatedSize();
++        if (Section.PackedBuffers)
++        {
++            const auto& B = *Section.PackedBuffers;
++            Actual += B.PositionVertexBuffer.GetAllocatedSize() + B.ColorVertexBuffer.GetAllocatedSize()
++                + B.StaticMeshVertexBuffer.GetTangentSize() + B.StaticMeshVertexBuffer.GetTexCoordSize();
++        }
++    }
++    if (Actual > Reservation->Bytes) return false;
++    bReady = true;
++    ++Built;
++    return true;
++}
++
++TUniquePtr<FWorldScapePreparedLod> WorldScapePreparedMesh::Capture(UWorldScapeLod& Lod)
++{
++    check(IsInGameThread());
++    const int32 Mode = CVarPrepared.GetValueOnGameThread();
++    if (Mode == 0 || !IsValid(Lod.GetOwner())
++        || (Mode < 0 && !Lod.GetOwner()->ActorHasTag(TEXT("APS.Mesh.PreparedPublication")))
++        || !Lod.GetOwner()->ActorHasTag(TEXT("APS.Collision.ParallelSamples"))
++        || !IsValid(Lod.Mesh) || Lod.Mesh->GetCollisionEnabled() != ECollisionEnabled::NoCollision
++        || Lod.Mesh->GetNumSections() != 3) return {};
++    int64 Bytes = 0;
++    const bool bPack = CVarPrepareRender.GetValueOnGameThread() != 0;
++    for (int32 I = 0; I < 3; ++I)
++    {
++        const auto* Section = Lod.Mesh->GetProcMeshSection(I);
++        if (!Section || Section->bEnableCollision) return {};
++        // Reserve() quantization/allocator overhead is bounded conservatively;
++        // actual TArray allocations are checked again after preparation.
++        Bytes += int64(Section->PlanetVertexBuffer.Num()) * (sizeof(FWorldScapeMeshVertex) * 2 + (bPack ? 64 : 0)) + 65536;
++    }
 +    const int64 Limit = int64(FMath::Clamp(CVarBudget.GetValueOnGameThread(), 0, 4096)) * 1024 * 1024;
-     if (!Reserve(Bytes, Limit)) return {};
-     auto Result = MakeUnique<FWorldScapePreparedLod>();
-     Result->bPrepareRender = bPack;
-@@ -142,7 +145,16 @@
- {
-     // Validate every format/size before any memcpy. Unknown layouts fall back to
-     // the original conversion loop, preserving future platform/plugin changes.
--    if (D.PositionVertexBuffer.GetNumVertices() != S.PositionVertexBuffer.GetNumVertices()
++    if (!Reserve(Bytes, Limit)) return {};
++    auto Result = MakeUnique<FWorldScapePreparedLod>();
++    Result->bPrepareRender = bPack;
++    Result->Reservation = MakeShared<FWorldScapePreparedReservation, ESPMode::ThreadSafe>(Bytes);
++    for (int32 I = 0; I < 3; ++I)
++        Result->Sections[I].Previous = MakeArrayView(Lod.Mesh->GetProcMeshSection(I)->PlanetVertexBuffer);
++    return Result;
++}
++
++int64 WorldScapePreparedMesh::CurrentBytes() { return LiveBytes.load(); }
++bool WorldScapePreparedMesh::CopyPreparedRenderBuffers(FStaticMeshVertexBuffers& D, const FStaticMeshVertexBuffers& S)
++{
++    // Validate every format/size before any memcpy. Unknown layouts fall back to
++    // the original conversion loop, preserving future platform/plugin changes.
 +    if (!PreparedLayoutMatches(D, S)) return false;
 +    FMemory::Memcpy(D.PositionVertexBuffer.GetVertexData(), S.PositionVertexBuffer.GetVertexData(), S.PositionVertexBuffer.GetAllocatedSize());
 +    FMemory::Memcpy(D.ColorVertexBuffer.GetVertexData(), S.ColorVertexBuffer.GetVertexData(), S.ColorVertexBuffer.GetAllocatedSize());
@@ -49,26 +433,40 @@
 +bool WorldScapePreparedMesh::PreparedLayoutMatches(const FStaticMeshVertexBuffers& D, const FStaticMeshVertexBuffers& S)
 +{
 +    return !(D.PositionVertexBuffer.GetNumVertices() != S.PositionVertexBuffer.GetNumVertices()
-         || D.PositionVertexBuffer.GetStride() != S.PositionVertexBuffer.GetStride()
-         || D.ColorVertexBuffer.GetAllocatedSize() != S.ColorVertexBuffer.GetAllocatedSize()
-         || D.StaticMeshVertexBuffer.GetNumVertices() != S.StaticMeshVertexBuffer.GetNumVertices()
-@@ -150,12 +162,8 @@
-         || D.StaticMeshVertexBuffer.GetUseFullPrecisionUVs() != S.StaticMeshVertexBuffer.GetUseFullPrecisionUVs()
-         || D.StaticMeshVertexBuffer.GetUseHighPrecisionTangentBasis() != S.StaticMeshVertexBuffer.GetUseHighPrecisionTangentBasis()
-         || D.StaticMeshVertexBuffer.GetTangentSize() != S.StaticMeshVertexBuffer.GetTangentSize()
--        || D.StaticMeshVertexBuffer.GetTexCoordSize() != S.StaticMeshVertexBuffer.GetTexCoordSize()) return false;
--    FMemory::Memcpy(D.PositionVertexBuffer.GetVertexData(), S.PositionVertexBuffer.GetVertexData(), S.PositionVertexBuffer.GetAllocatedSize());
--    FMemory::Memcpy(D.ColorVertexBuffer.GetVertexData(), S.ColorVertexBuffer.GetVertexData(), S.ColorVertexBuffer.GetAllocatedSize());
--    FMemory::Memcpy(D.StaticMeshVertexBuffer.GetTangentData(), S.StaticMeshVertexBuffer.GetTangentData(), S.StaticMeshVertexBuffer.GetTangentSize());
--    FMemory::Memcpy(D.StaticMeshVertexBuffer.GetTexCoordData(), S.StaticMeshVertexBuffer.GetTexCoordData(), S.StaticMeshVertexBuffer.GetTexCoordSize());
--    return true;
++        || D.PositionVertexBuffer.GetStride() != S.PositionVertexBuffer.GetStride()
++        || D.ColorVertexBuffer.GetAllocatedSize() != S.ColorVertexBuffer.GetAllocatedSize()
++        || D.StaticMeshVertexBuffer.GetNumVertices() != S.StaticMeshVertexBuffer.GetNumVertices()
++        || D.StaticMeshVertexBuffer.GetNumTexCoords() != S.StaticMeshVertexBuffer.GetNumTexCoords()
++        || D.StaticMeshVertexBuffer.GetUseFullPrecisionUVs() != S.StaticMeshVertexBuffer.GetUseFullPrecisionUVs()
++        || D.StaticMeshVertexBuffer.GetUseHighPrecisionTangentBasis() != S.StaticMeshVertexBuffer.GetUseHighPrecisionTangentBasis()
++        || D.StaticMeshVertexBuffer.GetTangentSize() != S.StaticMeshVertexBuffer.GetTangentSize()
 +        || D.StaticMeshVertexBuffer.GetTexCoordSize() != S.StaticMeshVertexBuffer.GetTexCoordSize()
 +        || D.PositionVertexBuffer.GetAllocatedSize() != S.PositionVertexBuffer.GetAllocatedSize());
- }
- int64 WorldScapePreparedMesh::PeakBytes() { return HighBytes.load(); }
- void WorldScapePreparedMesh::Published() { ++Applied; }
++}
++int64 WorldScapePreparedMesh::PeakBytes() { return HighBytes.load(); }
++void WorldScapePreparedMesh::Published() { ++Applied; }
++void WorldScapePreparedMesh::LogStats()
++{
++    UE_LOG(LogWorldScapeCore, Display, TEXT("[WS.PreparedPublication] built=%lld published=%lld liveBytes=%lld peakBytes=%lld budgetFallbacks=%lld"),
++        Built.load(), Applied.load(), LiveBytes.load(), HighBytes.load(), BudgetFallbacks.load());
++}
++static FAutoConsoleCommand DumpPrepared(TEXT("worldscape.PreparedMesh.Dump"), TEXT("Prepared publication accounting"),
++    FConsoleCommandDelegate::CreateStatic(&WorldScapePreparedMesh::LogStats));
 --- a/Private/WorldScapeMeshComponent.cpp
 +++ b/Private/WorldScapeMeshComponent.cpp
+@@ -1,9 +1,9 @@
+ // Copyright 2021 IOLACORP STUDIO. All Rights Reserved
+ 
+ 
+-#include "WorldScapeMeshComponent.h"
+-#include "WorldScapePreparedMesh.h"
+-#include "ProfilingDebugging/CpuProfilerTrace.h"
++#include "WorldScapeMeshComponent.h"
++#include "WorldScapePreparedMesh.h"
++#include "ProfilingDebugging/CpuProfilerTrace.h"
+ #include "PrimitiveViewRelevance.h"
+ #include "RenderResource.h"
+ #include "RenderingThread.h"
 @@ -30,6 +30,8 @@
  #include "Materials/MaterialRenderProxy.h"
  #include "RenderUtils.h"
@@ -109,10 +507,35 @@
  DECLARE_CYCLE_STAT(TEXT("Get WorldScapeMesh Elements"), STAT_WorldScapeMesh_GetMeshElements, STATGROUP_WorldScapeMesh);
  DECLARE_CYCLE_STAT(TEXT("Update bCollision"), STAT_WorldScapeMesh_UpdateCollision, STATGROUP_WorldScapeMesh);
  
-@@ -350,6 +376,17 @@
+@@ -106,13 +132,13 @@
+  *	Struct used to send update to mesh data
+  *	Arrays may be empty, in which case no update is performed.
+  */
+-class FWorldScapeMeshSectionUpdateData
+-{
+-public:
+-	// Destroy buffers before releasing the global reservation.
+-	TSharedPtr<FWorldScapePreparedReservation, ESPMode::ThreadSafe> Reservation;
+-	TArray<FWorldScapeMeshVertex> RetiredCpuVertices;
+-	TSharedPtr<FStaticMeshVertexBuffers, ESPMode::ThreadSafe> PackedBuffers;
++class FWorldScapeMeshSectionUpdateData
++{
++public:
++	// Destroy buffers before releasing the global reservation.
++	TSharedPtr<FWorldScapePreparedReservation, ESPMode::ThreadSafe> Reservation;
++	TArray<FWorldScapeMeshVertex> RetiredCpuVertices;
++	TSharedPtr<FStaticMeshVertexBuffers, ESPMode::ThreadSafe> PackedBuffers;
+ 	/** Section to update */
+ 	int32 TargetSection;
+ 	/** New vertex information */
+@@ -350,10 +376,21 @@
  				// Lock vertex buffer
  				const int32 NumVerts = SectionData->NewVertexBuffer.Num();
  
+-				// Iterate through vertex data, copying in new info
+-				const bool bCopied = SectionData->PackedBuffers && WorldScapePreparedMesh::CopyPreparedRenderBuffers(Section->VertexBuffers, *SectionData->PackedBuffers);
+-				if (!bCopied)
+-				for (int32 i = 0; i < NumVerts; i++)
 +				// APS 09.10: with worldscape.PublishSingleCopy the GPU buffers are filled straight from the packed
 +				// worker buffers; otherwise (or for an unknown layout) the proxy's CPU arrays are refreshed first.
 +				const FStaticMeshVertexBuffers* UploadSource = &Section->VertexBuffers;
@@ -124,9 +547,13 @@
 +				else
 +				{
 +				SCOPE_CYCLE_COUNTER(STAT_WorldScapeMesh_UpdateSectionRT_Copy);
- 				// Iterate through vertex data, copying in new info
- 				const bool bCopied = SectionData->PackedBuffers && WorldScapePreparedMesh::CopyPreparedRenderBuffers(Section->VertexBuffers, *SectionData->PackedBuffers);
- 				if (!bCopied)
++				// Iterate through vertex data, copying in new info
++				const bool bCopied = SectionData->PackedBuffers && WorldScapePreparedMesh::CopyPreparedRenderBuffers(Section->VertexBuffers, *SectionData->PackedBuffers);
++				if (!bCopied)
++				for (int32 i = 0; i < NumVerts; i++)
+ 				{
+ 					const FWorldScapeMeshVertex& ProcVert = SectionData->NewVertexBuffer[i];
+ 					FDynamicMeshVertex Vertex;
 @@ -367,36 +404,44 @@
  					Section->VertexBuffers.StaticMeshVertexBuffer.SetVertexUV(i, 3, Vertex.TextureCoordinate[3]);
  					Section->VertexBuffers.ColorVertexBuffer.VertexColor(i) = Vertex.Color;
@@ -210,10 +637,45 @@
  		}
  	}
  
-@@ -899,6 +969,24 @@
+@@ -899,41 +969,59 @@
  	}
  }
  
+-bool UWorldScapeMeshComponent::CanPublishPreparedSection(int32 SectionIndex, const FWorldScapePreparedMeshSection& Payload) const
+-{
+-	if (GetCollisionEnabled() != ECollisionEnabled::NoCollision || !WorldScapeMeshSections.IsValidIndex(SectionIndex)) return false;
+-	const auto& Section = WorldScapeMeshSections[SectionIndex];
+-	return !Section.bEnableCollision && Section.PlanetVertexBuffer.GetData() == Payload.Previous.GetData()
+-		&& Section.PlanetVertexBuffer.Num() == Payload.Previous.Num()
+-		&& Payload.CpuVertices.Num() == Payload.Previous.Num() && Payload.RenderVertices.Num() == Payload.Previous.Num();
+-}
+-
+-void UWorldScapeMeshComponent::PublishPreparedSection(int32 SectionIndex, FWorldScapePreparedMeshSection& Payload,
+-	const TSharedPtr<FWorldScapePreparedReservation, ESPMode::ThreadSafe>& Reservation)
+-{
+-	TRACE_CPUPROFILER_EVENT_SCOPE(WS_PublishPreparedSection);
+-	check(IsInGameThread());
+-	check(CanPublishPreparedSection(SectionIndex, Payload));
+-	auto& Section = WorldScapeMeshSections[SectionIndex];
+-	Swap(Section.PlanetVertexBuffer, Payload.CpuVertices);
+-	Section.SectionLocalBox = Payload.Bounds;
+-	if (SceneProxy && !IsRenderStateDirty())
+-	{
+-		auto* Data = new FWorldScapeMeshSectionUpdateData;
+-		Data->Reservation = Reservation;
+-		Data->TargetSection = SectionIndex;
+-		Data->NewVertexBuffer = MoveTemp(Payload.RenderVertices);
+-		Data->RetiredCpuVertices = MoveTemp(Payload.CpuVertices);
+-		Data->PackedBuffers = MoveTemp(Payload.PackedBuffers);
+-		auto* Proxy = static_cast<FWorldScapeSceneProxy*>(SceneProxy);
+-		ENQUEUE_RENDER_COMMAND(FWorldScapePreparedSectionUpdate)([Proxy, Data](FRHICommandListImmediate& RHICmdList)
+-		{ Proxy->UpdateSection_RenderThread(RHICmdList, Data); });
+-	}
+-	UpdateLocalBounds();
+-	MarkRenderTransformDirty();
+-}
+-
+-void UWorldScapeMeshComponent::ClearMeshSection(int32 SectionIndex)
 +static void APSFlushPendingSectionFreesRT()
 +{
 +	check(IsInRenderingThread());
@@ -232,12 +694,47 @@
 +	}, UE::Tasks::ETaskPriority::BackgroundNormal);
 +}
 +
- bool UWorldScapeMeshComponent::CanPublishPreparedSection(int32 SectionIndex, const FWorldScapePreparedMeshSection& Payload) const
++bool UWorldScapeMeshComponent::CanPublishPreparedSection(int32 SectionIndex, const FWorldScapePreparedMeshSection& Payload) const
++{
++	if (GetCollisionEnabled() != ECollisionEnabled::NoCollision || !WorldScapeMeshSections.IsValidIndex(SectionIndex)) return false;
++	const auto& Section = WorldScapeMeshSections[SectionIndex];
++	return !Section.bEnableCollision && Section.PlanetVertexBuffer.GetData() == Payload.Previous.GetData()
++		&& Section.PlanetVertexBuffer.Num() == Payload.Previous.Num()
++		&& Payload.CpuVertices.Num() == Payload.Previous.Num() && Payload.RenderVertices.Num() == Payload.Previous.Num();
++}
++
++void UWorldScapeMeshComponent::PublishPreparedSection(int32 SectionIndex, FWorldScapePreparedMeshSection& Payload,
++	const TSharedPtr<FWorldScapePreparedReservation, ESPMode::ThreadSafe>& Reservation)
++{
++	TRACE_CPUPROFILER_EVENT_SCOPE(WS_PublishPreparedSection);
++	check(IsInGameThread());
++	check(CanPublishPreparedSection(SectionIndex, Payload));
++	auto& Section = WorldScapeMeshSections[SectionIndex];
++	Swap(Section.PlanetVertexBuffer, Payload.CpuVertices);
++	Section.SectionLocalBox = Payload.Bounds;
++	if (SceneProxy && !IsRenderStateDirty())
++	{
++		auto* Data = new FWorldScapeMeshSectionUpdateData;
++		Data->Reservation = Reservation;
++		Data->TargetSection = SectionIndex;
++		Data->NewVertexBuffer = MoveTemp(Payload.RenderVertices);
++		Data->RetiredCpuVertices = MoveTemp(Payload.CpuVertices);
++		Data->PackedBuffers = MoveTemp(Payload.PackedBuffers);
++		auto* Proxy = static_cast<FWorldScapeSceneProxy*>(SceneProxy);
++		ENQUEUE_RENDER_COMMAND(FWorldScapePreparedSectionUpdate)([Proxy, Data](FRHICommandListImmediate& RHICmdList)
++		{ Proxy->UpdateSection_RenderThread(RHICmdList, Data); });
++	}
++	UpdateLocalBounds();
++	MarkRenderTransformDirty();
++}
++
++void UWorldScapeMeshComponent::ClearMeshSection(int32 SectionIndex)
  {
- 	if (GetCollisionEnabled() != ECollisionEnabled::NoCollision || !WorldScapeMeshSections.IsValidIndex(SectionIndex)) return false;
+ 	if (SectionIndex < WorldScapeMeshSections.Num())
+ 	{
 --- a/Private/WorldScapeRoot_Main.cpp
 +++ b/Private/WorldScapeRoot_Main.cpp
-@@ -6,6 +6,35 @@
+@@ -6,6 +6,41 @@
  static TAutoConsoleVariable<int32> CVarAPSWorldScapePublishPerFrame(TEXT("worldscape.PublishPerFrame"), 0,
  	TEXT("APS planets v2: finished terrain rings published per frame (0 = the whole batch in one frame, stock); "
  	     "2-3 spreads the render-thread upload of a batch over frames."));
@@ -249,6 +746,12 @@
 +// frees them. 0: on the game thread (before 13.10).
 +static TAutoConsoleVariable<float> CVarAPSWorldScapePublishLogMs(TEXT("worldscape.PublishLogMs"), 15.0f,
 +	TEXT("APS: a published ring batch whose game-thread work took longer than this logs its breakdown ([WS.Publish]); 0 = off."));
++// APS 13.10: the altitude multiplier (2^round(log2(height / HeightAnchor))) picks a new power of two the moment the
++// height crosses a boundary, and every change regenerates ALL rings (land and water). A ship climbing and dipping
++// about such a boundary regenerates the whole surface again and again. With hysteresis the level only changes once
++// the height is this factor past the boundary (1.0 = stock, no hysteresis; 1.19 = a quarter octave).
++static TAutoConsoleVariable<float> CVarAPSWorldScapeAltitudeHysteresis(TEXT("worldscape.AltitudeHysteresis"), 1.19f,
++	TEXT("APS: factor the height must pass a power-of-two boundary by before the ring altitude level changes (1 = stock)."));
 +static TAutoConsoleVariable<int32> CVarAPSWorldScapeTaskFreeAsync(TEXT("worldscape.TaskFreeAsync"), 1,
 +	TEXT("APS: 1 frees a published ring batch's worker tasks on a background task; 0 on the game thread (before 13.10)."));
 +// APS 10.10 night (traced far approach): the ring workers start as uncapped background tasks; a batch of ~20 rings at
@@ -273,7 +776,7 @@
  #include "DSP/Osc.h"
  #include <Runtime/Engine/Classes/Kismet/GameplayStatics.h>
  
-@@ -1574,6 +1603,7 @@
+@@ -1574,6 +1609,7 @@
  // ----------------------------------------------------------------------------
  void AWorldScapeRoot::UpdatePosition()
  {
@@ -281,7 +784,48 @@
  	FVector PlayerPositionNormal;
  
  	bool DoCollision = bGenerateCollision;
-@@ -1782,7 +1812,7 @@
+@@ -1677,6 +1713,22 @@
+ 	}
+ 
+ 
++	// APS 13.10 (worldscape.AltitudeHysteresis): keep the previous level while the height sits within the band around it.
++	{
++		const float Hyst = CVarAPSWorldScapeAltitudeHysteresis.GetValueOnGameThread();
++		if (Hyst > 1.0f && Prev_HeightMult > 0 && AltitudeMultiplier != Prev_HeightMult && PlayerDistanceToGround > 0.0 && HeightAnchor > 0.0f)
++		{
++			// The stock level changes where height / anchor crosses Prev * sqrt(2) (up) or Prev / sqrt(2) (down).
++			const double Ratio = PlayerDistanceToGround / static_cast<double>(HeightAnchor);
++			const double Up = Prev_HeightMult * UE_DOUBLE_SQRT_2 * Hyst;
++			const double Down = Prev_HeightMult / UE_DOUBLE_SQRT_2 / Hyst;
++			if (Ratio < Up && Ratio > Down)
++			{
++				AltitudeMultiplier = Prev_HeightMult;
++			}
++		}
++	}
++
+ 	GridAngle = GridAngleMin * AltitudeMultiplier;
+ 
+ 	if (GridAngle > GridAngleMax) GridAngle = GridAngleMax;
+@@ -1730,6 +1782,7 @@
+ 		double StepSize;
+ 		bool ForceUpdate = false;
+ 		bool ForceUpdateWater = false;
++		int32 APS_Moved = 0, APS_Forced = 0, APS_Normal = 0, APS_Water = 0;
+ 		if (Prev_HeightMult != LandAltitudeMultiplier)
+ 		{
+ 			Prev_HeightMult = LandAltitudeMultiplier;
+@@ -1773,6 +1826,9 @@
+ 
+ 			if (DVector::Dist(WorldScapeLod[i]->RelativePosition, PrecisionCorrectedRelativePosition) > StepSize * 0.5 || ForceUpdate || (WorldScapeLod.IsValidIndex(i) && PlayerPositionNormal != WorldScapeLod[i]->SnappedAngle))
+ 			{
++				if (ForceUpdate) ++APS_Forced;
++				else if (DVector::Dist(WorldScapeLod[i]->RelativePosition, PrecisionCorrectedRelativePosition) > StepSize * 0.5) ++APS_Moved;
++				else ++APS_Normal;
+ 
+ 
+ 				WorldScapeLodInGeneration.Add(WorldScapeLod[i], false);
+@@ -1782,7 +1838,7 @@
  					WorldScapeLod[i], this, SnappedPosition, PlanetLocation, SubPosition, PlanetScaleCode, i,
  					TriangleSize * LandAltitudeMultiplier, LodResolution, PlayerDistanceToGround, PlayerPositionNormal,
  					bFlatWorld, IsInViewPort));
@@ -290,7 +834,11 @@
  			}
  		}
  		if (bOcean)
-@@ -1812,7 +1842,7 @@
+@@ -1809,10 +1865,11 @@
+ 
+ 				if (DVector::Dist(WorldScapeLodOcean[i]->RelativePosition, PrecisionCorrectedRelativePosition) > StepSize * 0.5 || ForceUpdateWater || (WorldScapeLodOcean.IsValidIndex(i) && PlayerPositionNormal != WorldScapeLodOcean[i]->SnappedAngle))
+ 				{
++					++APS_Water;
  					WorldScapeLodInGeneration.Add(WorldScapeLodOcean[i], false);
  					LodGenerationThreadPool.Add(new FAsyncTask <LodGenerationThread>(WorldScapeLodOcean[i], this, SnappedPosition, PlanetLocation, SubPosition, PlanetScaleCode, i,
  						OceanTriangleSize * WaterAltitudeMultiplier, OceanLodResolution, PlayerDistanceToGround, PlayerPositionNormal, bFlatWorld, IsInViewPort));
@@ -299,7 +847,20 @@
  				}
  			}
  		}
-@@ -1828,6 +1858,7 @@
+@@ -1821,6 +1878,12 @@
+ 		{
+ 			HMIForceUpdate = false;
+ 		}
++		if (CVarAPSWorldScapePublishLogMs.GetValueOnGameThread() > 0.f && (APS_Moved + APS_Forced + APS_Normal + APS_Water) > 0)
++		{
++			UE_LOG(LogWorldScapeCore, Display, TEXT("[WS.Batch] %s: land moved=%d forced=%d normal=%d, water=%d | altMult=%d (land %d, water %d) ground %.0f m"),
++				*GetNameSafe(GetOwner()), APS_Moved, APS_Forced, APS_Normal, APS_Water, AltitudeMultiplier, LandAltitudeMultiplier,
++				WaterAltitudeMultiplier, PlayerDistanceToGround / 100.0);
++		}
+ 
+ 	}
+ 
+@@ -1828,6 +1891,7 @@
  // ----------------------------------------------------------------------------
  void AWorldScapeRoot::CheckForLodGeneration()
  {
@@ -307,7 +868,7 @@
  	bool DoneGenerating = true;
  	
  	// The pending TMap is game-thread-owned. Workers must never read/write it
-@@ -1843,6 +1874,8 @@
+@@ -1843,6 +1907,8 @@
  	}
  	if (DoneGenerating)
  	{
@@ -316,7 +877,7 @@
  		// APS planets v2 (P3): at most worldscape.PublishPerFrame rings per frame (0 = all at once, stock).
  		const int32 APS_Budget = CVarAPSWorldScapePublishPerFrame.GetValueOnGameThread();
  		bool updateMaterial = false;
-@@ -1867,14 +1900,32 @@
+@@ -1867,14 +1933,32 @@
  			++APS_PublishedNow;
  		}
  		for (UWorldScapeLod* APS_Lod : APS_Published) WorldScapeLodInGeneration.Remove(APS_Lod);
@@ -326,7 +887,8 @@
 -			for (FAsyncTask<LodGenerationThread>* Task : LodGenerationThreadPool)
 +			TRACE_CPUPROFILER_EVENT_SCOPE(WS_TaskDelete);
 +			if (CVarAPSWorldScapeTaskFreeAsync.GetValueOnGameThread() != 0)
-+			{
+ 			{
+-				delete Task; // All tasks passed IsDone; do not leak one task per LOD update.
 +				// All tasks passed IsDone and their payloads are published: only plain memory dies here.
 +				TArray<FAsyncTask<LodGenerationThread>*> Finished = MoveTemp(LodGenerationThreadPool);
 +				UE::Tasks::Launch(UE_SOURCE_LOCATION, [Finished = MoveTemp(Finished)]()
@@ -338,8 +900,7 @@
 +				}, UE::Tasks::ETaskPriority::BackgroundNormal);
 +			}
 +			else
- 			{
--				delete Task; // All tasks passed IsDone; do not leak one task per LOD update.
++			{
 +				for (FAsyncTask<LodGenerationThread>* Task : LodGenerationThreadPool)
 +				{
 +					delete Task; // All tasks passed IsDone; do not leak one task per LOD update.
@@ -351,7 +912,7 @@
  		if (PreparedCount > 0) WorldScapePreparedMesh::LogStats();
  
  		TransformKeeper->UpdateBounds();
-@@ -1884,6 +1935,14 @@
+@@ -1884,6 +1968,14 @@
  			UpdateTerrainMaterial(TerrainMaterial);
  			UpdateOceanMaterial(OceanMaterial);
  		}

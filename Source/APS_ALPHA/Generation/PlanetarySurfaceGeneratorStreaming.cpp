@@ -66,6 +66,13 @@ namespace APSWorldScapeProfiles
     TAutoConsoleVariable<int32> CVarUnifiedLavaSurface(
         TEXT("aps.Surface.UnifiedLavaSurface"), 1,
         TEXT("Read-only compatibility marker. Eligible generated lava retains its original unified surface; no split-material rollback."), ECVF_ReadOnly);
+    // 13.10 (bench [WS.Batch]: every ring batch in low flight came from a change of WorldScape's altitude level, a power
+    // of two of height / HeightAnchor, and each one regenerates all 20 rings): a higher anchor keeps the finest level
+    // longer (300 m: level 1 to 424 m, level 2 to 849 m; the finest rings reach 78 km, past the horizon at those heights).
+    TAutoConsoleVariable<float> CVarSurfaceHeightAnchorM(
+        TEXT("aps.Surface.HeightAnchorM"), 100.0f,
+        TEXT("WorldScape HeightAnchor of full-scale gameplay roots, metres: the ring altitude level is 2^round(log2(height / anchor)). ")
+        TEXT("100 = before 13.10. Read when a surface profile is applied."), ECVF_Default);
     TAutoConsoleVariable<int32> CVarSurfaceMeshResolution(
         TEXT("aps.Surface.MeshResolution"), APSWorldScapeLiquidLattice::DefaultTerrainResolution,
         TEXT("Generated full-scale WorldScape ring resolution, 96..256 in multiples of four. ")
@@ -1232,7 +1239,7 @@ void APlanetarySurfaceGenerator::ApplySurfaceProfileNow(APlanetaryBody* Body)
 	WorldScapeRootInstance->HeightAnchor = bScaledOrbitalPreview
 		? FMath::Clamp(static_cast<float>(WorldScapeRootInstance->PlanetScale * 0.00025),
 			50000.0f, 250000.0f)
-		: 10000.0f;
+		: FMath::Max(APSWorldScapeProfiles::CVarSurfaceHeightAnchorM.GetValueOnGameThread(), 1.0f) * 100.0f;
 	bSurfaceProfileApplied = true;
 	AppliedSurfaceProfileSignature = BuildSurfaceProfileSignature(Body);
 

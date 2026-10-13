@@ -87,6 +87,14 @@ namespace APSSurfacePolicyPrivate
 		TEXT("0: the observer follows every frame (the old way)."),
 		ECVF_Default);
 
+	// 13.10 (Rio's logs: a ring batch every ~0.5 s in low flight, each a hitch): the observer may stay put until it is this
+	// share of the finest ring's half-width away from where the rings were last centred (the ship then still sits well
+	// inside ring 0), so batches come several times less often at speed. 0: the fixed step above only.
+	TAutoConsoleVariable<float> CVarNearObserverStepRing0Share(
+		TEXT("aps.Surface.NearObserverStepRing0Share"), 0.0f,
+		TEXT("Below aps.Surface.NearObserverAltitudeKm the observer step is at least this share of the finest ring's half-width ")
+		TEXT("(TriangleSize * altitude level * LodResolution / 2): fewer ring batches at speed. 0: off (8 m steps only)."),
+		ECVF_Default);
 	TAutoConsoleVariable<float> CVarNearObserverAltitudeKm(
 		TEXT("aps.Surface.NearObserverAltitudeKm"), 2.0f,
 		TEXT("See aps.Surface.NearObserverStepCm: the step applies only this close to the ground (km above the terrain)."),
@@ -367,7 +375,14 @@ namespace APSSurfacePolicyPrivate
 	bool NearStepApplies(const FPolicyState& State, const AWorldScapeRoot* Root, const FVector& Candidate, bool& bOutHold)
 	{
 		bOutHold = false;
-		const double Step = CVarNearObserverStepCm.GetValueOnGameThread();
+		double Step = CVarNearObserverStepCm.GetValueOnGameThread();
+		if (const float Share = CVarNearObserverStepRing0Share.GetValueOnGameThread(); Share > 0.f && Root->HeightAnchor > 0.f)
+		{
+			// WorldScape's altitude level: 2^round(log2(height / HeightAnchor)), at least 1 (UpdatePosition).
+			const double Level = FMath::Pow(2.0, FMath::RoundToDouble(FMath::Log2(FMath::Max(Root->PlayerDistanceToGround / Root->HeightAnchor, 1.0))));
+			const double HalfWidth = static_cast<double>(Root->TriangleSize) * Level * FMath::Max(Root->LodResolution, 1) * 0.5;
+			Step = FMath::Max(Step, HalfWidth * Share);
+		}
 		// A zero-time manual Tick (automation, tools) asks for the exact observer.
 		if (!(Step > 0.0) || !(State.DeltaSeconds > 0.0f) || !Root->init || !Root->bOverridePlayerPosition
 			|| Root->OverridedPlayerPosition.ContainsNaN() || Candidate.ContainsNaN()
