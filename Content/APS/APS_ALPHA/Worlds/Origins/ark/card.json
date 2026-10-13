@@ -1,0 +1,15 @@
+{
+  "id": "ark",
+  "order": 1,
+  "name": "ARK",
+  "subtitle": "Landing",
+  "lore": "The ark is down. It will never fly again. Power it, walk out, and make this ground yours.",
+  "place": "LIVING WORLD   ·   G STAR   ·   FOUR PLANETS, ONE MOON",
+  "tags": ["ORIGIN", "LIVING WORLD", "G STAR"],
+  "locks": ["all"],
+  "origin": "ark",
+  "route": "civilization",
+  "spawn": "PlanetSurface",
+  "playable": true,
+  "readiness": "ready"
+}

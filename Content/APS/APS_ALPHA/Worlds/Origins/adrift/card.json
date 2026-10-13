@@ -1,0 +1,15 @@
+{
+  "id": "adrift",
+  "order": 2,
+  "name": "ADRIFT",
+  "subtitle": "The long night",
+  "lore": "Reactor at eleven percent and no surface on record. Find a world before the lights go.",
+  "place": "FIVE WORLDS, NONE ON RECORD   ·   K STAR",
+  "tags": ["ORIGIN", "SHIP START", "K STAR"],
+  "locks": ["all"],
+  "origin": "adrift",
+  "route": "civilization",
+  "spawn": "SpaceShip",
+  "playable": true,
+  "readiness": "ready"
+}

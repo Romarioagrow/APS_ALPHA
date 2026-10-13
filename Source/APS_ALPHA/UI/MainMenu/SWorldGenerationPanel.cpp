@@ -1,4 +1,5 @@
 #include "SWorldGenerationPanel.h"
+#include "Widgets/Layout/SWrapBox.h"
 #include "APS_ALPHA/UI/Style/APSUINumber.h"
 #include "SAPSChamferedOverlay.h"
 #include "APSPreviewAnnotationLayout.h"
@@ -2323,6 +2324,7 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 	ViewModel = InArgs._ViewModel;
 	OnBack = InArgs._OnBack;
 	OnContinue = InArgs._OnContinue;
+	CardInfo = InArgs._Card;
 	APSGenerationUI::ApplyTheme();
 
 	using namespace APSGenerationUI;
@@ -2974,7 +2976,7 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 					[
 						SNew(SHorizontalBox)
 						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)[SNew(SBox).WidthOverride(78.0f).HeightOverride(1.0f)[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(Cyan)]]
-						+ SHorizontalBox::Slot().AutoWidth().Padding(16.0f, 0.0f)[SNew(STextBlock).Text(LOCTEXT("Subtitle", "A S T R O N O M I C A L   G E N E R A T I O N")).Font(Font("Bold", 13)).ColorAndOpacity(Cyan)]
+						+ SHorizontalBox::Slot().AutoWidth().Padding(16.0f, 0.0f)[SNew(STextBlock).Text(CardInfo.IsValid() && !CardInfo->HeaderSubtitle.IsEmpty() ? CardInfo->HeaderSubtitle : LOCTEXT("Subtitle", "A S T R O N O M I C A L   G E N E R A T I O N")).Font(Font("Bold", 13)).ColorAndOpacity(Cyan)]
 						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)[SNew(SBox).WidthOverride(78.0f).HeightOverride(1.0f)[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(Cyan)]]
 					]
 				]
@@ -2982,6 +2984,8 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 				[
 					SNew(SButton).ButtonStyle(&SecondaryButton).OnClicked(this, &SWorldGenerationPanel::RefreshPreview).ContentPadding(FMargin(14.0f, 8.0f))
 					.HAlign(HAlign_Center).VAlign(VAlign_Center)
+					// Rio 13.10: a card is never rerolled.
+					.Visibility(CardInfo.IsValid() ? EVisibility::Collapsed : EVisibility::Visible)
 					.ToolTipText(LOCTEXT("RefreshHint", "Roll a new world: stars, planets, the start world and its moons. Clears the edits."))
 					[SNew(STextBlock).Text(LOCTEXT("Refresh", "REGENERATE")).Justification(ETextJustify::Center)
 					.Font(Font("Bold", 11)).ColorAndOpacity(Cyan).OverflowPolicy(ETextOverflowPolicy::Ellipsis)
@@ -2991,11 +2995,15 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 			+ SVerticalBox::Slot().FillHeight(1.0f).Padding(0.0f, 14.0f)
 			[
 				SNew(SHorizontalBox)
+				// Rio 13.10: a card has no knob column; the preview and the card's column share the width.
 				+ SHorizontalBox::Slot().FillWidth(0.23f).Padding(0.0f, 0.0f, 10.0f, 0.0f)
 				[
-					ChamferPanel(ControlsSwitcher)
+					SNew(SBox).Visibility(CardInfo.IsValid() ? EVisibility::Collapsed : EVisibility::Visible)
+					[
+						ChamferPanel(ControlsSwitcher)
+					]
 				]
-				+ SHorizontalBox::Slot().FillWidth(0.54f).Padding(6.0f, 0.0f)
+				+ SHorizontalBox::Slot().FillWidth(CardInfo.IsValid() ? 0.60f : 0.54f).Padding(6.0f, 0.0f)
 				[
 					SNew(SVerticalBox)
 					+ SVerticalBox::Slot().FillHeight(1.0f)
@@ -3069,12 +3077,13 @@ void SWorldGenerationPanel::Construct(const FArguments& InArgs)
 						+ SHorizontalBox::Slot().AutoWidth().Padding(2.0f)[FocusButton(LOCTEXT("PlanetGlyph", "P"), LOCTEXT("FocusPlanet", "PLANET"), EAstroPreviewFocus::HomePlanet)]
 					]
 					+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(0.0f, 7.0f, 0.0f, 0.0f)
-					[SNew(STextBlock).Text(LOCTEXT("PreviewHintReadable", "RMB drag to rotate   /   Mouse wheel to zoom   /   Double-click to focus"))
+					[SNew(STextBlock).Text(CardInfo.IsValid() && !CardInfo->Hint.IsEmpty() ? CardInfo->Hint
+						: LOCTEXT("PreviewHintReadable", "RMB drag to rotate   /   Mouse wheel to zoom   /   Double-click to focus"))
 					.Font(ReadableFont("Regular", 9)).ColorAndOpacity(SecondaryText)]
 				]
-				+ SHorizontalBox::Slot().FillWidth(0.23f).Padding(10.0f, 0.0f, 0.0f, 0.0f)
+				+ SHorizontalBox::Slot().FillWidth(CardInfo.IsValid() ? 0.40f : 0.23f).Padding(10.0f, 0.0f, 0.0f, 0.0f)
 				[
-					ChamferPanel(ContextPanel)
+					ChamferPanel(CardInfo.IsValid() ? BuildCardColumn() : ContextPanel)
 				]
 			]
 			+ SVerticalBox::Slot().AutoHeight()
@@ -3152,6 +3161,8 @@ FText SWorldGenerationPanel::GetContinueLabel() const
 	if (!VM) return LOCTEXT("ContinueUnavailable", "CONTINUE   >");
 	if (VM->GetGenerationRoute() == EAPSGenerationRoute::Civilization && VM->GetHomeStartPlanetCount() == 0)
 		return LOCTEXT("HomePlanetRequired", "HOME PLANET REQUIRED");
+	// Rio 13.10: a card starts the world at once (no civilization page).
+	if (CardInfo.IsValid() && !CardInfo->StartLabel.IsEmpty()) return CardInfo->StartLabel;
 	switch (VM->GetGenerationRoute())
 	{
 	case EAPSGenerationRoute::Space: return LOCTEXT("GenerateSpace", "GENERATE SPACE WORLD   >");
@@ -3165,6 +3176,128 @@ FReply SWorldGenerationPanel::CommitWorld()
 	if (OnContinue.IsBound()) OnContinue.Execute();
 	else if (UWorldGenerationViewModel* VM = ViewModel.Get()) VM->CommitAndOpenLevel();
 	return FReply::Handled();
+}
+
+TSharedRef<SWidget> SWorldGenerationPanel::BuildCardColumn()
+{
+	// Rio 13.10 (mockup F:/Rio/Aposfera/UI/Mockups/2026-10-13_cards): kicker, title, subtitle, tags; the lore; WHERE YOU
+	// START; THE LADDER (origins); THE WORLD = the live facts card (RefreshModelCard keeps it current); RULES.
+	using namespace APSGenerationUI;
+	const FAPSWorldCardInfo& Info = *CardInfo;
+	const TSharedRef<SVerticalBox> Column = SNew(SVerticalBox);
+
+	Column->AddSlot().AutoHeight()
+	[SNew(STextBlock).Text(Info.Kicker).Font(Font("Bold", 9)).ColorAndOpacity(Cyan).RenderTransform(CapsShift("Bold", 9))];
+	Column->AddSlot().AutoHeight().Padding(0.0f, 6.0f, 0.0f, 0.0f)
+	[SNew(STextBlock).Text(Info.Title).Font(Font("Bold", 30)).ColorAndOpacity(White).AutoWrapText(true)];
+	if (!Info.Subtitle.IsEmpty())
+	{
+		Column->AddSlot().AutoHeight().Padding(0.0f, 2.0f, 0.0f, 0.0f)
+		[SNew(STextBlock).Text(Info.Subtitle).Font(ReadableFont("Regular", 14)).ColorAndOpacity(SecondaryText).AutoWrapText(true)];
+	}
+	if (!Info.Tags.IsEmpty())
+	{
+		const TSharedRef<SHorizontalBox> Tags = SNew(SHorizontalBox);
+		for (const FText& TagText : Info.Tags)
+		{
+			Tags->AddSlot().AutoWidth().Padding(0.0f, 0.0f, 6.0f, 0.0f)
+			[
+				SNew(SBorder).BorderImage(&ChipBrush).Padding(FMargin(8.0f, 3.0f))
+				[SNew(STextBlock).Text(TagText).Font(Font("Bold", 9)).ColorAndOpacity(SecondaryText).RenderTransform(CapsShift("Bold", 9))]
+			];
+		}
+		Column->AddSlot().AutoHeight().Padding(0.0f, 10.0f, 0.0f, 0.0f)[Tags];
+	}
+	if (!Info.Lore.IsEmpty())
+	{
+		Column->AddSlot().AutoHeight().Padding(0.0f, 14.0f, 0.0f, 0.0f)
+		[
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot().AutoWidth().Padding(0.0f, 2.0f, 12.0f, 2.0f)
+			[SNew(SBox).WidthOverride(2.0f)[SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(Cyan)]]
+			+ SHorizontalBox::Slot().FillWidth(1.0f)
+			[SNew(STextBlock).Text(Info.Lore).Font(ReadableFont("Regular", 12)).ColorAndOpacity(White).AutoWrapText(true).LineHeightPercentage(1.25f)]
+		];
+	}
+
+	const auto AddRows = [&Column](const TArray<FAPSWorldCardInfo::FLine>& Lines)
+	{
+		for (const FAPSWorldCardInfo::FLine& Line : Lines)
+		{
+			Column->AddSlot().AutoHeight().Padding(0.0f, 5.0f, 0.0f, 0.0f)
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Top).Padding(0.0f, 2.0f, 0.0f, 0.0f)
+				[SNew(SBox).WidthOverride(96.0f)[SNew(STextBlock).Text(Line.Label).Font(Font("Bold", 9)).ColorAndOpacity(SecondaryText).RenderTransform(CapsShift("Bold", 9))]]
+				+ SHorizontalBox::Slot().FillWidth(1.0f).Padding(10.0f, 0.0f, 0.0f, 0.0f)
+				[SNew(STextBlock).Text(Line.Value).Font(ReadableFont("Regular", 11)).ColorAndOpacity(White).AutoWrapText(true)]
+			];
+		}
+	};
+	if (!Info.Start.IsEmpty())
+	{
+		Column->AddSlot().AutoHeight().Padding(0.0f, 16.0f, 0.0f, 4.0f)[SectionTitle(LOCTEXT("CardStart", "WHERE YOU START"))];
+		AddRows(Info.Start);
+	}
+	if (!Info.Ladder.IsEmpty())
+	{
+		Column->AddSlot().AutoHeight().Padding(0.0f, 16.0f, 0.0f, 4.0f)[SectionTitle(LOCTEXT("CardLadder", "THE LADDER"))];
+		for (const FAPSWorldCardInfo::FRung& Rung : Info.Ladder)
+		{
+			const FLinearColor Accent = Rung.bOpen ? Cyan : SecondaryText;
+			Column->AddSlot().AutoHeight().Padding(0.0f, 5.0f, 0.0f, 0.0f)
+			[
+				SNew(SBorder).BorderImage(&ControlBrush).Padding(FMargin(10.0f, 6.0f))
+				[
+					SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.0f, 0.0f, 10.0f, 0.0f)
+					[SNew(SBox).WidthOverride(18.0f)[SNew(STextBlock).Text(Rung.Number).Font(Font("Bold", 13)).ColorAndOpacity(Accent)]]
+					+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
+					[
+						SNew(SVerticalBox)
+						+ SVerticalBox::Slot().AutoHeight()
+						[SNew(STextBlock).Text(Rung.Title).Font(Font("Bold", 10)).ColorAndOpacity(White).RenderTransform(CapsShift("Bold", 10))]
+						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 2.0f, 0.0f, 0.0f)
+						[SNew(STextBlock).Text(Rung.Line).Font(ReadableFont("Regular", 10)).ColorAndOpacity(SecondaryText).AutoWrapText(true)]
+					]
+					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(10.0f, 0.0f, 0.0f, 0.0f)
+					[SNew(STextBlock).Text(Rung.bOpen ? LOCTEXT("RungOpen", "OPEN") : Rung.Key).Font(Font("Bold", 8)).ColorAndOpacity(Accent)
+					.Justification(ETextJustify::Right).RenderTransform(CapsShift("Bold", 8))]
+				]
+			];
+		}
+	}
+	Column->AddSlot().AutoHeight().Padding(0.0f, 16.0f, 0.0f, 4.0f)[SectionTitle(LOCTEXT("CardWorld", "THE WORLD"))];
+	Column->AddSlot().AutoHeight().Padding(0.0f, 6.0f, 0.0f, 0.0f)
+	[
+		SNew(SBorder).BorderImage(&ControlBrush).Padding(FMargin(12.0f, 10.0f))
+		[
+			SAssignNew(ModelCardBox, SVerticalBox)
+		]
+	];
+	if (!Info.Rules.IsEmpty())
+	{
+		Column->AddSlot().AutoHeight().Padding(0.0f, 16.0f, 0.0f, 4.0f)[SectionTitle(LOCTEXT("CardRules", "RULES"))];
+		const TSharedRef<SWrapBox> Chips = SNew(SWrapBox).UseAllottedSize(true).InnerSlotPadding(FVector2D(6.0f, 6.0f));
+		for (const FAPSWorldCardInfo::FLine& Rule : Info.Rules)
+		{
+			Chips->AddSlot()
+			[
+				SNew(SBorder).BorderImage(&ChipBrush).Padding(FMargin(8.0f, 4.0f))
+				[
+					SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+					[SNew(STextBlock).Text(Rule.Label).Font(Font("Bold", 8)).ColorAndOpacity(SecondaryText).RenderTransform(CapsShift("Bold", 8))]
+					+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(6.0f, 0.0f, 0.0f, 0.0f)
+					[SNew(STextBlock).Text(Rule.Value).Font(Font("Bold", 9)).ColorAndOpacity(White).RenderTransform(CapsShift("Bold", 9))]
+				]
+			];
+		}
+		Column->AddSlot().AutoHeight().Padding(0.0f, 8.0f, 0.0f, 0.0f)[Chips];
+	}
+
+	return SNew(SScrollBox).ScrollBarVisibility(EVisibility::Collapsed)
+		+ SScrollBox::Slot()[Column];
 }
 
 FReply SWorldGenerationPanel::RefreshPreview()

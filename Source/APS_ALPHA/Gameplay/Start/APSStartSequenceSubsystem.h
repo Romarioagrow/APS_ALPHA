@@ -25,5 +25,8 @@ public:
 private:
 	/** When the pilot and the home ship were first both there; the generator finishes its start in the next frames. */
 	double FirstReadySeconds{-1.0};
+	/** Rio 13.10: seat attempts so far and when the next one is due (the pilot is held at the seat between them). */
+	int32 Attempts{0};
+	double NextAttemptSeconds{0.0};
 	bool bDone{false};
 };

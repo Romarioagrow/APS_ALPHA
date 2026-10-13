@@ -8,7 +8,10 @@
 
 class AMainMenuController;
 class SWorldGenerationPanel;
+struct FAPSWorldCardInfo;
 struct FStreamableHandle;
+namespace APSAuthoredWorlds { struct FCard; }
+namespace APSOrigins { struct FDefinition; }
 class SBox;
 class SButton;
 class SMenuAnchor;
@@ -157,6 +160,17 @@ private:
 	TSharedRef<SWidget> BuildNewWorldRulesRows();
 	FReply SetNewWorldMode(uint8 Mode);
 	FReply SetNewWorldOrigin(uint8 Origin);
+	/**
+	 * Rio 13.10 (CURRENT_WORK.md): an authored world or an origin opens the generation screen as a CARD — shown, never
+	 * edited, START goes straight into the world (no civilization page). The card is made before Navigate and cleared
+	 * when the screen is left; the model's authored id and locks go with it.
+	 */
+	FReply OpenOriginCard(uint8 Origin);
+	void ClearWorldCard();
+	void BackFromGeneration();
+	TSharedPtr<FAPSWorldCardInfo> MakeAuthoredWorldCard(const APSAuthoredWorlds::FCard& Card) const;
+	TSharedPtr<FAPSWorldCardInfo> MakeOriginCard(const APSOrigins::FDefinition& Origin) const;
+	TSharedPtr<FAPSWorldCardInfo> PendingWorldCard;
 	/** Rio 06.10: the SETTINGS page's open tab, kept while a theme switch rebuilds the page. */
 	EAPSSettingsTab SettingsTab{};
 	TSharedRef<SWidget> BuildLandingPage();

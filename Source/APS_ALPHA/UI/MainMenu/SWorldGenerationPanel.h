@@ -21,6 +21,45 @@ enum class EAPSGenerationSurfaceControl : uint8
 	Roughness
 };
 
+/**
+ * Rio 13.10 (CURRENT_WORK.md, "подача авторских миров и происхождений"): the generation screen as a CARD. A ready world
+ * (an authored world) or an origin is shown and never edited: the live preview with its levels on the left, the card's
+ * texts and the world's facts on the right, START. The knob column, REGENERATE and renaming are not built at all.
+ */
+struct FAPSWorldCardInfo
+{
+	struct FLine
+	{
+		FText Label;
+		FText Value;
+	};
+	struct FRung
+	{
+		FText Number;
+		FText Title;
+		FText Line;
+		/** What opens the rung ("THE LAUNCH  ·  the monument"); empty for the rung that is open. */
+		FText Key;
+		bool bOpen{false};
+	};
+	/** Under the title instead of ASTRONOMICAL GENERATION. */
+	FText HeaderSubtitle;
+	FText Kicker;
+	FText Title;
+	FText Subtitle;
+	FText Lore;
+	TArray<FText> Tags;
+	/** WHERE YOU START rows. */
+	TArray<FLine> Start;
+	/** THE LADDER rows (origins). */
+	TArray<FRung> Ladder;
+	/** RULES chips. */
+	TArray<FLine> Rules;
+	FText StartLabel;
+	/** The line under the preview's level buttons. */
+	FText Hint;
+};
+
 class SWorldGenerationPanel : public SCompoundWidget
 {
 public:
@@ -28,6 +67,8 @@ public:
 		SLATE_ARGUMENT(TWeakObjectPtr<UWorldGenerationViewModel>, ViewModel)
 		SLATE_EVENT(FSimpleDelegate, OnBack)
 		SLATE_EVENT(FSimpleDelegate, OnContinue)
+		/** Rio 13.10: set, the screen is a card (FAPSWorldCardInfo); null, the editor as before. */
+		SLATE_ARGUMENT(TSharedPtr<FAPSWorldCardInfo>, Card)
 	SLATE_END_ARGS()
 
 	void Construct(const FArguments& InArgs);
@@ -58,10 +99,13 @@ private:
 	void RebuildModelCard(const FAPSModelCard& Card);
 	/** The name box follows the selected body or scope while it has no keyboard focus. */
 	void RefreshNameBox();
+	/** Rio 13.10: the card's right column (texts, start, ladder, the live facts, rules). */
+	TSharedRef<SWidget> BuildCardColumn();
 
 	TWeakObjectPtr<UWorldGenerationViewModel> ViewModel;
 	FSimpleDelegate OnBack;
 	FSimpleDelegate OnContinue;
+	TSharedPtr<FAPSWorldCardInfo> CardInfo;
 	TSharedPtr<SVerticalBox> BodyHierarchyBox;
 	TMap<EAPSGenerationSurfaceControl, TSharedPtr<SAPSGenerationRangeSlider>> SurfaceControlSliders;
 	uint32 BodyHierarchySignature{0};

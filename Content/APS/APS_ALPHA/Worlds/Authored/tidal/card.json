@@ -2,14 +2,14 @@
   "id": "tidal",
   "order": 10,
   "name": "TIDAL",
-  "subtitle": "A tundra moon in the shadow of its giant",
-  "lore": "A tundra moon in the shadow of its giant. For half of every day the sun is a rumour behind blue bands of weather; the other half, two lights in the sky. Nothing here was easy, and nothing here was ever alone.",
-  "place": "TUNDRA MOON   ·   K STAR",
-  "tags": ["ICE GIANT", "MOON", "K STAR"],
+  "subtitle": "A tundra world under three moons",
+  "lore": "Three moons never leave the sky, and twice a day they lift the sea under the ice by a hand's width. For half of every day the sun is a rumour behind the clouds; the other half, three lights in the sky. Nothing here was easy, and nothing here was ever alone.",
+  "place": "TUNDRA WORLD   ·   THREE MOONS   ·   K STAR",
+  "tags": ["TUNDRA", "THREE MOONS", "K STAR"],
   "locks": ["all"],
   "origin": "ring",
   "route": "civilization",
-  "spawn": "MoonSurface",
+  "spawn": "PlanetSurface",
   "playable": true,
-  "readiness": "ready"
+  "readiness": "ready; the moon-of-a-giant version waits for the generator"
 }

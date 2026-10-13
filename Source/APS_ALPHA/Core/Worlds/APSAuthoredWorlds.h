@@ -44,6 +44,15 @@ namespace APSAuthoredWorlds
 	APS_ALPHA_API const TArray<FCard>& Catalogue(bool bRescan = false);
 	APS_ALPHA_API const FCard* Find(const FString& Id);
 
+	/**
+	 * Rio 13.10: the origins' own world presets, Content/APS/APS_ALPHA/Worlds/Origins/<key> (ark, adrift, ring, exodus),
+	 * the same card.json + world.json as an authored world; applied when an origin's card opens (SAPSMainMenuRoot).
+	 */
+	APS_ALPHA_API FString OriginRoot();
+	APS_ALPHA_API const TArray<FCard>& OriginCatalogue(bool bRescan = false);
+	/** By the origin's key (APSOrigins::FDefinition::Key, case-insensitive: "Ark", "UnderTheRing" or "ring"). */
+	APS_ALPHA_API const FCard* FindOrigin(const FString& Key);
+
 	/** Applies world.json onto the model and writes the card's id and locks; the spawn place onto Spawn when the card
 	 * sets one. False (with a reason) when the file is missing or malformed; the model is then left untouched. */
 	APS_ALPHA_API bool Apply(const FCard& Card, UGeneratedWorld& World, USpawnParameters* Spawn, FString* OutFailure = nullptr);

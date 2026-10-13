@@ -880,6 +880,24 @@ namespace APSMissionTrackerPrivate
 		}));
 }
 
+void APSMissionTracker::PushNotice(UWorld* World, const FText& Kicker, const FText& Title, const FText& Body, const FText& Next,
+	const FLinearColor& Accent)
+{
+	using namespace APSMissionTrackerPrivate;
+	if (!World || !World->IsGameWorld())
+	{
+		return;
+	}
+	FToasts& Toasts = GToasts.FindOrAdd(World);
+	FToast Toast;
+	Toast.Accent = Accent;
+	Toast.Kicker = Kicker;
+	Toast.Title = Title;
+	Toast.Body = Body;
+	Toast.Next = Next;
+	Push(Toasts, MoveTemp(Toast));
+}
+
 void APSMissionTracker::Tick(UWorld* World)
 {
 	using namespace APSMissionTrackerPrivate;

@@ -48,7 +48,7 @@ public:
 	virtual void Tick(const FGeometry& AllottedGeometry, double InCurrentTime, float InDeltaTime) override;
 	/** 0 overview, 1 map, 2 infrastructure, 3 fleet orders, 4 divisions, 5 journal, 6 shipyard, 7 system scheme, 8 pilot,
 	 * 9 surface map, 10 star map (test captures, K). Stars, map, scheme and surface are the modes of one MAP tab (Rio, 02.10). */
-	void ShowTab(int32 TabIndex) { SelectTab(static_cast<ETab>(FMath::Clamp(TabIndex, 0, 10))); }
+	void ShowTab(int32 TabIndex) { SelectTab(static_cast<ETab>(FMath::Clamp(TabIndex, 0, 11))); }
 	bool IsShowingTab(int32 TabIndex) const { return static_cast<int32>(ActiveTab) == TabIndex; }
 	/** Test captures: 1 the home planet's object page (INFRASTRUCTURE), 2 the construction catalogue, 0 neither. */
 	void ShowTestOverlay(int32 Overlay);
@@ -67,7 +67,9 @@ private:
 		Pilot,
 		Surface,
 		/** Rio 05.10: the STAR level above the system map (appended: the indices above are the test captures'). */
-		Stars
+		Stars,
+		/** Rio 13.10: the origin's story, its own page (appended). */
+		Origin
 	};
 
 	FReply SelectTab(ETab Tab);
@@ -268,6 +270,15 @@ private:
 
 	/** Rio 05.10 (star map): MAP > STAR MAP (SAPSStarMapPanel), above the system map. */
 	TSharedRef<SWidget> BuildStars();
+	/**
+	 * Rio 13.10 (ORIGIN story, mockup F:/Rio/Aposfera/UI/Mockups/2026-10-13_cards/03): the origin's own chain on its own
+	 * page: the steps done, the current one with its story, objective and what it opens, the next ones, the ladder.
+	 * Read from APSOriginQuests::View; rebuilt when a step moves (polled with the other live tabs).
+	 */
+	TSharedRef<SWidget> BuildOrigin();
+	void RefreshOrigin(bool bForce);
+	TSharedPtr<SVerticalBox> OriginBox;
+	FString OriginSignature;
 	/** The star map's drill-down: the system scheme pinned to a system that stands (home, the materialized one). */
 	void OpenSchemeOf(AActor* Star);
 	/** FLEET ORDERS with a star system's anchor as the target and the map on STARS. */

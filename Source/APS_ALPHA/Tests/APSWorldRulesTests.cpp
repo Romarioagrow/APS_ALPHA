@@ -7,6 +7,7 @@
 #include "APS_ALPHA/Core/Worlds/APSAuthoredWorlds.h"
 #include "APS_ALPHA/Gameplay/Colony/APSColonyModuleCatalogue.h"
 #include "APS_ALPHA/Gameplay/Expansion/APSInfrastructure.h"
+#include "APS_ALPHA/Gameplay/Origins/APSOriginQuests.h"
 #include "APS_ALPHA/Gameplay/Origins/APSOrigins.h"
 #include "APS_ALPHA/UI/MainMenu/APSWorldRoll.h"
 #include "HAL/FileManager.h"
@@ -218,6 +219,57 @@ bool FAPSLadderCatalogueTest::RunTest(const FString& Parameters)
 		TestEqual(TEXT("the bay opens the rover"), Fab->UnlocksToken, APSProgressionTokens::VehiclesRover());
 		TestTrue(TEXT("the bay yields metals"), Fab->YieldPerMinute[0] > 0.0f);
 	}
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+	FAPSOriginStoryTest,
+	"APS.Origin.Story.ChainsAndPresets",
+	EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FAPSOriginStoryTest::RunTest(const FString& Parameters)
+{
+	// Rio 13.10: every available origin has a story chain with unique step tokens, and a world preset that applies.
+	for (const APSOrigins::FDefinition& Origin : APSOrigins::All())
+	{
+		if (!Origin.bAvailable)
+		{
+			continue;
+		}
+		const APSOriginQuests::FChain* Chain = APSOriginQuests::ChainOf(Origin.Id);
+		TestNotNull(FString::Printf(TEXT("%s has a story chain"), Origin.Key), Chain);
+		if (Chain)
+		{
+			TestTrue(FString::Printf(TEXT("%s: steps"), Origin.Key), Chain->Steps.Num() >= 8);
+			TSet<FName> Tokens;
+			for (int32 Index = 0; Index < Chain->Steps.Num(); ++Index)
+			{
+				const APSOriginQuests::FStep& Step = Chain->Steps[Index];
+				TestFalse(FString::Printf(TEXT("%s step %d has a title"), Origin.Key, Index + 1), Step.Title.IsEmpty());
+				TestFalse(FString::Printf(TEXT("%s step %d has an objective"), Origin.Key, Index + 1), Step.Objective.IsEmpty());
+				TestTrue(FString::Printf(TEXT("%s step %d has a trigger"), Origin.Key, Index + 1), Step.Trigger != APSOriginQuests::ETrigger::None);
+				TestTrue(FString::Printf(TEXT("%s step %d rung in range"), Origin.Key, Index + 1), Step.Rung <= 4);
+				const FName Token = APSOriginQuests::StepToken(*Chain, Index);
+				TestFalse(FString::Printf(TEXT("%s step %d token unique"), Origin.Key, Index + 1), Tokens.Contains(Token));
+				Tokens.Add(Token);
+			}
+			TestFalse(FString::Printf(TEXT("%s has card lines"), Origin.Key), Origin.StartLine.IsEmpty() || Origin.ShipLine.IsEmpty());
+		}
+		if (!IFileManager::Get().DirectoryExists(*APSAuthoredWorlds::OriginRoot()))
+		{
+			continue;
+		}
+		const APSAuthoredWorlds::FCard* Preset = APSAuthoredWorlds::FindOrigin(Origin.Key);
+		TestNotNull(FString::Printf(TEXT("%s has a world preset"), Origin.Key), Preset);
+		if (Preset && Preset->bHasWorld)
+		{
+			UGeneratedWorld* World = NewObject<UGeneratedWorld>(GetTransientPackage());
+			FString Failure;
+			TestTrue(FString::Printf(TEXT("%s preset applies: %s"), Origin.Key, *Failure), APSAuthoredWorlds::Apply(*Preset, *World, nullptr, &Failure));
+			TestEqual(FString::Printf(TEXT("%s preset spawn place"), Origin.Key), Preset->SpawnPlace, static_cast<int32>(Origin.StartPlace));
+		}
+	}
+	TestNull(TEXT("no chain for none"), APSOriginQuests::ChainOf(APSWorldRules::EOrigin::None));
 	return true;
 }
 

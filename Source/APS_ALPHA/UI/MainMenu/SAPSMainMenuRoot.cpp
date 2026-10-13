@@ -1704,8 +1704,198 @@ FReply SAPSMainMenuRoot::PlayAuthoredWorld(const FString Id)
 	}
 	// The card recommends an origin only; the mode stays what NEW WORLD holds (SANDBOX unless picked otherwise).
 	NewWorldPath = Card->bSpaceRoute ? EAPSNewWorldPath::Space : EAPSNewWorldPath::Civilization;
+	// Rio 13.10: a WORLD CARD, not the editor; the preferred start classes load meanwhile (the civilization page did it).
+	PendingWorldCard = MakeAuthoredWorldCard(*Card);
+	DiscoverSpawnClassOptions();
 	return OpenAstronomicalGeneration(Card->bSpaceRoute ? EAstroPreviewFocus::StarCluster : EAstroPreviewFocus::HomePlanet,
 		Card->bSpaceRoute ? EAPSGenerationRoute::Space : EAPSGenerationRoute::Civilization);
+}
+
+namespace APSMenuCards
+{
+	FText SpawnPlaceLine(const ECharSpawnPlace Place)
+	{
+		switch (Place)
+		{
+		case ECharSpawnPlace::PlanetSurface: return NSLOCTEXT("APSMenuCards", "PlacePlanetSurface", "On the surface of the home world, at the colony");
+		case ECharSpawnPlace::MoonSurface: return NSLOCTEXT("APSMenuCards", "PlaceMoonSurface", "On the surface of the home world's moon");
+		case ECharSpawnPlace::MoonOrbit: return NSLOCTEXT("APSMenuCards", "PlaceMoonOrbit", "In orbit of the home world's moon");
+		case ECharSpawnPlace::SpaceShip: return NSLOCTEXT("APSMenuCards", "PlaceShip", "In the pilot's seat of a ship, in space");
+		default: return NSLOCTEXT("APSMenuCards", "PlacePlanetOrbit", "In orbit of the home world, at the home station");
+		}
+	}
+
+	FText RulesLine(const APSWorldRules::FRules& Rules)
+	{
+		if (Rules.IsToday())
+		{
+			return NSLOCTEXT("APSMenuCards", "RulesSandbox", "Sandbox: everything open from the first minute");
+		}
+		if (Rules.Reach == APSWorldRules::EReach::Ladder)
+		{
+			return NSLOCTEXT("APSMenuCards", "RulesLadder", "The ladder: reach, knowledge and the stocks open step by step");
+		}
+		if (Rules.Goals == APSWorldRules::EGoals::None)
+		{
+			return NSLOCTEXT("APSMenuCards", "RulesTrip", "Space trips: a route and nothing to do but look");
+		}
+		return NSLOCTEXT("APSMenuCards", "RulesCustom", "Custom rules");
+	}
+
+	void AddRuleChips(const APSWorldRules::FRules& Rules, TArray<FAPSWorldCardInfo::FLine>& Out)
+	{
+		using namespace APSWorldRules;
+		const auto Add = [&Out](const FText& Label, const FText& Value) { Out.Add({Label, Value}); };
+		Add(NSLOCTEXT("APSMenuCards", "RuleReach", "REACH"), Rules.Reach == EReach::Ladder
+			? NSLOCTEXT("APSMenuCards", "ReachLadder", "LADDER") : NSLOCTEXT("APSMenuCards", "ReachOpen", "OPEN"));
+		Add(NSLOCTEXT("APSMenuCards", "RuleSky", "SKY"), Rules.Knowledge == EKnowledge::Unknown ? NSLOCTEXT("APSMenuCards", "SkyUnknown", "UNKNOWN")
+			: Rules.Knowledge == EKnowledge::AllKnown ? NSLOCTEXT("APSMenuCards", "SkyKnown", "ALL KNOWN") : NSLOCTEXT("APSMenuCards", "SkyToday", "HOME KNOWN"));
+		Add(NSLOCTEXT("APSMenuCards", "RuleStocks", "STOCKS"), Rules.Reach == EReach::Ladder ? NSLOCTEXT("APSMenuCards", "StocksLadder", "ONE BY ONE")
+			: Rules.Resources == EResources::Unlimited ? NSLOCTEXT("APSMenuCards", "StocksUnlimited", "UNLIMITED")
+			: Rules.Resources == EResources::Scarce ? NSLOCTEXT("APSMenuCards", "StocksScarce", "SCARCE") : NSLOCTEXT("APSMenuCards", "StocksNormal", "NORMAL"));
+		Add(NSLOCTEXT("APSMenuCards", "RuleOthers", "OTHERS"), Rules.Others == EOthers::Traces ? NSLOCTEXT("APSMenuCards", "OthersTraces", "TRACES")
+			: Rules.Others == EOthers::Neighbours ? NSLOCTEXT("APSMenuCards", "OthersNeighbours", "NEIGHBOURS")
+			: Rules.Others == EOthers::Unknown ? NSLOCTEXT("APSMenuCards", "OthersUnknown", "UNKNOWN") : NSLOCTEXT("APSMenuCards", "OthersAlone", "ALONE"));
+		if (Rules.Goals == EGoals::None)
+		{
+			Add(NSLOCTEXT("APSMenuCards", "RuleGoals", "GOALS"), NSLOCTEXT("APSMenuCards", "GoalsNone", "NONE"));
+		}
+	}
+}
+
+TSharedPtr<FAPSWorldCardInfo> SAPSMainMenuRoot::MakeAuthoredWorldCard(const APSAuthoredWorlds::FCard& Card) const
+{
+	const TSharedPtr<FAPSWorldCardInfo> Info = MakeShared<FAPSWorldCardInfo>();
+	const TArray<APSAuthoredWorlds::FCard>& All = APSAuthoredWorlds::Catalogue();
+	const int32 Index = All.IndexOfByPredicate([&Card](const APSAuthoredWorlds::FCard& Other) { return Other.Id == Card.Id; });
+	Info->HeaderSubtitle = LOCTEXT("CardHeaderWorld", "W O R L D   C A R D");
+	Info->Kicker = Index == INDEX_NONE ? LOCTEXT("CardKickerWorld", "AUTHORED WORLD")
+		: FText::Format(LOCTEXT("CardKickerWorldN", "AUTHORED WORLD   ·   {0} / {1}"), FText::AsNumber(Index + 1), FText::AsNumber(All.Num()));
+	Info->Title = FText::FromString(Card.Name);
+	Info->Subtitle = FText::FromString(Card.Subtitle);
+	Info->Lore = FText::FromString(Card.Lore);
+	Info->Tags.Add(LOCTEXT("TagAuthored", "AUTHORED"));
+	const APSWorldRules::FRules Rules = APSWorldRules::Of(ViewModel.IsValid() ? ViewModel->GetGeneratedWorld() : nullptr);
+	Info->Tags.Add(Rules.IsToday() ? LOCTEXT("TagSandboxRules", "SANDBOX RULES") : FText::FromString(FString(APSWorldRules::ModeName(Rules.Mode)).ToUpper()));
+	Info->Tags.Add(Card.bSpaceRoute ? LOCTEXT("TagSpace", "SPACE") : LOCTEXT("TagCivilization", "CIVILIZATION"));
+	for (const FString& TagText : Card.Tags)
+	{
+		Info->Tags.Add(FText::FromString(TagText));
+	}
+	const ECharSpawnPlace Place = Card.SpawnPlace != INDEX_NONE ? static_cast<ECharSpawnPlace>(Card.SpawnPlace)
+		: ViewModel.IsValid() && ViewModel->SpawnParameters ? ViewModel->SpawnParameters->CharacterSpawnPlace : ECharSpawnPlace::PlanetOrbit;
+	Info->Start.Add({LOCTEXT("StartPlace", "PLACE"), APSMenuCards::SpawnPlaceLine(Place)});
+	Info->Start.Add({LOCTEXT("StartRoute", "ROUTE"), Card.bSpaceRoute
+		? LOCTEXT("RouteSpace", "Space: a ship among the stars, no colony")
+		: LOCTEXT("RouteCivilization", "Civilization: a colony on the ground, the home complex in orbit")});
+	Info->Start.Add({LOCTEXT("StartRules", "RULES"), APSMenuCards::RulesLine(Rules)});
+	if (!Card.Place.IsEmpty())
+	{
+		Info->Start.Add({LOCTEXT("StartWorldLine", "WORLD"), FText::FromString(Card.Place)});
+	}
+	if (!Rules.IsToday())
+	{
+		APSMenuCards::AddRuleChips(Rules, Info->Rules);
+	}
+	Info->StartLabel = LOCTEXT("CardStartWorld", "START   >");
+	Info->Hint = LOCTEXT("CardHintWorld", "RMB drag to rotate   /   Mouse wheel to zoom   /   Double-click to focus   ·   the world is fixed: look, nothing here can be changed");
+	return Info;
+}
+
+TSharedPtr<FAPSWorldCardInfo> SAPSMainMenuRoot::MakeOriginCard(const APSOrigins::FDefinition& Origin) const
+{
+	const TSharedPtr<FAPSWorldCardInfo> Info = MakeShared<FAPSWorldCardInfo>();
+	const TArray<APSOrigins::FDefinition>& All = APSOrigins::All();
+	const int32 Index = All.IndexOfByPredicate([&Origin](const APSOrigins::FDefinition& Other) { return Other.Id == Origin.Id; });
+	Info->HeaderSubtitle = LOCTEXT("CardHeaderOrigin", "O R I G I N");
+	Info->Kicker = FText::Format(LOCTEXT("CardKickerOrigin", "ORIGIN   ·   {0} / {1}"), FText::AsNumber(FMath::Max(Index, 0) + 1), FText::AsNumber(All.Num()));
+	Info->Title = FText::FromString(FString(APSWorldRules::OriginName(Origin.Id)).ToUpper());
+	Info->Subtitle = Origin.Subtitle;
+	Info->Lore = Origin.Description;
+	Info->Tags.Add(LOCTEXT("TagOrigin", "ORIGIN"));
+	Info->Tags.Add(LOCTEXT("TagLadder", "THE LADDER"));
+	Info->Tags.Add(LOCTEXT("TagCivilization", "CIVILIZATION"));
+	Info->Start.Add({LOCTEXT("StartPlace", "PLACE"), Origin.StartLine.IsEmpty() ? APSMenuCards::SpawnPlaceLine(Origin.StartPlace) : Origin.StartLine});
+	if (!Origin.ShipLine.IsEmpty()) Info->Start.Add({LOCTEXT("StartShip", "SHIP"), Origin.ShipLine});
+	if (!Origin.WorldLine.IsEmpty()) Info->Start.Add({LOCTEXT("StartWorldLine", "WORLD"), Origin.WorldLine});
+	if (!Origin.StocksLine.IsEmpty()) Info->Start.Add({LOCTEXT("StartStocks", "STOCKS"), Origin.StocksLine});
+	// The five rungs of the ladder (concept section 3) and what opens each (APSProgressionTokens).
+	const auto Rung = [Info](const TCHAR* Number, const FText& Title, const FText& Line, const FText& Key, const bool bOpen)
+	{
+		FAPSWorldCardInfo::FRung R;
+		R.Number = FText::FromString(Number);
+		R.Title = Title;
+		R.Line = Line;
+		R.Key = Key;
+		R.bOpen = bOpen;
+		Info->Ladder.Add(R);
+	};
+	Rung(TEXT("0"), LOCTEXT("Rung0", "THE ARK"), LOCTEXT("Rung0Line", "Power, the console, the first modules"), FText::GetEmpty(), true);
+	Rung(TEXT("1"), LOCTEXT("Rung1", "THE SURFACE"), LOCTEXT("Rung1Line", "The fabrication bay, the rover, outposts, the signal"),
+		LOCTEXT("Rung1Key", "FABRICATION BAY"), false);
+	Rung(TEXT("2"), LOCTEXT("Rung2", "THE SYSTEM"), LOCTEXT("Rung2Line", "The launch yard, the first hull, orbit"),
+		FText::Format(LOCTEXT("RungKeyFmt", "{0}  ·  {1}"), APSProgressionTokens::Title(APSProgressionTokens::Launch()), LOCTEXT("Rung2Who", "the monument")), false);
+	Rung(TEXT("3"), LOCTEXT("Rung3", "THE CLUSTER"), LOCTEXT("Rung3Line", "The stellar drive, M hulls, the neighbouring suns"),
+		FText::Format(LOCTEXT("RungKeyFmt", "{0}  ·  {1}"), APSProgressionTokens::Title(APSProgressionTokens::StellarDrive()), LOCTEXT("Rung3Who", "the quiet hull")), false);
+	Rung(TEXT("4"), LOCTEXT("Rung4", "THE GALAXY"), LOCTEXT("Rung4Line", "Gates, L hulls, the far side"),
+		FText::Format(LOCTEXT("RungKeyFmt", "{0}  ·  {1}"), APSProgressionTokens::Title(APSProgressionTokens::GalaxyHulls()), LOCTEXT("Rung4Who", "the Builders' road")), false);
+	APSWorldRules::FRules Rules = APSWorldRules::Of(ViewModel.IsValid() ? ViewModel->GetGeneratedWorld() : nullptr);
+	APSMenuCards::AddRuleChips(Rules, Info->Rules);
+	Info->StartLabel = LOCTEXT("CardStartOrigin", "BEGIN   >");
+	Info->Hint = LOCTEXT("CardHintOrigin", "Look around: RMB drag, wheel to zoom, double-click to focus   ·   the origin's world is fixed");
+	return Info;
+}
+
+FReply SAPSMainMenuRoot::OpenOriginCard(const uint8 Origin)
+{
+	UGeneratedWorld* World = ViewModel.IsValid() ? ViewModel->GetGeneratedWorld() : nullptr;
+	const APSOrigins::FDefinition* Definition = APSOrigins::Find(static_cast<APSWorldRules::EOrigin>(Origin));
+	if (!World || !Definition || !Definition->bAvailable)
+	{
+		return FReply::Handled();
+	}
+	// The origin's own world preset (Content/APS/APS_ALPHA/Worlds/Origins/<key>), when it has one; else the rolled world.
+	if (const APSAuthoredWorlds::FCard* Preset = APSAuthoredWorlds::FindOrigin(Definition->Key))
+	{
+		FString Failure;
+		if (!APSAuthoredWorlds::Apply(*Preset, *World, ViewModel->SpawnParameters, &Failure))
+		{
+			UE_LOG(LogTemp, Warning, TEXT("[APS.Origin] preset '%s' not applied: %s"), *Preset->Id, *Failure);
+		}
+	}
+	APSWorldRules::FRules Rules = APSWorldRules::Of(World);
+	APSWorldRules::ApplyPreset(*World, APSWorldRules::EMode::Origin);
+	Rules = APSWorldRules::Of(World);
+	Rules.Origin = Definition->Id;
+	APSWorldRules::Write(*World, Rules);
+	// The preset's own start place wins over the origin's default (a card may land where its world allows).
+	const APSAuthoredWorlds::FCard* Applied = APSAuthoredWorlds::FindOrigin(Definition->Key);
+	if (!Applied || Applied->SpawnPlace == INDEX_NONE)
+	{
+		ViewModel->SetCharacterSpawnPlace(static_cast<int32>(Definition->StartPlace));
+	}
+	NewWorldPath = EAPSNewWorldPath::Civilization;
+	PendingWorldCard = MakeOriginCard(*Definition);
+	DiscoverSpawnClassOptions();
+	UE_LOG(LogTemp, Log, TEXT("[APS.Origin] card %s: %s"), Definition->Key, *APSWorldRules::Describe(Rules));
+	return OpenAstronomicalGeneration(EAstroPreviewFocus::HomePlanet, EAPSGenerationRoute::Civilization);
+}
+
+void SAPSMainMenuRoot::ClearWorldCard()
+{
+	PendingWorldCard.Reset();
+	// The preset's id and locks go with the card: SANDBOX after it is an editable world again (REGENERATE allowed).
+	if (UGeneratedWorld* World = ViewModel.IsValid() ? ViewModel->GetGeneratedWorld() : nullptr)
+	{
+		World->AuthoredWorldId.Reset();
+		World->AuthoredLocks = 0;
+	}
+}
+
+void SAPSMainMenuRoot::BackFromGeneration()
+{
+	ClearWorldCard();
+	Navigate(EAPSMenuPage::ChoosePath);
 }
 
 TSharedRef<SWidget> SAPSMainMenuRoot::BuildNewWorldRulesRows()
@@ -2107,7 +2297,8 @@ void SAPSMainMenuRoot::Navigate(EAPSMenuPage NewPage)
 		ContentHost->SetContent(
 			SAssignNew(WorldGenerationPanel, SWorldGenerationPanel)
 			.ViewModel(ViewModel)
-			.OnBack(FSimpleDelegate::CreateSP(this, &SAPSMainMenuRoot::Navigate, EAPSMenuPage::ChoosePath))
+			.Card(PendingWorldCard)
+			.OnBack(FSimpleDelegate::CreateSP(this, &SAPSMainMenuRoot::BackFromGeneration))
 			.OnContinue(FSimpleDelegate::CreateSP(this, &SAPSMainMenuRoot::ContinueAstronomicalGeneration)));
 		break;
 	case EAPSMenuPage::Civilization: ContentHost->SetContent(BuildCivilizationPage()); break;
@@ -2653,6 +2844,20 @@ namespace
 				LOCTEXT("NewWorldCivAction", "SET UP CIVILIZATION")};
 		}
 	}
+
+	/** Rio 13.10: with ORIGIN picked, the CIVILIZATION path leads to the origin's card, and the block says so. */
+	FNewWorldCopy NewWorldCopy(const EAPSNewWorldPath Path, const APSWorldRules::FRules& Rules)
+	{
+		FNewWorldCopy Copy = NewWorldCopy(Path);
+		if (Path == EAPSNewWorldPath::Civilization && Rules.Mode == APSWorldRules::EMode::Origin)
+		{
+			Copy.Kicker = LOCTEXT("NewWorldOriginKicker", "ORIGIN");
+			Copy.Title = LOCTEXT("NewWorldOriginTitle", "START WITH NOTHING");
+			Copy.Description = LOCTEXT("NewWorldOriginDesc", "A ready world and a story: the ark, the first ground, the first hull. Reach, knowledge and the stocks open step by step. Pick an origin, then open its card.");
+			Copy.Action = LOCTEXT("NewWorldOriginAction", "OPEN THE ORIGIN");
+		}
+		return Copy;
+	}
 }
 
 TSharedRef<SWidget> SAPSMainMenuRoot::BuildChoosePathPage()
@@ -2775,7 +2980,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildChoosePathPage()
 		.ButtonStyle(FAppStyle::Get(), "NoBorder")
 		.ContentPadding(0.0f)
 		.OnClicked(this, &SAPSMainMenuRoot::RunNewWorldPath)
-		.Visibility_Lambda([this]() { return NewWorldCopy(NewWorldPath).Action.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible; });
+		.Visibility_Lambda([this]() { return NewWorldCopy(NewWorldPath, APSWorldRules::Of(ViewModel.IsValid() ? ViewModel->GetGeneratedWorld() : nullptr)).Action.IsEmpty() ? EVisibility::Collapsed : EVisibility::Visible; });
 	const TWeakPtr<SButton> WeakAction = ActionButton;
 	ActionButton->SetContent(
 		SNew(SBox).HeightOverride(60.0f)
@@ -2798,7 +3003,7 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildChoosePathPage()
 				[
 					SNew(STextBlock).Font(APSMenu::Font("Bold", 16)).ColorAndOpacity(APSMenu::OnAction)
 					.RenderTransform(APSMenu::CapsShift("Bold", 16))
-					.Text_Lambda([this]() { return NewWorldCopy(NewWorldPath).Action; })
+					.Text_Lambda([this]() { return NewWorldCopy(NewWorldPath, APSWorldRules::Of(ViewModel.IsValid() ? ViewModel->GetGeneratedWorld() : nullptr)).Action; })
 				]
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(22.0f, 0.0f, 0.0f, 0.0f)
 				[
@@ -2818,17 +3023,17 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildChoosePathPage()
 			+ SVerticalBox::Slot().AutoHeight()
 			[
 				SNew(STextBlock).Font(KickerFont).ColorAndOpacity(APSMenu::Cyan)
-				.Text_Lambda([this]() { return NewWorldCopy(NewWorldPath).Kicker; })
+				.Text_Lambda([this]() { return NewWorldCopy(NewWorldPath, APSWorldRules::Of(ViewModel.IsValid() ? ViewModel->GetGeneratedWorld() : nullptr)).Kicker; })
 			]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 14.0f, 0.0f, 0.0f)
 			[
 				SNew(STextBlock).Font(APSMenu::Font("Bold", 44)).ColorAndOpacity(APSMenu::White).AutoWrapText(true)
-				.Text_Lambda([this]() { return NewWorldCopy(NewWorldPath).Title; })
+				.Text_Lambda([this]() { return NewWorldCopy(NewWorldPath, APSWorldRules::Of(ViewModel.IsValid() ? ViewModel->GetGeneratedWorld() : nullptr)).Title; })
 			]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 16.0f, 0.0f, 0.0f)
 			[
 				SNew(STextBlock).Font(APSMenu::Font("Regular", 18)).ColorAndOpacity(APSMenu::Readable).AutoWrapText(true)
-				.Text_Lambda([this]() { return NewWorldCopy(NewWorldPath).Description; })
+				.Text_Lambda([this]() { return NewWorldCopy(NewWorldPath, APSWorldRules::Of(ViewModel.IsValid() ? ViewModel->GetGeneratedWorld() : nullptr)).Description; })
 			]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 22.0f, 0.0f, 0.0f)
 			[
@@ -2957,6 +3162,13 @@ FReply SAPSMainMenuRoot::PickNewWorldPath(const EAPSNewWorldPath Path)
 
 FReply SAPSMainMenuRoot::RunNewWorldPath()
 {
+	// Rio 13.10: ORIGIN opens its card; SANDBOX and SPACE open the editor on a world that is no preset any more.
+	const APSWorldRules::FRules Rules = APSWorldRules::Of(ViewModel.IsValid() ? ViewModel->GetGeneratedWorld() : nullptr);
+	if (NewWorldPath == EAPSNewWorldPath::Civilization && Rules.Mode == APSWorldRules::EMode::Origin)
+	{
+		return OpenOriginCard(static_cast<uint8>(Rules.Origin == APSWorldRules::EOrigin::None ? APSWorldRules::EOrigin::Ark : Rules.Origin));
+	}
+	ClearWorldCard();
 	switch (NewWorldPath)
 	{
 	case EAPSNewWorldPath::SingleGame:
@@ -6435,7 +6647,8 @@ double SAPSMainMenuRoot::GetSurfaceControlValueForAutomation(
 void SAPSMainMenuRoot::ContinueAstronomicalGeneration()
 {
 	if (!ViewModel.IsValid()) return;
-	if (ViewModel->GetGenerationRoute() == EAPSGenerationRoute::Civilization)
+	// Rio 13.10: a card (an authored world, an origin) starts the world at once; the civilization page is the editor's.
+	if (ViewModel->GetGenerationRoute() == EAPSGenerationRoute::Civilization && !PendingWorldCard.IsValid())
 	{
 		Navigate(EAPSMenuPage::Civilization);
 	}

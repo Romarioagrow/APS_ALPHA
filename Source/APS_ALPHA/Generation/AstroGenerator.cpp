@@ -13401,7 +13401,9 @@ bool AAstroGenerator::ResolveSpawnLocation(const ASpaceship* NewHomeSpaceship, F
 	case ECharSpawnPlace::SpaceShip:
 		if (IsValid(NewHomeSpaceship))
 		{
-			CharSpawnLocation = NewHomeSpaceship->GetActorLocation();
+			// Rio 13.10 (ADRIFT fell from orbit): the hatch, not the hull's origin; the start sequence seats him from there.
+			const USceneComponent* Hatch = NewHomeSpaceship->PilotExitPoint;
+			CharSpawnLocation = IsValid(Hatch) ? Hatch->GetComponentLocation() : NewHomeSpaceship->GetActorLocation();
 			return true;
 		}
 		break;
@@ -14701,6 +14703,23 @@ bool AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> Start
 		// move produced a stale position and the old code then overwrote every
 		// START LOCATION choice with the Headquarters start point.
 		FVector SpawnLocation;
+		if (CharSpawnPlace == ECharSpawnPlace::MoonSurface && !ResolveSpawnLocation(NewHomeSpaceship, SpawnLocation))
+		{
+			// Rio 13.10 (UNDER THE RING fell from orbit): a moon start that finds no landing patch (no moon, no activated
+			// moon surface, no daylit ground) starts on the home world's ground instead of aborting the whole start, and
+			// the spawn parameters say so for everything that reads them later (the curtain, the colony, the journal).
+			CharSpawnPlace = ECharSpawnPlace::PlanetSurface;
+			if (UWorld* OwnerWorld = GetWorld())
+			{
+				const UGameInstance* GameInstance = OwnerWorld->GetGameInstance();
+				UMainGameplayInstance* GameplayInstance = GameInstance ? GameInstance->GetSubsystem<UMainGameplayInstance>() : nullptr;
+				if (GameplayInstance && GameplayInstance->SpawnParameters)
+				{
+					GameplayInstance->SpawnParameters->CharacterSpawnPlace = ECharSpawnPlace::PlanetSurface;
+				}
+			}
+			UE_LOG(LogTemp, Warning, TEXT("[APS.Civilization.SurfaceSpawn] moon start has no landing patch: the home world's surface instead"));
+		}
 		if (!ResolveSpawnLocation(NewHomeSpaceship, SpawnLocation))
 		{
 			const bool bRequiresWorldScapeSurface =

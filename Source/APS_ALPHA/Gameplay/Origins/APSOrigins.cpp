@@ -29,6 +29,10 @@ namespace APSOrigins
 				const uint8 Order[5] = {2, 0, 1, 3, 4};
 				FMemory::Memcpy(D.ResourceOrder, Order, sizeof(Order));
 				D.OnboardingRoute = TEXT("APS.Onboarding.Origin.Ark");
+				D.StartLine = LOCTEXT("ArkStart", "On the surface, at the grounded Ark: a ramp, a console, nothing else");
+				D.ShipLine = LOCTEXT("ArkShip", "None. The Ark never flies; the first hull is laid down at the launch yard");
+				D.WorldLine = LOCTEXT("ArkWorld", "A living world: breathable air, four planets, one moon");
+				D.StocksLine = LOCTEXT("ArkStocks", "Energy only. Metals, volatiles, research and influence open one by one");
 				Out.Add(D);
 			}
 			{
@@ -42,6 +46,10 @@ namespace APSOrigins
 				const uint8 Order[5] = {2, 1, 0, 3, 4};
 				FMemory::Memcpy(D.ResourceOrder, Order, sizeof(Order));
 				D.OnboardingRoute = TEXT("APS.Onboarding.Origin.Adrift");
+				D.StartLine = LOCTEXT("AdriftStart", "In the pilot's seat of a class S ship at the edge of an unknown system");
+				D.ShipLine = LOCTEXT("AdriftShip", "Yours from the first minute: a reactor at eleven percent and a dark cabin");
+				D.WorldLine = LOCTEXT("AdriftWorld", "Five worlds, none of them on record. One can be breathed on; find it");
+				D.StocksLine = LOCTEXT("AdriftStocks", "Energy only, and every flight burns it. Volatiles open first, then metals");
 				Out.Add(D);
 			}
 			{
@@ -51,10 +59,16 @@ namespace APSOrigins
 				D.Name = LOCTEXT("RingName", "UNDER THE RING");
 				D.Subtitle = LOCTEXT("RingSub", "A moon under a giant, and a ring that is not yours");
 				D.Description = LOCTEXT("RingDesc", "A moon under a giant, and over the horizon a ring that is not yours. Its tower has stairs the right size for you.");
-				D.StartPlace = ECharSpawnPlace::MoonSurface;
+				// Rio 13.10: the ground of the home world until the generator can put a colony on a moon of a giant (the
+				// moon start has no ground base and no landing patch yet, T-18); the preset's card says the same.
+				D.StartPlace = ECharSpawnPlace::PlanetSurface;
 				const uint8 Order[5] = {2, 1, 0, 3, 4};
 				FMemory::Memcpy(D.ResourceOrder, Order, sizeof(Order));
 				D.OnboardingRoute = TEXT("APS.Onboarding.Origin.Ring");
+				D.StartLine = LOCTEXT("RingStart", "On the surface of a tundra world, at the grounded Ark; the ring over the horizon is not yours");
+				D.ShipLine = LOCTEXT("RingShip", "None. The first hull is laid down at the launch yard, under three moons");
+				D.WorldLine = LOCTEXT("RingWorld", "A tundra world with three moons: a sky that never empties");
+				D.StocksLine = LOCTEXT("RingStocks", "Energy only. The giant gives volatiles first; metal comes from the moon");
 				Out.Add(D);
 			}
 			{
@@ -68,6 +82,10 @@ namespace APSOrigins
 				const uint8 Order[5] = {2, 1, 0, 3, 4};
 				FMemory::Memcpy(D.ResourceOrder, Order, sizeof(Order));
 				D.OnboardingRoute = TEXT("APS.Onboarding.Origin.Exodus");
+				D.StartLine = LOCTEXT("ExodusStart", "On the bridge of a generation ship between the galaxies");
+				D.ShipLine = LOCTEXT("ExodusShip", "The ship itself: a city with a drive, and a lander for the one world that breathes");
+				D.WorldLine = LOCTEXT("ExodusWorld", "None on record. Generations of scanning; one living world at the end of it");
+				D.StocksLine = LOCTEXT("ExodusStocks", "The ship's reserves, counted in years");
 				// Waits for the galaxy modes of the generator (concept §2.1, EXODUS dependencies).
 				D.bAvailable = false;
 				Out.Add(D);

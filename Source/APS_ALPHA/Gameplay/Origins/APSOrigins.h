@@ -27,6 +27,11 @@ namespace APSOrigins
 		uint8 ResourceOrder[5]{0, 1, 2, 3, 4};
 		/** Onboarding route id (UAPSQuestSubsystem); empty until the route exists. */
 		const TCHAR* OnboardingRoute{TEXT("")};
+		/** Rio 13.10, the ORIGIN card (WHERE YOU START): the place, the ship, the world, the stocks, one line each. */
+		FText StartLine;
+		FText ShipLine;
+		FText WorldLine;
+		FText StocksLine;
 		/** False while the origin's dependencies are missing (EXODUS waits for the galaxy modes). */
 		bool bAvailable{true};
 	};

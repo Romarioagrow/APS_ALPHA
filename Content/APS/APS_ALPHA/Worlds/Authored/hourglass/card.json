@@ -9,7 +9,7 @@
   "locks": ["all"],
   "origin": "ring",
   "route": "civilization",
-  "spawn": "MoonSurface",
+  "spawn": "PlanetSurface",
   "playable": true,
   "readiness": "the crystal world's look is untested"
 }

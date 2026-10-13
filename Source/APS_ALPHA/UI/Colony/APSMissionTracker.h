@@ -24,4 +24,7 @@ namespace APSMissionTracker
 	 * section, true shows OutTitle over OutBody. An empty function takes it out again (and never adds the card).
 	 */
 	APS_ALPHA_API void SetObjective(UWorld* World, TFunction<bool(FText& OutTitle, FText& OutBody)> Objective);
+	/** Rio 13.10 (the origin's story): a quest notice from outside the board, in the notices' own card and queue. */
+	APS_ALPHA_API void PushNotice(UWorld* World, const FText& Kicker, const FText& Title, const FText& Body, const FText& Next,
+		const FLinearColor& Accent);
 }

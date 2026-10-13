@@ -32,6 +32,9 @@
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationMaterializationSubsystem.h"
 #include "APS_ALPHA/Gameplay/Civilizations/Civilization.h"
 #include "APS_ALPHA/Gameplay/Ancients/APSAncients.h"
+#include "APS_ALPHA/Core/Model/APSWorldRules.h"
+#include "APS_ALPHA/Gameplay/Origins/APSOriginQuests.h"
+#include "APS_ALPHA/Gameplay/Origins/APSOrigins.h"
 #include "APS_ALPHA/Gameplay/Expansion/APSInfrastructure.h"
 #include "APS_ALPHA/Gameplay/Expansion/APSInfrastructureCatalog.h"
 #include "APS_ALPHA/Gameplay/Expansion/APSMissions.h"
@@ -301,6 +304,11 @@ namespace APSColonyUI
 		if (Category == TEXT("Start"))
 		{
 			return {EAPSChromeGlyph::Civilization, White(), LOCTEXT("JournalStart", "START")};
+		}
+		if (Category == TEXT("Origin"))
+		{
+			// Rio 13.10: the origin's story lines (the ORIGIN page holds the chain itself).
+			return {EAPSChromeGlyph::Civilization, Amber(), LOCTEXT("JournalOrigin", "ORIGIN")};
 		}
 		return {EAPSChromeGlyph::Recent, Muted(), FText::FromString(Category.ToString().ToUpper())};
 	}
@@ -595,10 +603,20 @@ void SAPSColonyTerminal::Construct(const FArguments& InArgs)
 							TabButton(EAPSChromeGlyph::Divisions, LOCTEXT("Divisions", "DIVISIONS"),
 								LOCTEXT("DivisionsDetails", "Exploration, industry, science, fleet"), ETab::Divisions)
 						]
-						+ SVerticalBox::Slot().AutoHeight()
+						+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 8.0f)
 						[
 							TabButton(EAPSChromeGlyph::Recent, LOCTEXT("Journal", "JOURNAL"),
 								LOCTEXT("JournalDetails", "What the civilization did"), ETab::Journal)
+						]
+						+ SVerticalBox::Slot().AutoHeight()
+						[
+							// Rio 13.10: the origin's story; only an ORIGIN world has one.
+							SNew(SBox)
+							.Visibility_Lambda([this]() { return APSWorldRules::IsLadder(World.Get()) ? EVisibility::Visible : EVisibility::Collapsed; })
+							[
+								TabButton(EAPSChromeGlyph::Civilization, LOCTEXT("OriginTab", "ORIGIN"),
+									LOCTEXT("OriginTabDetails", "The story so far, the step ahead"), ETab::Origin)
+							]
 						]
 					]
 				]
@@ -616,7 +634,8 @@ void SAPSColonyTerminal::Construct(const FArguments& InArgs)
 						+ SWidgetSwitcher::Slot()[BuildScheme()]
 						+ SWidgetSwitcher::Slot()[BuildPilot()]
 						+ SWidgetSwitcher::Slot()[BuildSurface()]
-						+ SWidgetSwitcher::Slot()[BuildStars()],
+						+ SWidgetSwitcher::Slot()[BuildStars()]
+						+ SWidgetSwitcher::Slot()[BuildOrigin()],
 						FMargin(22.0f, 18.0f), CyanDim())
 				]
 			]
@@ -1974,6 +1993,177 @@ TSharedRef<SWidget> SAPSColonyTerminal::BuildStars()
 		];
 }
 
+TSharedRef<SWidget> SAPSColonyTerminal::BuildOrigin()
+{
+	using namespace APSColonyUI;
+	return SNew(SScrollBox)
+		+ SScrollBox::Slot()
+		[
+			SAssignNew(OriginBox, SVerticalBox)
+		];
+}
+
+void SAPSColonyTerminal::RefreshOrigin(const bool bForce)
+{
+	using namespace APSColonyUI;
+	using namespace APSOriginQuests;
+	if (!OriginBox.IsValid())
+	{
+		return;
+	}
+	const FView V = View(World.Get());
+	const FString Signature = V.IsValid() ? FString::Printf(TEXT("%s|%d"), V.Chain->Key, V.Done) : TEXT("none");
+	if (!bForce && Signature == OriginSignature)
+	{
+		return;
+	}
+	OriginSignature = Signature;
+	OriginBox->ClearChildren();
+	if (!V.IsValid())
+	{
+		OriginBox->AddSlot().AutoHeight()
+		[
+			SNew(STextBlock).Text(LOCTEXT("OriginNone", "No origin story in this world. ORIGIN worlds (NEW WORLD, ORIGIN) tell one here."))
+			.Font(Font("Regular", 13)).ColorAndOpacity(Muted()).AutoWrapText(true)
+		];
+		return;
+	}
+	const FChain& Chain = *V.Chain;
+	const APSOrigins::FDefinition* Origin = APSOrigins::Find(Chain.Origin);
+	const FStep* Now = V.Current();
+	const int32 Rung = Now ? Now->Rung : 4;
+
+	// Header: ORIGIN · ARK · LANDING, and how far it got.
+	OriginBox->AddSlot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 14.0f)
+	[
+		SNew(SHorizontalBox)
+		+ SHorizontalBox::Slot().FillWidth(1.0f)
+		[
+			IconSectionHeading(EAPSChromeGlyph::Civilization,
+				FText::Format(LOCTEXT("OriginHeading", "ORIGIN  ·  {0}  ·  {1}"), Origin ? FText::FromString(FString(APSWorldRules::OriginName(Chain.Origin)).ToUpper()) : FText::GetEmpty(), Chain.Name),
+				Now ? Now->Title : LOCTEXT("OriginDoneTitle", "THE STORY IS TOLD"))
+		]
+		+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Bottom)
+		[
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right)
+			[SNew(STextBlock).Text(Now ? FText::Format(LOCTEXT("OriginProgress", "STEP {0} OF {1}"), FText::AsNumber(V.Done + 1), FText::AsNumber(Chain.Steps.Num()))
+				: LOCTEXT("OriginComplete", "COMPLETE")).Font(Font("Bold", 14)).ColorAndOpacity(White())]
+			+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Right)
+			[SNew(STextBlock).Text(FText::Format(LOCTEXT("OriginRung", "RUNG {0}  ·  {1}"), FText::AsNumber(Rung), RungName(Rung)))
+				.Font(Font("Bold", 10)).ColorAndOpacity(Muted())]
+		]
+	];
+
+	// The steps: done, the current one, the next two; the rest counted.
+	const TSharedRef<SVerticalBox> Steps = SNew(SVerticalBox);
+	int32 Hidden = 0;
+	for (int32 Index = 0; Index < Chain.Steps.Num(); ++Index)
+	{
+		const FStep& Step = Chain.Steps[Index];
+		const bool bDone = Index < V.Done;
+		const bool bNow = Index == V.Done;
+		const bool bNext = Index > V.Done && Index <= V.Done + 2;
+		if (!bDone && !bNow && !bNext)
+		{
+			++Hidden;
+			continue;
+		}
+		const FLinearColor Accent = bNow ? Amber() : bDone ? Cyan() : Muted();
+		const FText State = bDone ? LOCTEXT("StepDone", "DONE") : bNow ? LOCTEXT("StepNow", "ACTIVE")
+			: Index == V.Done + 1 ? LOCTEXT("StepNext", "NEXT") : FText::FromString(TEXT("\u2014"));
+		Steps->AddSlot().AutoHeight().Padding(0.0f, 0.0f, 0.0f, 6.0f)
+		[
+			ChamferPanel(
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(0.0f, 0.0f, 12.0f, 0.0f)
+				[SNew(SBox).WidthOverride(22.0f)[SNew(STextBlock).Text(FText::AsNumber(Index + 1)).Font(Font("Bold", 13)).ColorAndOpacity(Accent)]]
+				+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
+				[SNew(STextBlock).Text(Step.Title).Font(Font("Bold", 12)).ColorAndOpacity(bNow ? White() : bDone ? Muted() : Muted())]
+				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
+				[SNew(STextBlock).Text(State).Font(Font("Bold", 9)).ColorAndOpacity(Accent)],
+				FMargin(12.0f, 8.0f), bNow ? Amber() : CyanDim())
+		];
+	}
+	if (Hidden > 0)
+	{
+		Steps->AddSlot().AutoHeight().Padding(12.0f, 4.0f, 0.0f, 0.0f)
+		[
+			SNew(STextBlock).Text(FText::Format(LOCTEXT("StepsHidden", "\u2026 {0} more steps. The road beyond the rung is not written on the console."), FText::AsNumber(Hidden)))
+			.Font(Font("Regular", 11)).ColorAndOpacity(Muted()).AutoWrapText(true)
+		];
+	}
+
+	// The current step's card: the story, the objective, what it opens.
+	const TSharedRef<SVerticalBox> Card = SNew(SVerticalBox);
+	if (Now)
+	{
+		Card->AddSlot().AutoHeight()
+		[SNew(STextBlock).Text(FText::Format(LOCTEXT("CardKicker", "NOW  ·  STEP {0}"), FText::AsNumber(V.Done + 1))).Font(Font("Bold", 10)).ColorAndOpacity(Amber())];
+		Card->AddSlot().AutoHeight().Padding(0.0f, 6.0f, 0.0f, 0.0f)
+		[SNew(STextBlock).Text(Now->Title).Font(Font("Bold", 22)).ColorAndOpacity(White()).AutoWrapText(true)];
+		Card->AddSlot().AutoHeight().Padding(0.0f, 12.0f, 0.0f, 0.0f)
+		[SNew(STextBlock).Text(Now->Story).Font(Font("Regular", 14)).ColorAndOpacity(White()).AutoWrapText(true).LineHeightPercentage(1.3f)];
+		Card->AddSlot().AutoHeight().Padding(0.0f, 14.0f, 0.0f, 0.0f)
+		[
+			ChamferPanel(
+				SNew(SVerticalBox)
+				+ SVerticalBox::Slot().AutoHeight()
+				[SNew(STextBlock).Text(LOCTEXT("CardObjective", "OBJECTIVE")).Font(Font("Bold", 10)).ColorAndOpacity(Cyan())]
+				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 6.0f, 0.0f, 0.0f)
+				[SNew(STextBlock).Text(Now->Objective).Font(Font("Regular", 13)).ColorAndOpacity(White()).AutoWrapText(true)],
+				FMargin(14.0f, 10.0f), CyanDim())
+		];
+		if (!Now->Opens.IsEmpty())
+		{
+			Card->AddSlot().AutoHeight().Padding(0.0f, 12.0f, 0.0f, 0.0f)
+			[SNew(STextBlock).Text(FText::Format(LOCTEXT("CardOpens", "OPENS  {0}"), Now->Opens)).Font(Font("Bold", 11)).ColorAndOpacity(Muted())];
+		}
+	}
+	else
+	{
+		Card->AddSlot().AutoHeight()
+		[SNew(STextBlock).Text(LOCTEXT("CardComplete", "The origin's story is told. The ladder goes on: the system, the cluster, the galaxy; the Builders' road and the long fall are not written yet."))
+			.Font(Font("Regular", 14)).ColorAndOpacity(White()).AutoWrapText(true).LineHeightPercentage(1.3f)];
+	}
+
+	OriginBox->AddSlot().AutoHeight()
+	[
+		SNew(SHorizontalBox)
+		+ SHorizontalBox::Slot().FillWidth(0.46f).Padding(0.0f, 0.0f, 12.0f, 0.0f)[Steps]
+		+ SHorizontalBox::Slot().FillWidth(0.54f)[ChamferPanel(Card, FMargin(22.0f, 18.0f), Amber())]
+	];
+
+	// The ladder: five rungs, the open ones, the one in progress, what the rest need.
+	const TSharedRef<SHorizontalBox> Ladder = SNew(SHorizontalBox);
+	for (int32 R = 0; R <= 4; ++R)
+	{
+		bool bAnyLeft = false;
+		for (int32 Index = V.Done; Index < Chain.Steps.Num(); ++Index)
+		{
+			bAnyLeft |= Chain.Steps[Index].Rung == R;
+		}
+		const bool bRungDone = !bAnyLeft && R <= Rung;
+		const bool bRungNow = Now && R == Rung;
+		const FText Needs = R == 1 ? LOCTEXT("RungNeeds1", "the fabrication bay") : R == 2 ? APSProgressionTokens::Title(APSProgressionTokens::Launch())
+			: R == 3 ? APSProgressionTokens::Title(APSProgressionTokens::StellarDrive()) : R == 4 ? APSProgressionTokens::Title(APSProgressionTokens::GalaxyHulls()) : FText::GetEmpty();
+		const FText Line = bRungDone ? LOCTEXT("RungDone", "done") : bRungNow ? LOCTEXT("RungNow", "in progress")
+			: FText::Format(LOCTEXT("RungNeeds", "needs {0}"), Needs);
+		Ladder->AddSlot().FillWidth(1.0f).Padding(R == 0 ? 0.0f : 6.0f, 0.0f, 0.0f, 0.0f)
+		[
+			ChamferPanel(
+				SNew(SVerticalBox)
+				+ SVerticalBox::Slot().AutoHeight()
+				[SNew(STextBlock).Text(FText::Format(LOCTEXT("RungTitle", "{0}  ·  {1}"), FText::AsNumber(R), RungName(R))).Font(Font("Bold", 10))
+					.ColorAndOpacity(bRungNow ? Amber() : bRungDone ? Cyan() : Muted())]
+				+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 3.0f, 0.0f, 0.0f)
+				[SNew(STextBlock).Text(Line).Font(Font("Regular", 10)).ColorAndOpacity(Muted()).AutoWrapText(true)],
+				FMargin(10.0f, 8.0f), bRungNow ? Amber() : bRungDone ? Cyan() : CyanDim())
+		];
+	}
+	OriginBox->AddSlot().AutoHeight().Padding(0.0f, 16.0f, 0.0f, 0.0f)[Ladder];
+}
+
 void SAPSColonyTerminal::OpenSchemeOf(AActor* Star)
 {
 	if (!Scheme.IsValid() || !Star)
@@ -3327,6 +3517,10 @@ FReply SAPSColonyTerminal::SelectTab(const ETab Tab)
 		RebuildShipyardCatalogue();
 		RefreshShipyard(true);
 	}
+	if (Tab == ETab::Origin)
+	{
+		RefreshOrigin(true);
+	}
 	return FReply::Handled();
 }
 
@@ -3410,7 +3604,7 @@ void SAPSColonyTerminal::Tick(const FGeometry& AllottedGeometry, const double In
 		}
 	}
 	if (ActiveTab != ETab::Colony && ActiveTab != ETab::Map && ActiveTab != ETab::Fleet && ActiveTab != ETab::Shipyard
-		&& ActiveTab != ETab::Scheme && ActiveTab != ETab::Surface)
+		&& ActiveTab != ETab::Scheme && ActiveTab != ETab::Surface && ActiveTab != ETab::Origin)
 	{
 		return;
 	}
@@ -3439,6 +3633,10 @@ void SAPSColonyTerminal::Tick(const FGeometry& AllottedGeometry, const double In
 		{
 			// Bodies do not change size; a slow re-read follows a newly selected system.
 			if (Scheme.IsValid()) Scheme->Refresh();
+		}
+		else if (ActiveTab == ETab::Origin)
+		{
+			RefreshOrigin(false);
 		}
 		else
 		{

@@ -1,0 +1,15 @@
+{
+  "id": "ring",
+  "order": 3,
+  "name": "UNDER THE RING",
+  "subtitle": "The ring",
+  "lore": "A tundra world under three moons, and over the horizon a ring that is not yours. Its tower has stairs the right size for you.",
+  "place": "TUNDRA WORLD   ·   THREE MOONS   ·   K STAR",
+  "tags": ["ORIGIN", "THREE MOONS", "THE RING"],
+  "locks": ["all"],
+  "origin": "ring",
+  "route": "civilization",
+  "spawn": "PlanetSurface",
+  "playable": true,
+  "readiness": "ready; the giant overhead and the moon start wait for the generator (moon of a giant)"
+}

@@ -2648,10 +2648,15 @@ void UWorldGenerationViewModel::CommitAndOpenLevel(FName LevelName)
 			SpawnParameters->SanitizeForGeneration();
 			if (!IsCharacterSpawnPlaceAvailable(static_cast<int32>(SpawnParameters->CharacterSpawnPlace)))
 			{
-				// The moons were removed after a lunar start was chosen: start at the headquarters instead of aborting
-				// the whole start in the level.
-				UE_LOG(LogTemp, Warning, TEXT("[APS.Civilization] lunar start without a moon: planet orbit at the headquarters"));
-				SpawnParameters->CharacterSpawnPlace = ECharSpawnPlace::PlanetOrbit;
+				// The moons were removed after a lunar start was chosen: start on the home world's ground instead of
+				// aborting the whole start in the level (Rio 13.10: a moon start without a moon fell from orbit); at the
+				// headquarters when that world has no surface either.
+				const APlanet* HomeWorld = ReadyPreviewGenerator->HomePlanet;
+				const bool bGround = SpawnParameters->CharacterSpawnPlace == ECharSpawnPlace::MoonSurface && IsValid(HomeWorld)
+					&& UAPSPlanetSurfaceProfileResolver::SupportsWorldScape(HomeWorld->PlanetType);
+				UE_LOG(LogTemp, Warning, TEXT("[APS.Civilization] lunar start without a moon: %s"),
+					bGround ? TEXT("the home world's surface") : TEXT("planet orbit at the headquarters"));
+				SpawnParameters->CharacterSpawnPlace = bGround ? ECharSpawnPlace::PlanetSurface : ECharSpawnPlace::PlanetOrbit;
 				SpawnParameters->StartStation = EAPSStartStation::Headquarters;
 			}
 			if (!APSCivilizationPilot::IsCertifiedClass(SpawnParameters->BP_CharacterClass))

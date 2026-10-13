@@ -21,6 +21,8 @@ namespace APSAuthoredWorldsLocal
 {
 	TArray<APSAuthoredWorlds::FCard> GCards;
 	bool bGScanned = false;
+	TArray<APSAuthoredWorlds::FCard> GOriginCards;
+	bool bGOriginsScanned = false;
 
 	/** Model fields never carried by a preset: transient preview actors and the sealed stellar dataset. */
 	const TCHAR* const SkippedKeys[] = {
@@ -128,11 +130,9 @@ namespace APSAuthoredWorldsLocal
 		return true;
 	}
 
-	void Scan()
+	void ScanRoot(const FString& Root, TArray<APSAuthoredWorlds::FCard>& OutCards, const TCHAR* What)
 	{
-		GCards.Reset();
-		bGScanned = true;
-		const FString Root = APSAuthoredWorlds::Root();
+		OutCards.Reset();
 		TArray<FString> Directories;
 		IFileManager::Get().FindFiles(Directories, *(Root / TEXT("*")), false, true);
 		TArray<TPair<int32, APSAuthoredWorlds::FCard>> Found;
@@ -155,9 +155,21 @@ namespace APSAuthoredWorldsLocal
 		});
 		for (TPair<int32, APSAuthoredWorlds::FCard>& Pair : Found)
 		{
-			GCards.Add(MoveTemp(Pair.Value));
+			OutCards.Add(MoveTemp(Pair.Value));
 		}
-		UE_LOG(LogTemp, Log, TEXT("[APS.Worlds] %d authored worlds under %s"), GCards.Num(), *Root);
+		UE_LOG(LogTemp, Log, TEXT("[APS.Worlds] %d %s under %s"), OutCards.Num(), What, *Root);
+	}
+
+	void Scan()
+	{
+		bGScanned = true;
+		ScanRoot(APSAuthoredWorlds::Root(), GCards, TEXT("authored worlds"));
+	}
+
+	void ScanOrigins()
+	{
+		bGOriginsScanned = true;
+		ScanRoot(APSAuthoredWorlds::OriginRoot(), GOriginCards, TEXT("origin presets"));
 	}
 
 	/** The menu's editable model: not a class default, not the committed copy owned by the gameplay instance. */
@@ -227,6 +239,30 @@ namespace APSAuthoredWorlds
 	const FCard* Find(const FString& Id)
 	{
 		return Catalogue().FindByPredicate([&Id](const FCard& Card) { return Card.Id.Equals(Id, ESearchCase::IgnoreCase); });
+	}
+
+	FString OriginRoot()
+	{
+		return FPaths::ConvertRelativePathToFull(FPaths::ProjectContentDir() / TEXT("APS/APS_ALPHA/Worlds/Origins"));
+	}
+
+	const TArray<FCard>& OriginCatalogue(const bool bRescan)
+	{
+		if (bRescan || !APSAuthoredWorldsLocal::bGOriginsScanned)
+		{
+			APSAuthoredWorldsLocal::ScanOrigins();
+		}
+		return APSAuthoredWorldsLocal::GOriginCards;
+	}
+
+	const FCard* FindOrigin(const FString& Key)
+	{
+		// "UnderTheRing" and "ring" name the same preset (APSAuthoredWorldsLocal::ParseOrigin's spellings).
+		const uint8 Wanted = APSAuthoredWorldsLocal::ParseOrigin(Key);
+		return OriginCatalogue().FindByPredicate([&Key, Wanted](const FCard& Card)
+		{
+			return Card.Id.Equals(Key, ESearchCase::IgnoreCase) || (Wanted != 0 && APSAuthoredWorldsLocal::ParseOrigin(Card.Id) == Wanted);
+		});
 	}
 
 	bool Apply(const FCard& Card, UGeneratedWorld& World, USpawnParameters* Spawn, FString* OutFailure)

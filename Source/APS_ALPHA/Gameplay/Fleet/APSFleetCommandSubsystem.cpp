@@ -8,6 +8,7 @@
 #include "APS_ALPHA/Core/Diagnostics/APSPerfProbe.h"
 #include "APS_ALPHA/Core/Diagnostics/APSSurfaceDiag.h"
 #include "APS_ALPHA/UI/Colony/APSMissionTracker.h"
+#include "APS_ALPHA/Gameplay/Origins/APSOriginQuests.h"
 #include "APS_ALPHA/Gameplay/Trips/APSSpaceTrips.h"
 #include "APS_ALPHA/Gameplay/Vehicles/APSGroundVehicles.h"
 #include "Engine/World.h"
@@ -85,6 +86,11 @@ void UAPSFleetCommandSubsystem::Tick(const float DeltaTime)
 		// Rio 09.10 (T-20): the SPACE TRIPS guide; asleep in every world with civilization goals.
 		TRACE_CPUPROFILER_EVENT_SCOPE(APS_Fleet_SpaceTrips);
 		APSSpaceTrips::Tick(GetWorld(), DeltaTime);
+	}
+	{
+		// Rio 13.10: the origin's story chain; asleep outside the ladder.
+		TRACE_CPUPROFILER_EVENT_SCOPE(APS_Fleet_OriginStory);
+		APSOriginQuests::Tick(GetWorld(), DeltaTime);
 	}
 	{
 		TRACE_CPUPROFILER_EVENT_SCOPE(APS_Fleet_SurfaceDiagAndTracker);
