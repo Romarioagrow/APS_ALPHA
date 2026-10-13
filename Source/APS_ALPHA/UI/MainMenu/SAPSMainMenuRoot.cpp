@@ -2450,6 +2450,8 @@ void SAPSMainMenuRoot::Navigate(EAPSMenuPage NewPage)
 		// a queued edit can rebuild it and move the camera underneath Civilization
 		// or the newly visible menu page.
 		ViewModel->CancelPendingPreview();
+		ViewModel->CancelPendingTravel();
+		bCivilizationCommitTried = false;
 	}
 	if (CurrentPage == EAPSMenuPage::ExistingWorlds && NewPage != EAPSMenuPage::ExistingWorlds)
 	{
@@ -2461,7 +2463,13 @@ void SAPSMainMenuRoot::Navigate(EAPSMenuPage NewPage)
 		PendingBulkDelete.Reset();
 		WorldFilterAnchors.Reset();
 	}
-	PreviousPage = CurrentPage;
+	// APS DEV 14.10 (audit): PROFILE and SETTINGS remember the page they were opened from, not each other, so BACK does not
+	// bounce between them for ever.
+	const auto IsSidePage = [](const EAPSMenuPage Page) { return Page == EAPSMenuPage::Profile || Page == EAPSMenuPage::Settings; };
+	if (!(IsSidePage(NewPage) && IsSidePage(CurrentPage)))
+	{
+		PreviousPage = CurrentPage;
+	}
 	CurrentPage = NewPage;
 	if (CurrentPage != EAPSMenuPage::Landing && IsSplashVisible())
 	{
@@ -5757,7 +5765,8 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 	DiscoverSpawnClassOptions();
 	bSpawnPickerOpen = false;
 	const TWeakObjectPtr<UWorldGenerationViewModel> VM = ViewModel;
-	CivilizationEditorSection = FMath::Clamp(CivilizationEditorSection, 0, 3);
+	// APS DEV 14.10 (audit): five sections (identity, manifest, divisions, start, ground); the clamp hid GROUND.
+	CivilizationEditorSection = FMath::Clamp(CivilizationEditorSection, 0, 4);
 
 	const auto EnumControl = [this](const FText& Label, const UEnum* Enum,
 		TFunction<int32()> Getter, TFunction<void(int32)> Setter, TFunction<bool(int32)> IsAvailable = nullptr)
@@ -6401,6 +6410,17 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildCivilizationPage()
 					]
 				]
 			]
+		]
+		// APS DEV 14.10 (audit): what the commit said (a refusal, the start's progress) under the button, not only in the log.
+		+ SVerticalBox::Slot().AutoHeight().HAlign(HAlign_Center).Padding(24.0f, 0.0f, 24.0f, 16.0f)
+		[
+			SNew(STextBlock)
+			.Text_Lambda([this]() { return ViewModel.IsValid() ? ViewModel->PreviewStatus : FText::GetEmpty(); })
+			.Visibility_Lambda([this]()
+			{
+				return bCivilizationCommitTried && ViewModel.IsValid() && !ViewModel->PreviewStatus.IsEmpty() ? EVisibility::Visible : EVisibility::Collapsed;
+			})
+			.Justification(ETextJustify::Center).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::White).AutoWrapText(true)
 		];
 
 	return SNew(SOverlay)
@@ -6877,7 +6897,13 @@ void SAPSMainMenuRoot::ContinueAstronomicalGeneration()
 FReply SAPSMainMenuRoot::OpenCivilization() { Navigate(EAPSMenuPage::Civilization); return FReply::Handled(); }
 FReply SAPSMainMenuRoot::OpenProfile() { Navigate(EAPSMenuPage::Profile); return FReply::Handled(); }
 FReply SAPSMainMenuRoot::OpenSettings() { Navigate(EAPSMenuPage::Settings); return FReply::Handled(); }
-FReply SAPSMainMenuRoot::CommitCivilization() { if (ViewModel.IsValid()) ViewModel->CommitAndOpenLevel(); return FReply::Handled(); }
+FReply SAPSMainMenuRoot::CommitCivilization()
+{
+	// APS DEV 14.10 (audit): a refused commit (a gas giant home, no surface) only went to the log; its status shows now.
+	bCivilizationCommitTried = true;
+	if (ViewModel.IsValid()) ViewModel->CommitAndOpenLevel();
+	return FReply::Handled();
+}
 FReply SAPSMainMenuRoot::ContinueExistingWorld() { if (SelectedWorld.IsValid()) if (AMainMenuController* PC = Controller.Get()) PC->LoadWorldSlot(SelectedWorld->SaveFileName); return FReply::Handled(); }
 FReply SAPSMainMenuRoot::SelectExistingWorld(TSharedPtr<FAPSExistingWorldEntry> Entry) { SelectedWorld = Entry; WorldBrowserNotice = FText::GetEmpty(); RebuildExistingWorldDetails(); return FReply::Handled(); }
 FReply SAPSMainMenuRoot::QuitGame() { if (AMainMenuController* PC = Controller.Get()) UKismetSystemLibrary::QuitGame(PC, PC, EQuitPreference::Quit, false); return FReply::Handled(); }

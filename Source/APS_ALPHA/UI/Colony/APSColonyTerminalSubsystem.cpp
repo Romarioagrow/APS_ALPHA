@@ -217,9 +217,10 @@ void UAPSColonyTerminalSubsystem::ToggleTerminal()
 	}
 
 	Controller->bShowMouseCursor = true;
-	FInputModeGameAndUI InputMode;
+	// APS DEV 14.10 (audit: a drag on the terminal turned the ship, F left the seat): the game gets no input while the
+	// terminal is up; its own hot keys (Tab, K, F10, Esc) are handled by the widget. CloseTerminal gives the game back.
+	FInputModeUIOnly InputMode;
 	InputMode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-	InputMode.SetHideCursorDuringCapture(false);
 	InputMode.SetWidgetToFocus(TerminalWidget);
 	Controller->SetInputMode(InputMode);
 	UE_LOG(LogTemp, Log, TEXT("[APS.Colony.Terminal] opened"));

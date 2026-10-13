@@ -44,10 +44,15 @@ namespace APSSpaceTripsLocal
 		TEXT("folds the distance: the ship is set at the system's edge, as aps.Stars.Visit does. 0: never."));
 	TAutoConsoleVariable<int32> CVarWorldsPerStop(TEXT("aps.Trip.WorldsPerStop"), 3,
 		TEXT("How many worlds of a foreign star system a route shows (the home system shows all)."));
+	TAutoConsoleVariable<float> CVarResumeAfterSeconds(TEXT("aps.Trip.ResumeAfterSeconds"), 6.0f,
+		TEXT("A route the pilot's hand paused goes on by itself once the pilot sits with the engine on, no course of their ")
+		TEXT("own, and the helm still for this many seconds. 0: aps.Trip.Resume only (aps.Trip.Pause always waits for it)."));
 
 	const FName GuideCategory(TEXT("Guide"));
 	constexpr double LightYearCm = 9.4607e17;
 	constexpr float AutoStartGraceSeconds = 6.0f;
+	/** The helm counts as still while the nose turns less than this between looks, degrees (a drifting hull wobbles). */
+	constexpr float HelmStillDegrees = 1.5f;
 	constexpr float ArrivingTimeoutSeconds = 60.0f;
 	constexpr double HelmTurnDegrees = 2.0;
 
@@ -464,7 +469,7 @@ void APSSpaceTrips::FTrip::Stop(const FText& Why)
 	Guide(FText::Format(LOCTEXT("Stopped", "The guide steps back: {0}. The helm is yours."), Why));
 }
 
-void APSSpaceTrips::FTrip::Pause(const FText& Why)
+void APSSpaceTrips::FTrip::Pause(const FText& Why, const bool bByHand)
 {
 	if (Phase == EPhase::Idle || Phase == EPhase::Done || Phase == EPhase::Paused)
 	{
@@ -473,7 +478,15 @@ void APSSpaceTrips::FTrip::Pause(const FText& Why)
 	PausedFrom = Phase == EPhase::Hold ? EPhase::WorldLeg : Phase;
 	Phase = EPhase::Paused;
 	PhaseSeconds = 0.0f;
-	Guide(FText::Format(LOCTEXT("Paused", "{0} aps.Trip.Resume brings the guide back, aps.Trip.Next moves on."), Why));
+	bPausedByHand = bByHand;
+	HelmStillSeconds = 0.0f;
+	if (const ASpaceship* Ship = PilotShip())
+	{
+		HelmStillRotation = Ship->GetActorQuat();
+	}
+	Guide(bByHand || APSSpaceTripsLocal::CVarResumeAfterSeconds.GetValueOnGameThread() <= 0.0f
+		? FText::Format(LOCTEXT("Paused", "{0} aps.Trip.Resume brings the guide back, aps.Trip.Next moves on."), Why)
+		: FText::Format(LOCTEXT("PausedForAWhile", "{0} Leave the helm still a few seconds and the guide takes it back; aps.Trip.Next moves on."), Why));
 }
 
 void APSSpaceTrips::FTrip::Resume()
@@ -535,6 +548,38 @@ void APSSpaceTrips::FTrip::Photo(const FString& Name)
 	Guide(FText::Format(LOCTEXT("Photo", "A still of the view, without the instruments: {0}"), FText::FromString(File)));
 }
 
+void APSSpaceTrips::FTrip::TickPaused(ASpaceship* Ship, const float DeltaSeconds)
+{
+	using namespace APSSpaceTripsLocal;
+	// APS DEV 14.10 (audit): a pause the pilot's hand caused (the helm, a course of their own, the seat left) ends by
+	// itself: the pilot sits with the engine on, no autopilot of their own, and the helm has been still for a while.
+	// aps.Trip.Pause is a wish: it waits for aps.Trip.Resume.
+	const float After = CVarResumeAfterSeconds.GetValueOnGameThread();
+	if (bPausedByHand || After <= 0.0f || !Ship || !Ship->FlightModel || !Ship->GetEngineRunning()
+		|| Ship->FlightModel->IsAutopilotEngaged())
+	{
+		HelmStillSeconds = 0.0f;
+		if (Ship)
+		{
+			HelmStillRotation = Ship->GetActorQuat();
+		}
+		return;
+	}
+	const FQuat Now = Ship->GetActorQuat();
+	if (Now.AngularDistance(HelmStillRotation) > FMath::DegreesToRadians(HelmStillDegrees))
+	{
+		HelmStillSeconds = 0.0f;
+		HelmStillRotation = Now;
+		return;
+	}
+	HelmStillSeconds += DeltaSeconds;
+	if (HelmStillSeconds >= After)
+	{
+		HelmStillSeconds = 0.0f;
+		Resume();
+	}
+}
+
 void APSSpaceTrips::FTrip::Tick(const float DeltaSeconds)
 {
 	using namespace APSSpaceTripsLocal;
@@ -563,7 +608,12 @@ void APSSpaceTrips::FTrip::Tick(const float DeltaSeconds)
 		}
 		return;
 	}
-	if (Phase == EPhase::Idle || Phase == EPhase::Done || Phase == EPhase::Paused)
+	if (Phase == EPhase::Paused)
+	{
+		TickPaused(Ship, DeltaSeconds);
+		return;
+	}
+	if (Phase == EPhase::Idle || Phase == EPhase::Done)
 	{
 		return;
 	}
@@ -627,10 +677,12 @@ void APSSpaceTrips::FTrip::BeginStop(ASpaceship& Ship)
 	const FAPSStarSystems* Stars = APSStarSystemsFind(World.Get());
 	const FAPSStarSystemInfo* Info = Stars ? Stars->Get(Stop.SystemIndex) : nullptr;
 	const bool bHome = !Info || Info->bHome;
-	const bool bInside = Stars && Info && Stars->FindContaining(Ship.GetActorLocation()) == Stop.SystemIndex;
+	// APS DEV 14.10: the catalogue's places are the sky's (the world place plus the sky offset), as the fleet measures them.
+	const FVector SkyOffset = UAPSWorldOriginSubsystem::SkyOffsetOf(World.Get());
+	const bool bInside = Stars && Info && Stars->FindContaining(Ship.GetActorLocation() + SkyOffset) == Stop.SystemIndex;
 	Guide(FText::Format(LOCTEXT("StopBegin", "STOP {0} of {1}: {2}{3}"), FText::AsNumber(StopIndex + 1), FText::AsNumber(Route.Stops.Num()),
 		FText::FromString(Stop.Name), Info && !bInside && !bHome
-			? FText::Format(LOCTEXT("StopAway", ", {0} away."), DistanceText(FVector::Dist(Ship.GetActorLocation(), Info->Location)))
+			? FText::Format(LOCTEXT("StopAway", ", {0} away."), DistanceText(FVector::Dist(Ship.GetActorLocation() + SkyOffset, Info->Location)))
 			: LOCTEXT("StopHere", ".")));
 	if (bHome || bInside)
 	{
@@ -668,7 +720,8 @@ void APSSpaceTrips::FTrip::TickStarLeg(ASpaceship& Ship, const float DeltaSecond
 		BeginStop(Ship);
 		return;
 	}
-	const FVector ShipLocation = Ship.GetActorLocation();
+	// The catalogue's places are the sky's: the ship's place is read in the same frame (APS DEV 14.10).
+	const FVector ShipLocation = Ship.GetActorLocation() + UAPSWorldOriginSubsystem::SkyOffsetOf(World.Get());
 	// There: inside the system's room (the drive drops by itself on entering it).
 	if (Stars->FindContaining(ShipLocation) == Stop.SystemIndex)
 	{
@@ -1048,7 +1101,7 @@ namespace APSSpaceTripsLocal
 		TEXT("The guide lets go of the helm; aps.Trip.Resume gives it back."),
 		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>&, UWorld* World)
 		{
-			if (FTrip* Trip = TripFor(World, false)) Trip->Pause(LOCTEXT("PausedByHand", "The helm is yours."));
+			if (FTrip* Trip = TripFor(World, false)) Trip->Pause(LOCTEXT("PausedByHand", "The helm is yours."), true);
 		}));
 
 	FAutoConsoleCommandWithWorldAndArgs ResumeCommand(TEXT("aps.Trip.Resume"),

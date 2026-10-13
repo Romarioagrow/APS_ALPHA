@@ -345,19 +345,26 @@ void SAPSShipHud::RebuildNearest()
 				]
 				+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
 				[
-					SNew(STextBlock).Font(APSHud::TextFont(12, TEXT("SemiBold"))).OverflowPolicy(ETextOverflowPolicy::Ellipsis)
-					.ColorAndOpacity_Lambda([Picked]() { return FSlateColor(Picked() ? P().Text : P().TextSoft); })
-					.Text_Lambda([Contact]()
-					{
-						const FShipNavigationContact* Current = Contact();
-						return Current ? FText::FromString(Current->DisplayName) : FText::GetEmpty();
-					})
-				]
-				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(8.0f, 0.0f)
-				[
-					SNew(SBox).WidthOverride(74.0f)
+					// Rio 14.10 (screenshot: "UNKNOWN STRI"): the name on its own line, the type and distance under it.
+					SNew(SVerticalBox)
+					+ SVerticalBox::Slot().AutoHeight()
 					[
-						SNew(STextBlock).Font(APSHud::TextFont(11)).OverflowPolicy(ETextOverflowPolicy::Ellipsis)
+						SNew(STextBlock).Font(APSHud::TextFont(12, TEXT("SemiBold"))).OverflowPolicy(ETextOverflowPolicy::Ellipsis)
+						.ColorAndOpacity_Lambda([Picked]() { return FSlateColor(Picked() ? P().Text : P().TextSoft); })
+						.Text_Lambda([Contact]()
+						{
+							const FShipNavigationContact* Current = Contact();
+							return Current ? FText::FromString(Current->DisplayName) : FText::GetEmpty();
+						})
+						.ToolTipText_Lambda([Contact]()
+						{
+							const FShipNavigationContact* Current = Contact();
+							return Current ? FText::FromString(Current->DisplayName) : FText::GetEmpty();
+						})
+					]
+					+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 1.0f, 0.0f, 0.0f)
+					[
+						SNew(STextBlock).Font(APSHud::TextFont(10)).OverflowPolicy(ETextOverflowPolicy::Ellipsis)
 						.ColorAndOpacity(Colour([]() { return P().TextQuiet; }))
 						.Text_Lambda([Contact]()
 						{
@@ -371,19 +378,10 @@ void SAPSShipHud::RebuildNearest()
 							{
 								Type[0] = FChar::ToUpper(Type[0]);
 							}
-							return FText::FromString(Type);
+							return FText::FromString(FString::Printf(TEXT("%s  \u00b7  %s"), *Type,
+								*UShipNavigationComponent::FormatDistance(Current->DistanceCentimeters)));
 						})
 					]
-				]
-				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
-				[
-					SNew(STextBlock).Font(APSHud::ValueFont(11)).ColorAndOpacity(Colour([]() { return P().Text; }))
-					.Text_Lambda([Contact]()
-					{
-						const FShipNavigationContact* Current = Contact();
-						return Current ? FText::FromString(UShipNavigationComponent::FormatDistance(Current->DistanceCentimeters))
-							: FText::GetEmpty();
-					})
 				]
 			]
 		];

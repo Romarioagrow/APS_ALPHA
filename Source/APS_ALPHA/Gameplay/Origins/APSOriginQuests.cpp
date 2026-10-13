@@ -4,6 +4,7 @@
 #include "APS_ALPHA/Actors/Astro/PlanetaryBody.h"
 #include "APS_ALPHA/Actors/Astro/Star.h"
 #include "APS_ALPHA/Actors/Tech/Colony.h"
+#include "APS_ALPHA/Core/Instances/MainGameplayInstance.h"
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationJournalSubsystem.h"
 #include "APS_ALPHA/Gameplay/Colony/APSColonyConstructionSubsystem.h"
 #include "APS_ALPHA/Gameplay/Expansion/APSInfrastructure.h"
@@ -325,8 +326,9 @@ namespace APSOriginQuestsLocal
 			return AncientsChainOnBoard(Board, Step.Param);
 		case ETrigger::ShipsLaunched:
 		{
+			// The saved tally (LaunchedCount is not saved: a loaded game would wait for a hull it already has).
 			const FAPSFleetCommand* Fleet = APSFleetFind(World);
-			return Fleet && Fleet->GetLaunchedCount() >= FMath::RoundToInt(Step.Number);
+			return Fleet && Fleet->GetWorkTally().Launched >= FMath::RoundToInt(Step.Number);
 		}
 		case ETrigger::InShipAboveKm:
 			return Pawn && Pawn->IsA<ASpaceship>() && HeightOverHomeKm(World, Pawn) >= Step.Number;
@@ -416,7 +418,9 @@ const APSOriginQuests::FChain* APSOriginQuests::ChainOf(const APSWorldRules::EOr
 
 FName APSOriginQuests::StepToken(const FChain& Chain, const int32 Index)
 {
-	return FName(*FString::Printf(TEXT("ORIGIN_%s_%d"), Chain.Key, Index + 1));
+	// By the step's id, not its number: a chain edited later keeps the progress of older saves.
+	const TCHAR* Id = Chain.Steps.IsValidIndex(Index) ? Chain.Steps[Index].Id : TEXT("");
+	return FName(*FString::Printf(TEXT("ORIGIN_%s_%s"), Chain.Key, Id));
 }
 
 FText APSOriginQuests::RungName(const int32 Rung)
@@ -455,6 +459,13 @@ void APSOriginQuests::Tick(UWorld* World, const float DeltaSeconds)
 {
 	using namespace APSOriginQuestsLocal;
 	if (!World || !World->IsGameWorld() || CVarStory.GetValueOnGameThread() == 0 || !APSWorldRules::IsLadder(World))
+	{
+		return;
+	}
+	// APS DEV 14.10 (audit): a load replays the saved world first; the story waits for it, else it told STEP 1 again.
+	const UGameInstance* GameInstance = World->GetGameInstance();
+	const UMainGameplayInstance* Gameplay = GameInstance ? GameInstance->GetSubsystem<UMainGameplayInstance>() : nullptr;
+	if (Gameplay && Gameplay->bPendingSavedWorldReplay)
 	{
 		return;
 	}

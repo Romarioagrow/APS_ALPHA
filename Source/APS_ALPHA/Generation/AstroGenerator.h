@@ -1,5 +1,5 @@
 #pragma once
-
+#include "UObject/StrongObjectPtr.h"
 #include "StarSystemGenerator.h"
 #include "StarClusterGenerator.h"
 #include "GalaxyGenerator.h"
@@ -758,6 +758,13 @@ protected:
 	TObjectPtr<UMaterialInterface> PreviewLavaBaseMaterial{nullptr};
 	bool bPreviewMaterialPSOPrecacheRequested{false};
 	/**
+	 * APS DEV 14.10 (audit: Flush Async Loading 113 ms on a click): the shared templates the warm-up loads are held
+	 * here, else the garbage collector let them go and the next click loaded them again, synchronously.
+	 */
+	TArray<TStrongObjectPtr<UMaterialInterface>> PreviewSharedMaterialHold;
+	/** Keeps a loaded preview material for the generator's life (the hold above); null is ignored. */
+	void HoldPreviewMaterial(UMaterialInterface* Material);
+	/**
 	 * Stable reference for the current non-stellar system layout, expressed in
 	 * AstroGenerator-root space.  The disposable preview root is uniformly scaled
 	 * when a full-scale hierarchy is normalized; keeping this value in world space
@@ -875,7 +882,7 @@ protected:
 
 	void GenerateStarSystemByModel();
 
-	void ShowPlanetsList(TArray<TSharedPtr<FPlanetData>> PlanetDataMap);
+	void ShowPlanetsList(const TArray<TSharedPtr<FPlanetData>>& PlanetDataMap);
 
 	void SpawnMoons(UWorld* World, APlanet* Planet, int32 NumberOfMoons);
 

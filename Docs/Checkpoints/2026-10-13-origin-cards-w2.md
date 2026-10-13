@@ -73,3 +73,23 @@ Claude (сессия «Аналитика»), 13.10 22:49 → ночь. Ветк
 `content` = `dev-3-stabilization` 98acd1ad7 + мои коммиты; вливать fast-forward/merge в `dev-3-stabilization` в окно без
 сборки (мои файлы не пересекаются с незакоммиченными файлами APS DEV: `APSPlanetEnvironmentStreamingSubsystem.cpp`,
 `PlanetarySurfaceGeneratorStreaming.cpp`). Сборка 0.6.5-alpha — APS DEV.
+
+## 14.10 — аудит 0.6.5.1 (APS DEV по плейтесту Rio), ветка `content`
+
+Два коммита поверх 076e6110d, только код + cl-check (UE у APS DEV): `8039a1d2e` (набор 1: пункты 1–6, 8, 10, 13,
+часть 7) и `29325e0a0` (набор 2: остаток 7, 9, 11, 12, 14a/b/c). Подробности — в сообщениях коммитов.
+
+| Пункт | Суть | Не сделано / риск |
+|---|---|---|
+| 1–4 UI | перенос подписей терминала; имена схемы белые, обозначения Muted/Cyan, непрозрачная плашка; SET COURSE по выбору + фолбэк корабля; NEAREST в две строки | — |
+| 5–7 меню | Apply пресета сбрасывает модель (карты правок — UPROPERTY); CancelPendingTravel из Navigate; PreviousPage без зацикливания; GROUND доступен; статус коммита под GENERATE CIVILIZATION | — |
+| 8 терминал | UIOnly + Handled для всего необработанного | пауза/карта поверх терминала — не проверено в игре |
+| 9 SETTINGS | pending VIDEO до APPLY; RESTORE DEFAULTS гасит VSync и сохраняет; бейдж ACTIVE живой | — |
+| 10 объект | сигнатура кнопок без Detail | — |
+| 11 карта звёзд | `FindAnchor` (конец APSStarSystems.cpp); карточка спавнит якорь только при флоте; NEAREST — только известные/claimed/с заказом/курс (ShipNavigationComponent); YOU в sky-кадре, центр обновляется в UpdateLive | карточке всё ещё нужен актёр для PickShip/ETA; стратегическая карта не менялась |
+| 12 экскурсии | авто-продолжение паузы (`aps.Trip.ResumeAfterSeconds` 6 с), `aps.Trip.Pause` ждёт Resume; sky-кадр в FindContaining и направлении плеча | маршрут/индекс не сохраняются |
+| 13 сюжет | токены по Step.Id, ShipsLaunched по GetWorkTally, пропуск тика при повторе сейва | — |
+| 14 перф меню | hold shared-шаблонов (TStrongObjectPtr) + ранний выход; глобус ParallelFor по строкам; ShowPlanetsList под `aps.Preview.LogPlanets` | кросс-перегенерационный кэш прокси глобуса не сделан (нужен прогон) |
+
+Проверить после сборки: YOU и экскурсии в круизе (sky offset ≠ 0), NEAREST без якорей кликнутых звёзд, SETTINGS
+APPLY/BACK, тик и картинка глобуса превью (A/B), Flush Async Loading по клику в меню.

@@ -401,6 +401,7 @@ void SAPSSettingsPage::Construct(const FArguments& InArgs)
 		Resolutions.AddUnique(S->GetScreenResolution());
 	}
 	Resolutions.Sort([](const FIntPoint& A, const FIntPoint& B) { return A.X != B.X ? A.X < B.X : A.Y < B.Y; });
+	ReadPendingVideo();
 
 	const TSharedRef<SVerticalBox> Tabs = SNew(SVerticalBox);
 	const auto AddTab = [this, &Tabs](const EAPSSettingsTab Tab, const FText& Label, const FText& Hint)
@@ -516,30 +517,25 @@ TSharedRef<SWidget> SAPSSettingsPage::BuildTabButton(const EAPSSettingsTab Tab, 
 TSharedRef<SWidget> SAPSSettingsPage::BuildVideoTab()
 {
 	using namespace APSSettingsUI;
+	// APS DEV 14.10 (audit): the chips show and change the pending choices; UGameUserSettings is written by APPLY only.
 	const auto ModeChip = [this](const FText& Label, const EWindowMode::Type Mode)
 	{
 		return Chip(Label,
-			[Mode]() { const UGameUserSettings* S = Settings(); return S && S->GetFullscreenMode() == Mode; },
+			[this, Mode]() { return PendingMode == Mode; },
 			[this, Mode]()
 			{
-				if (UGameUserSettings* S = Settings())
-				{
-					S->SetFullscreenMode(Mode);
-					bVideoDirty = true;
-				}
+				PendingMode = Mode;
+				bVideoDirty = true;
 			}, 120.0f);
 	};
 	const auto VSyncChip = [this](const FText& Label, const bool bOn)
 	{
 		return Chip(Label,
-			[bOn]() { const UGameUserSettings* S = Settings(); return S && S->IsVSyncEnabled() == bOn; },
+			[this, bOn]() { return bPendingVSync == bOn; },
 			[this, bOn]()
 			{
-				if (UGameUserSettings* S = Settings())
-				{
-					S->SetVSyncEnabled(bOn);
-					bVideoDirty = true;
-				}
+				bPendingVSync = bOn;
+				bVideoDirty = true;
 			}, 84.0f);
 	};
 
@@ -565,9 +561,7 @@ TSharedRef<SWidget> SAPSSettingsPage::BuildVideoTab()
 				Row(LOCTEXT("Resolution", "RESOLUTION"), LOCTEXT("ResolutionHint", "The size of the rendered image. Borderless always uses the desktop size, so picking a resolution switches to FULLSCREEN."),
 					Stepper([this]()
 						{
-							const UGameUserSettings* S = Settings();
-							const FIntPoint Size = S ? S->GetScreenResolution() : FIntPoint::ZeroValue;
-							return FText::FromString(FString::Printf(TEXT("%d x %d"), Size.X, Size.Y));
+							return FText::FromString(FString::Printf(TEXT("%d x %d"), PendingResolution.X, PendingResolution.Y));
 						},
 						[this](const int32 Delta) { StepResolution(Delta); },
 						[this](const int32 Delta)
@@ -579,10 +573,9 @@ TSharedRef<SWidget> SAPSSettingsPage::BuildVideoTab()
 			+ SVerticalBox::Slot().AutoHeight()
 			[
 				Row(LOCTEXT("FrameRate", "FRAME RATE LIMIT"), LOCTEXT("FrameRateHint", "A cap saves power and heat; UNLIMITED lets the GPU run free."),
-					Stepper([]()
+					Stepper([this]()
 						{
-							const UGameUserSettings* S = Settings();
-							const float Limit = S ? S->GetFrameRateLimit() : 0.0f;
+							const float Limit = PendingFrameRateLimit;
 							return Limit <= 0.0f ? LOCTEXT("Unlimited", "UNLIMITED")
 								: FText::Format(LOCTEXT("FrameRateValue", "{0} FPS"), FText::AsNumber(FMath::RoundToInt(Limit)));
 						},
@@ -856,9 +849,12 @@ TSharedRef<SWidget> SAPSSettingsPage::BuildThemeCard(const EAPSUITheme Theme)
 				[SNew(STextBlock).Text(APSUITheme::DisplayName(Theme)).Font(Display(18)).ColorAndOpacity_Lambda([]() { return FSlateColor(P().Text); })]
 				+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 				[
-					SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush")).BorderBackgroundColor(P().Action)
-					.Padding(FMargin(8.0f, 3.0f)).Visibility(bActive ? EVisibility::Visible : EVisibility::Collapsed)
-					[SNew(STextBlock).Text(LOCTEXT("ActiveTag", "ACTIVE")).Font(Display(10)).ColorAndOpacity(P().OnAction)]
+					// APS DEV 14.10 (audit): the badge follows the current theme, not the theme of the card's build.
+					SNew(SBorder).BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+					.BorderBackgroundColor_Lambda([]() { return FSlateColor(P().Action); })
+					.Padding(FMargin(8.0f, 3.0f))
+					.Visibility_Lambda([Theme]() { return APSUITheme::Current() == Theme ? EVisibility::Visible : EVisibility::Collapsed; })
+					[SNew(STextBlock).Text(LOCTEXT("ActiveTag", "ACTIVE")).Font(Display(10)).ColorAndOpacity_Lambda([]() { return FSlateColor(P().OnAction); })]
 				]
 			]
 			+ SVerticalBox::Slot().AutoHeight().Padding(0.0f, 14.0f, 0.0f, 0.0f)[Preview]
@@ -871,7 +867,7 @@ TSharedRef<SWidget> SAPSSettingsPage::BuildThemeCard(const EAPSUITheme Theme)
 		+ SOverlay::Slot()
 		[
 			SNew(SAPSChamferedFrame).Thickness(bActive ? 2.0f : 1.0f)
-			.Color_Lambda([bActive, Lit]() { return bActive ? P().Action : Lit() ? P().Highlight : P().Frame; })
+			.Color_Lambda([Theme, Lit]() { return APSUITheme::Current() == Theme ? P().Action : Lit() ? P().Highlight : P().Frame; })
 		]);
 	return Button;
 }
@@ -919,16 +915,26 @@ void SAPSSettingsPage::SelectTab(const EAPSSettingsTab Tab)
 	OnTabChanged.ExecuteIfBound(Tab);
 }
 
+void SAPSSettingsPage::ReadPendingVideo()
+{
+	if (const UGameUserSettings* S = APSSettingsUI::Settings())
+	{
+		PendingMode = S->GetFullscreenMode();
+		PendingResolution = S->GetScreenResolution();
+		PendingFrameRateLimit = S->GetFrameRateLimit();
+		bPendingVSync = S->IsVSyncEnabled();
+	}
+	bVideoDirty = false;
+}
+
 int32 SAPSSettingsPage::ResolutionIndex() const
 {
-	const UGameUserSettings* S = APSSettingsUI::Settings();
-	return S ? Resolutions.IndexOfByKey(S->GetScreenResolution()) : INDEX_NONE;
+	return Resolutions.IndexOfByKey(PendingResolution);
 }
 
 int32 SAPSSettingsPage::FrameRateIndex() const
 {
-	const UGameUserSettings* S = APSSettingsUI::Settings();
-	const float Limit = S ? S->GetFrameRateLimit() : 0.0f;
+	const float Limit = PendingFrameRateLimit;
 	int32 Best = APSSettingsUI::FrameRateCount - 1;
 	float BestGap = TNumericLimits<float>::Max();
 	for (int32 Index = 0; Index < APSSettingsUI::FrameRateCount; ++Index)
@@ -945,16 +951,15 @@ int32 SAPSSettingsPage::FrameRateIndex() const
 
 void SAPSSettingsPage::StepResolution(const int32 Delta)
 {
-	UGameUserSettings* S = APSSettingsUI::Settings();
 	const int32 Index = ResolutionIndex() + Delta;
-	if (S && Resolutions.IsValidIndex(Index))
+	if (Resolutions.IsValidIndex(Index))
 	{
-		S->SetScreenResolution(Resolutions[Index]);
+		PendingResolution = Resolutions[Index];
 		// UE 5.4 sizes a BORDERLESS window to the monitor and ignores the resolution (FSceneViewport::ResizeFrame),
 		// so a picked resolution only takes effect in FULLSCREEN or WINDOWED (Rio 08.10, packaged 0.6.0-alpha).
-		if (S->GetFullscreenMode() == EWindowMode::WindowedFullscreen)
+		if (PendingMode == EWindowMode::WindowedFullscreen)
 		{
-			S->SetFullscreenMode(EWindowMode::Fullscreen);
+			PendingMode = EWindowMode::Fullscreen;
 		}
 		bVideoDirty = true;
 	}
@@ -962,11 +967,10 @@ void SAPSSettingsPage::StepResolution(const int32 Delta)
 
 void SAPSSettingsPage::StepFrameRate(const int32 Delta)
 {
-	UGameUserSettings* S = APSSettingsUI::Settings();
 	const int32 Index = FrameRateIndex() + Delta;
-	if (S && Index >= 0 && Index < APSSettingsUI::FrameRateCount)
+	if (Index >= 0 && Index < APSSettingsUI::FrameRateCount)
 	{
-		S->SetFrameRateLimit(APSSettingsUI::FrameRates[Index]);
+		PendingFrameRateLimit = APSSettingsUI::FrameRates[Index];
 		bVideoDirty = true;
 	}
 }
@@ -975,10 +979,14 @@ void SAPSSettingsPage::ApplyVideo()
 {
 	if (UGameUserSettings* S = APSSettingsUI::Settings())
 	{
+		S->SetFullscreenMode(PendingMode);
+		S->SetScreenResolution(PendingResolution);
+		S->SetFrameRateLimit(PendingFrameRateLimit);
+		S->SetVSyncEnabled(bPendingVSync);
 		S->ApplySettings(false);
 		S->ConfirmVideoMode();
 		S->SaveSettings();
-		bVideoDirty = false;
+		ReadPendingVideo();
 		VideoStatus = LOCTEXT("VideoApplied", "Applied and saved.");
 	}
 }
@@ -1013,9 +1021,12 @@ void SAPSSettingsPage::RestoreDefaults()
 		if (UGameUserSettings* S = APSSettingsUI::Settings())
 		{
 			S->SetToDefaults();
+			// APS DEV 14.10 (audit): VSync off is a default too, and the defaults are saved, else the old config came back.
+			S->SetVSyncEnabled(false);
 			S->ApplySettings(false);
 			S->ConfirmVideoMode();
-			bVideoDirty = false;
+			S->SaveSettings();
+			ReadPendingVideo();
 			VideoStatus = LOCTEXT("VideoRestored", "Video and graphics are back to their defaults.");
 		}
 		break;

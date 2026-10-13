@@ -180,6 +180,8 @@ private:
 	EActiveTimerReturnType StartCardWhenReady(double CurrentTime, float DeltaTime);
 	/** A test start asked before this root stood (-ExecCmds): applied once the first page is built. */
 	EActiveTimerReturnType ApplyPendingTestStart(double CurrentTime, float DeltaTime);
+	/** APS DEV 14.10 (audit): GENERATE CIVILIZATION was pressed on this visit; what the commit said shows under it. */
+	bool bCivilizationCommitTried{false};
 	double CardStartDeadline{0.0};
 	FString CardStartLabel;
 	void BackFromGeneration();

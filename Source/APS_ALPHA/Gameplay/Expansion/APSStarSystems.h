@@ -176,6 +176,8 @@ public:
 	 * demand at the primary's location and reused. Tagged APS.StarSystem and APS.StarSystem.<id>.
 	 */
 	AActor* GetAnchor(const FGuid& Id);
+	/** The anchor that already stands (a screen's look, not an order): none is spawned. */
+	AActor* FindAnchor(const FGuid& Id) const;
 	/** The system an anchor stands for. */
 	static bool AnchorSystem(const AActor* Actor, FGuid& OutId);
 

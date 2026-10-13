@@ -91,6 +91,11 @@ CSV_DECLARE_CATEGORY_EXTERN(APSPreview);
 #include "UObject/UObjectGlobals.h"
 #include "UObject/UObjectIterator.h"
 
+// APS DEV 14.10 (audit): the home system's planet list went to the log at Warning after every preview, ~100 lines.
+static TAutoConsoleVariable<int32> CVarAPSPreviewLogPlanets(
+	TEXT("aps.Preview.LogPlanets"), 0,
+	TEXT("1: the generated home system's planet and moon list goes to the log after a preview (ShowPlanetsList)."),
+	ECVF_Default);
 static TAutoConsoleVariable<int32> CVarAPSPreviewAtmosphereInterior(
 	TEXT("aps.Preview.AtmosphereInterior"), 1,
 	TEXT("Select the inward atmosphere mesh inside the committed preview shell. 0 restores exterior-only rendering."),
@@ -798,8 +803,30 @@ bool AAstroGenerator::ArePreviewMaterialAssetsWarmed() const
 		&& IsValid(PreviewLavaBaseMaterial);
 }
 
+void AAstroGenerator::HoldPreviewMaterial(UMaterialInterface* Material)
+{
+	if (!IsValid(Material) || !IsInGameThread())
+	{
+		return;
+	}
+	for (const TStrongObjectPtr<UMaterialInterface>& Held : PreviewSharedMaterialHold)
+	{
+		if (Held.Get() == Material)
+		{
+			return;
+		}
+	}
+	PreviewSharedMaterialHold.Emplace(Material);
+}
+
 bool AAstroGenerator::WarmPreviewMaterialAssets()
 {
+	// APS DEV 14.10 (audit): warmed, precached and held: nothing to load, no flush of the async loader on a click.
+	if (bPreviewMaterialPSOPrecacheRequested && !PreviewSharedMaterialHold.IsEmpty() && ArePreviewMaterialAssetsWarmed()
+		&& APSSharedTerrainMaterial::IsSharedStack(PreviewTerrainBaseMaterial))
+	{
+		return true;
+	}
 	const auto LoadIfMissing = [](TObjectPtr<UMaterialInterface>& Asset,
 		const TCHAR* ObjectPath)
 	{
@@ -838,6 +865,10 @@ bool AAstroGenerator::WarmPreviewMaterialAssets()
 		APSPreviewGlobe::GetLiquidMaterialPath(EAPSPlanetLiquidType::Ammonia));
 	LoadIfMissing(PreviewLavaBaseMaterial,
 		APSPreviewGlobe::GetLiquidMaterialPath(EAPSPlanetLiquidType::Lava));
+	for (UMaterialInterface* Shared : { SharedTerra, SharedMagma, ContinuousTerra, SharedWater, CoastalWater, ShoreWater, SharedAmmonia, SharedLava })
+	{
+		HoldPreviewMaterial(Shared);
+	}
 
 	const bool bWarmed = ArePreviewMaterialAssetsWarmed();
 	if (bWarmed && !bPreviewMaterialPSOPrecacheRequested && IsInGameThread())
@@ -7932,6 +7963,7 @@ void AAstroGenerator::UpdatePreviewWorldScape()
 		UMaterialInterface* SelectedTerrainMaterial = APSSharedTerrainMaterial::IsSharedStack(PreviewTerrainBaseMaterial)
 			? LoadObject<UMaterialInterface>(nullptr, APSSharedTerrainMaterial::TemplatePath(PreviewProfile))
 			: PreviewTerrainBaseMaterial.Get();
+		HoldPreviewMaterial(SelectedTerrainMaterial);
 		UMaterialInterface* SelectedLiquidMaterial =
 			PreviewProfile.LiquidType == EAPSPlanetLiquidType::Water ? PreviewWaterBaseMaterial.Get()
 			: PreviewProfile.LiquidType == EAPSPlanetLiquidType::Ammonia ? PreviewAmmoniaBaseMaterial.Get()
@@ -7941,8 +7973,11 @@ void AAstroGenerator::UpdatePreviewWorldScape()
 			APSSharedGeneratedLiquidMaterial::ResolveSource(PreviewProfile, SurfaceGenerator->SurfaceProfileCatalog),
 			PreviewProfile, LiquidPlanet && LiquidPlanet->IsManual);
 		if (bUseSharedLiquid)
+		{
 			SelectedLiquidMaterial = LoadObject<UMaterialInterface>(nullptr,
 				APSSharedGeneratedLiquidMaterial::TemplatePath(PreviewProfile));
+			HoldPreviewMaterial(SelectedLiquidMaterial);
+		}
 		const bool bLiquidReady = bUseSharedLiquid
 			? APSSharedGeneratedLiquidMaterial::IsRenderReady(SelectedLiquidMaterial, PreviewProfile.LiquidType, GetWorld())
 			: APSPreviewGlobe::IsMaterialRenderReady(SelectedLiquidMaterial, GetWorld());
@@ -11219,8 +11254,7 @@ void AAstroGenerator::GenerateHomeStarSystem()
 		&& GeneratedHomeStarSystem->MainStar->PlanetarySystem)
 	{
 		TArray<TSharedPtr<FPlanetData>> PlanetDataMap = GeneratedHomeStarSystem->MainStar->PlanetarySystem->PlanetsList;
-		UE_LOG(LogTemp, Warning, TEXT("Planet List - "));
-		UE_LOG(LogTemp, Warning, TEXT("Planet Amount: %d"), PlanetDataMap.Num());
+		UE_CLOG(CVarAPSPreviewLogPlanets.GetValueOnGameThread() != 0, LogTemp, Log, TEXT("Planet List - %d planets"), PlanetDataMap.Num());
 		ShowPlanetsList(PlanetDataMap);
 
 		if (bSpawnStarterPlanet && GeneratedHomeStarSystem)
@@ -12646,8 +12680,13 @@ void AAstroGenerator::GenerateGalaxy()
 }
 
 
-void AAstroGenerator::ShowPlanetsList(TArray<TSharedPtr<FPlanetData>> PlanetDataMap)
+void AAstroGenerator::ShowPlanetsList(const TArray<TSharedPtr<FPlanetData>>& PlanetDataMap)
 {
+	// APS DEV 14.10 (audit): ~100 lines per preview at Warning; aps.Preview.LogPlanets 1 asks for them.
+	if (CVarAPSPreviewLogPlanets.GetValueOnGameThread() == 0)
+	{
+		return;
+	}
 	for (const TSharedPtr<FPlanetData>& PlanetDataPtr : PlanetDataMap)
 	{
 		if (PlanetDataPtr.IsValid())

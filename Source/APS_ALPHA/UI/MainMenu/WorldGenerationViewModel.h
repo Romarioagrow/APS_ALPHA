@@ -155,6 +155,8 @@ public:
 	void RefreshPlanetAppearancePreview(bool bRegenerateSurface);
 
 	void CancelPendingPreview();
+	/** APS DEV 14.10 (audit): a START that is still draining the preview is dropped when the screen is left. */
+	void CancelPendingTravel();
 
 	UFUNCTION(BlueprintCallable, Category = "World Generation|Preview")
 	void RegeneratePreviewVariant();

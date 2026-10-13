@@ -1440,4 +1440,11 @@ namespace APSStarSystemsLocal
 		}));
 }
 
+AActor* FAPSStarSystems::FindAnchor(const FGuid& Id) const
+{
+	// APS DEV 14.10 (audit): a screen's look at a system must not stand an anchor up; GetAnchor spawns, this only finds.
+	const TWeakObjectPtr<AActor>* Existing = Anchors.Find(Id);
+	return Existing && Existing->IsValid() ? Existing->Get() : nullptr;
+}
+
 #undef LOCTEXT_NAMESPACE

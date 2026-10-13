@@ -72,7 +72,7 @@ namespace APSSpaceTrips
 		bool Start(const FString& IdOrIndex);
 		/** Skips to the next world, or the next stop when the worlds are done. */
 		void Next();
-		void Pause(const FText& Why);
+		void Pause(const FText& Why, bool bByHand = false);
 		void Resume();
 		void Stop(const FText& Why);
 		/** A still of the view without the HUD into Saved/Screenshots/Trips (the journal names the file). */
@@ -121,6 +121,14 @@ namespace APSSpaceTrips
 		bool bAutoStarted{false};
 		bool bWelcomed{false};
 		int32 PhotoSerial{0};
+		/**
+		 * APS DEV 14.10 (audit): a pause the pilot's hand caused ends by itself once the pilot sits with the engine on,
+		 * no course of their own, and the helm still for aps.Trip.ResumeAfterSeconds; aps.Trip.Pause waits for Resume.
+		 */
+		bool bPausedByHand{false};
+		float HelmStillSeconds{0.0f};
+		FQuat HelmStillRotation{FQuat::Identity};
+		void TickPaused(ASpaceship* Ship, float DeltaSeconds);
 	};
 
 	/** The world's trip object (made on first use when bCreate; forgotten with the world). */

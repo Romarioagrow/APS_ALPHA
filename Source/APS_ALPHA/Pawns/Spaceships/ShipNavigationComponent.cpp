@@ -109,11 +109,42 @@ void UShipNavigationComponent::RefreshContacts(const FVector& ObserverLocation, 
 	}
 
 	// Star systems the civilization knows or holds (Rio 02.10: "beacons for the star systems"): their anchors.
-	for (TActorIterator<AActor> It(World); It; ++It)
+	// APS DEV 14.10 (audit): an anchor also stands up for a star merely looked at on the map (its card needs the actor);
+	// a beacon is one the civilization knows, holds or sends a ship to, or the one the pilot steers by, else every
+	// star clicked stayed in NEAREST for the session.
 	{
-		if (IsValid(*It) && It->ActorHasTag(TEXT("APS.StarSystem")))
+		const FAPSStarSystems* Stars = APSStarSystemsFind(World);
+		const FAPSFleetCommand* Fleet = APSFleetFind(World);
+		for (TActorIterator<AActor> It(World); It; ++It)
 		{
-			AddActorContact(*It, ObserverLocation);
+			AActor* Anchor = *It;
+			if (!IsValid(Anchor) || !Anchor->ActorHasTag(TEXT("APS.StarSystem")))
+			{
+				continue;
+			}
+			FGuid SystemId;
+			bool bBeacon = !Stars || !FAPSStarSystems::AnchorSystem(Anchor, SystemId) || Stars->IsClaimed(SystemId)
+				|| Stars->GetKnowledge(SystemId) != APSStars::EKnowledge::Catalogued;
+			if (!bBeacon)
+			{
+				const FString Id = Anchor->GetPathName();
+				bBeacon = Id == PinnedCourseId || Id == PreviousStableId;
+			}
+			if (!bBeacon && Fleet)
+			{
+				for (const FAPSFleetUnit& Unit : Fleet->GetUnits())
+				{
+					if (Unit.Target.Get() == Anchor)
+					{
+						bBeacon = true;
+						break;
+					}
+				}
+			}
+			if (bBeacon)
+			{
+				AddActorContact(Anchor, ObserverLocation);
+			}
 		}
 	}
 	DiscoveredContactCount = Contacts.Num();
