@@ -17,6 +17,9 @@
 #include "APS_ALPHA/UI/Style/APSUITheme.h"
 #include "Brushes/SlateColorBrush.h"
 #include "Brushes/SlateImageBrush.h"
+#include "Engine/Engine.h"
+#include "Engine/Texture2D.h"
+#include "ImageUtils.h"
 #include "Containers/Ticker.h"
 #include "UnrealClient.h"
 #include "Engine/SkeletalMesh.h"
@@ -1586,15 +1589,39 @@ namespace APSMenuChecks
 		}));
 }
 
+TSharedPtr<FSlateBrush> SAPSMainMenuRoot::LoadCardPicture(const FString& Path)
+{
+	// Rio 14.10 (0.6.5.1 screenshot: every authored card a white rectangle): an FSlateImageBrush named by a file is
+	// looked up in Slate's resource map, which only style sets fill, so the renderer drew its white fallback. The PNG
+	// is decoded here (the pak included) into a transient texture the root holds; a file that is missing or does not
+	// decode gives no brush, and the card keeps its dark glyph.
+	if (Path.IsEmpty() || !FPaths::FileExists(Path))
+	{
+		return nullptr;
+	}
+	UTexture2D* Texture = FImageUtils::ImportFileAsTexture2D(Path);
+	if (!Texture)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("[APS.Menu] card picture did not decode: %s"), *Path);
+		return nullptr;
+	}
+	CardPictures.Emplace(Texture);
+	const TSharedPtr<FSlateBrush> Brush = MakeShared<FSlateBrush>();
+	Brush->SetResourceObject(Texture);
+	Brush->DrawAs = ESlateBrushDrawType::Image;
+	Brush->ImageSize = FVector2D(static_cast<double>(Texture->GetSizeX()), static_cast<double>(Texture->GetSizeY()));
+	return Brush;
+}
+
 TSharedRef<SWidget> SAPSMainMenuRoot::BuildAuthoredMapGrid()
 {
 	// Rio 06.10 ("the Single Play button is stretched; it should be a grid, with preview pictures, the map's name and
 	// description, a real render instead of an icon"): one card per authored map; a click plays it. The preview is a
-	// render of the map saved as Content/Slate/MapPreviews/<map>.png (loaded by Slate from the file, no asset).
+	// render of the map saved as Content/Slate/MapPreviews/<map>.png (decoded from the file, no asset).
 	const FString PreviewPath = FPaths::ConvertRelativePathToFull(FPaths::ProjectContentDir() / TEXT("Slate/MapPreviews/StartLocation.png"));
-	if (!MapPreviewBrush.IsValid() && FPaths::FileExists(PreviewPath))
+	if (!MapPreviewBrush.IsValid())
 	{
-		MapPreviewBrush = MakeShared<FSlateImageBrush>(FName(*PreviewPath), FVector2D(1600.0f, 900.0f));
+		MapPreviewBrush = LoadCardPicture(PreviewPath);
 	}
 	const auto MapCard = [this](const FText& Title, const FText& Description, const FText& Place, const FSlateBrush* Preview,
 		const bool bPlayable, const FOnClicked& OnClicked) -> TSharedRef<SWidget>
@@ -1661,9 +1688,11 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildAuthoredMapGrid()
 					+ SVerticalBox::Slot().AutoHeight().Padding(FMargin(18.0f, 0.0f, 18.0f, 14.0f))
 					[
 						SNew(SHorizontalBox)
-						+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center)
+						+ SHorizontalBox::Slot().FillWidth(1.0f).VAlign(VAlign_Center).Padding(0.0f, 0.0f, 12.0f, 0.0f)
 						[
+							// Rio 14.10 (0.6.5.1: "K SPLAY >"): a long tag line ends in an ellipsis before PLAY, never under it.
 							SNew(STextBlock).Text(Place).Font(APSMenu::Font("Bold", 11)).ColorAndOpacity(APSMenu::Quiet)
+							.OverflowPolicy(ETextOverflowPolicy::Ellipsis)
 						]
 						+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 						[
@@ -1699,11 +1728,10 @@ TSharedRef<SWidget> SAPSMainMenuRoot::BuildAuthoredMapGrid()
 		FOnClicked::CreateSP(this, &SAPSMainMenuRoot::StartSingleGame)));
 	for (const APSAuthoredWorlds::FCard& World : Worlds)
 	{
-		const FString ThumbPath = World.Directory / TEXT("thumb.png");
 		TSharedPtr<FSlateBrush>& Brush = AuthoredWorldBrushes.FindOrAdd(World.Id);
-		if (!Brush.IsValid() && FPaths::FileExists(ThumbPath))
+		if (!Brush.IsValid())
 		{
-			Brush = MakeShared<FSlateImageBrush>(FName(*ThumbPath), FVector2D(1600.0f, 900.0f));
+			Brush = LoadCardPicture(World.Directory / TEXT("thumb.png"));
 		}
 		const bool bPlayable = World.bPlayable && World.bHasWorld;
 		FString Place = World.Place;
@@ -2312,6 +2340,13 @@ void SAPSMainMenuRoot::Construct(const FArguments& InArgs)
 	APSMenuChecks::GActiveRoot = StaticCastSharedRef<SAPSMainMenuRoot>(AsShared());
 	LoadVisualResources();
 	BeginAuxiliaryMenuLoad();
+	// Rio 14.10 (0.6.5.1 screenshot: a small red "PROFILING WITH AI LOGGING ON!" over BACK): the engine draws it whenever
+	// stats collect (a stat command, the perf probe's dumps) while AI logging is on; this game never records the visual
+	// logger, so the flag stays off for the whole run (DrawStatsHUD, UnrealEngine.cpp).
+	if (GEngine)
+	{
+		GEngine->bDisableAILogging = true;
+	}
 	if (APSMenuChecks::GPendingStart.IsSet())
 	{
 		// APS DEV 13.10: a test start asked before this root stood (-ExecCmds) runs once the first page is built.
