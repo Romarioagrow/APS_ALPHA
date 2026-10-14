@@ -4,6 +4,8 @@
 #include "Engine/World.h"
 #include "HAL/IConsoleManager.h"
 #include "HAL/PlatformTime.h"
+#include "Misc/DateTime.h"
+#include "Misc/Paths.h"
 #include "RenderTimer.h"
 #include "Stats/Stats.h"
 
@@ -25,6 +27,19 @@ namespace APSPerfProbePrivate
 		TEXT("'stat dumphitches' by hand (the probe's -stop ends a manual dump)."));
 	TAutoConsoleVariable<float> CVarDumpSeconds(TEXT("aps.Perf.DumpSeconds"), 20.0f,
 		TEXT("How long the automatic 'stat dumphitches' stays on."));
+	// Rio 14.10 (0.6.5.2: 40-60 fps in CRUISE between a planet and its many moons; his log: game 9-12 ms, render 12-19 ms,
+	// GPU 7-9 ms, the bench world showed 2.5 ms game in the same trip): a window of a gameplay world below this frame rate
+	// records an Unreal Insights trace (cpu, frame, bookmark, log) of aps.Perf.AutoTraceSeconds into Saved/Profiling, at
+	// most aps.Perf.AutoTraces times per session, so his next log comes with the frames that are slow.
+	TAutoConsoleVariable<float> CVarAutoTraceFps(TEXT("aps.Perf.AutoTraceFps"), 60.0f,
+		TEXT("A [APS.Perf] window in a gameplay world (after its first 30 s) below this many fps starts an Insights trace; 0: off."));
+	TAutoConsoleVariable<float> CVarAutoTraceSeconds(TEXT("aps.Perf.AutoTraceSeconds"), 8.0f,
+		TEXT("Length of the automatic Insights trace, s."));
+	TAutoConsoleVariable<int32> CVarAutoTraces(TEXT("aps.Perf.AutoTraces"), 2,
+		TEXT("How many automatic Insights traces per session at most."));
+	int32 GTracesUsed = 0;
+	double GTraceEnd = 0.0;
+	bool bGTracing = false;
 
 	/** The editor out of focus throttles itself to a few frames per second with idle threads (Rio's log 02.10: frames of
 	 * 333 ms at 5 ms of work). Such a frame is neither a hitch nor part of the averages. */
@@ -100,6 +115,13 @@ namespace APSPerfProbePrivate
 
 void APSPerfProbe::Tick(UWorld* World, const float DeltaSeconds)
 {
+	using namespace APSPerfProbePrivate;
+	if (bGTracing && GEngine && FPlatformTime::Seconds() >= GTraceEnd)
+	{
+		bGTracing = false;
+		GEngine->Exec(World, TEXT("Trace.Stop"));
+		UE_LOG(LogTemp, Warning, TEXT("[APS.Perf] Insights trace stopped"));
+	}
 	using namespace APSPerfProbePrivate;
 	const double Interval = CVarLogSeconds.GetValueOnGameThread();
 	if (!World) return;
@@ -184,6 +206,21 @@ void APSPerfProbe::Tick(UWorld* World, const float DeltaSeconds)
 			GWindow.Gpu.Average(), GWindow.Gpu.Worst, GWindow.Hitches,
 			GWindow.BackgroundSeconds > 0.5 ? *FString::Printf(TEXT(" | %.0f s in background"), GWindow.BackgroundSeconds)
 				: TEXT(""));
+	}
+	// Rio 14.10 (aps.Perf.AutoTraceFps): a slow window in a gameplay world records an Insights trace.
+	if (GWindow.Frame.Samples > 0 && World && GEngine && !bGTracing && GTracesUsed < CVarAutoTraces.GetValueOnGameThread()
+		&& Now - GWorldStart > 30.0 && GWindow.BackgroundSeconds < 0.5
+		&& GWindow.Frame.Samples / ActiveSeconds < CVarAutoTraceFps.GetValueOnGameThread()
+		&& !World->GetMapName().Contains(TEXT("MainMenu")))
+	{
+		++GTracesUsed;
+		bGTracing = true;
+		GTraceEnd = Now + FMath::Clamp(static_cast<double>(CVarAutoTraceSeconds.GetValueOnGameThread()), 2.0, 30.0);
+		const FString File = FPaths::ConvertRelativePathToFull(FPaths::ProfilingDir() / FString::Printf(TEXT("APS_lowfps_%s.utrace"),
+			*FDateTime::Now().ToString(TEXT("%Y%m%d_%H%M%S"))));
+		GEngine->Exec(World, *FString::Printf(TEXT("Trace.File %s cpu,frame,bookmark,log"), *File));
+		UE_LOG(LogTemp, Warning, TEXT("[APS.Perf] %.0f fps window: Insights trace %d of %d for %.0f s -> %s"),
+			GWindow.Frame.Samples / ActiveSeconds, GTracesUsed, CVarAutoTraces.GetValueOnGameThread(), GTraceEnd - Now, *File);
 	}
 	const TWeakObjectPtr<UWorld> Kept = GWindow.World;
 	GWindow = FWindow();

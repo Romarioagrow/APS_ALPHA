@@ -68,6 +68,27 @@ namespace APSCharacterQueryThrottle
 		ECVF_Default);
 	// Rio 14.10 (screenshot: the third-person camera on the chest right after standing up in a class-L ship): the view
 	// state turns with the ship while seated is not ticked; on standing up the view is set from the facing again.
+	// Rio 14.10 (0.6.5.2: "before, back walked back and the camera went back; now the body turns around"): aboard, the
+	// walker used to drop into zero-G (the body locked to the view, S drifted backwards); in gravity the body turns toward
+	// the movement (orient-to-movement, a forward-only walk blendspace). With this on, S without much sideways input keeps
+	// the body facing the camera's way and walks it backwards.
+	TMap<TWeakObjectPtr<const ACustomGravityCharacter>, uint64> GBackpedalFrame;
+	TAutoConsoleVariable<int32> CVarBackpedal(TEXT("aps.Character.Backpedal"), 1,
+		TEXT("1: on foot in gravity, back (S) without much sideways input walks backwards facing the view; 0: the body turns to ")
+		TEXT("the movement as in 0.6.5.2."),
+		ECVF_Default);
+	// Rio 14.10 (0.6.5.2 screenshot: the third-person camera right above the helmet aboard): leaving zero-G carried the
+	// floating view's pitch (up to 80 deg) into gravity, so the 3 m arm pointed into the ceiling and its probe pulled the
+	// camera onto the head.
+	// Rio 14.10 (0.6.5.2: "in zero-G the camera drives into the character"): the exact camera lag puts the arm's pivot
+	// speed / lag-speed behind the moving body, so flying (or now walking) toward the camera shortened the 3 m arm by that
+	// trail, over a metre at zero-G speeds, and the camera ended in the body.
+	TAutoConsoleVariable<float> CVarCameraKeepArmShare(TEXT("aps.Character.CameraKeepArmShare"), 0.75f,
+		TEXT("Moving toward the camera, the lag trail shortens the arm to at most this share of its length kept; 0: as 0.6.5.2."),
+		ECVF_Default);
+	TAutoConsoleVariable<float> CVarZeroGExitPitchMaxDeg(TEXT("aps.Character.ZeroGExitPitchMaxDeg"), 30.0f,
+		TEXT("The largest view pitch (deg) kept when zero-G ends; 80: as 0.6.5.2."),
+		ECVF_Default);
 	TAutoConsoleVariable<int32> CVarExitResetsView(TEXT("aps.Character.ExitResetsView"), 1,
 		TEXT("1: standing up from a seat resets the view (heading, pitch, zero-G view, camera lag trail) to the exit facing. 0: as 0.6.5."),
 		ECVF_Default);
@@ -350,6 +371,30 @@ void ACustomGravityCharacter::Tick(float DeltaTime)
 	{
 		SynchronizeCharacterToCamera(DeltaTime);
 	}
+	else if (UCharacterMovementComponent* WalkMovement = GetCharacterMovement())
+	{
+		// Rio 14.10 (aps.Character.Backpedal): while back is held (this or the last frame), the body keeps facing the view's
+		// way instead of turning to the movement; otherwise the movement turns it as before.
+		const uint64* BackFrame = APSCharacterQueryThrottle::GBackpedalFrame.Find(this);
+		const bool bBackpedal = APSCharacterQueryThrottle::CVarBackpedal.GetValueOnGameThread() != 0 && BackFrame
+			&& GFrameCounter <= *BackFrame + 1 && WalkMovement->IsMovingOnGround();
+		if (bBackpedal)
+		{
+			WalkMovement->bOrientRotationToMovement = false;
+			const FVector WalkUp = GetGravityUpVector();
+			const FVector Facing = GetCameraPlanarForward();
+			if (!Facing.IsNearlyZero())
+			{
+				const FQuat Wanted = FRotationMatrix::MakeFromXZ(Facing, WalkUp).ToQuat();
+				const float RateDeg = FMath::Max(WalkMovement->RotationRate.Yaw, 180.0f);
+				SetActorRotation(FMath::QInterpConstantTo(GetActorQuat(), Wanted, DeltaTime, FMath::DegreesToRadians(RateDeg)));
+			}
+		}
+		else if (!WalkMovement->bOrientRotationToMovement)
+		{
+			WalkMovement->bOrientRotationToMovement = true;
+		}
+	}
 	UpdateGravityAnimationParameters();
 	UpdateBuildCamera(DeltaTime);
 	AlignCameraToGravity(DeltaTime);
@@ -452,7 +497,20 @@ void ACustomGravityCharacter::UpdateExactCameraLag(float DeltaTime)
 	{
 		ExactLagTrail = ExactLagTrail.GetSafeNormal() * MaxDistance;
 	}
-	CameraBoom->TargetOffset = ExactLagTrail;
+	FVector AppliedTrail = ExactLagTrail;
+	// Rio 14.10 (aps.Character.CameraKeepArmShare): the part of the trail that brings the camera toward the body is capped.
+	if (const float Keep = FMath::Clamp(APSCharacterQueryThrottle::CVarCameraKeepArmShare.GetValueOnGameThread(), 0.0f, 1.0f);
+		Keep > 0.f && FollowCamera && CameraBoom->TargetArmLength > 1.f)
+	{
+		const FVector Back = -FollowCamera->GetForwardVector();
+		const double Along = FVector::DotProduct(AppliedTrail, Back);
+		const double MaxShorten = (1.0 - Keep) * CameraBoom->TargetArmLength;
+		if (Along < -MaxShorten)
+		{
+			AppliedTrail += Back * (-MaxShorten - Along);
+		}
+	}
+	CameraBoom->TargetOffset = AppliedTrail;
 }
 
 void ACustomGravityCharacter::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -516,6 +574,12 @@ void ACustomGravityCharacter::HandleMove(const FInputActionValue& Value)
 	const FVector GravityUp = GetGravityUpVector();
 	const FVector CamForward = GetCameraPlanarForward();
 	const FVector CamRight = FVector::CrossProduct(GravityUp, CamForward).GetSafeNormal();
+
+	// Rio 14.10 (aps.Character.Backpedal): back without much sideways input walks backwards facing the view.
+	if (MovementVector.Y < -0.1f && FMath::Abs(MovementVector.Y) >= 1.5f * FMath::Abs(MovementVector.X))
+	{
+		APSCharacterQueryThrottle::GBackpedalFrame.Add(this, GFrameCounter);
+	}
 
 	// Movement and visible facing use exactly the same gravity-relative basis.
 	AddMovementInput(CamForward, MovementVector.Y);
@@ -1567,9 +1631,11 @@ void ACustomGravityCharacter::SetZeroGravityEnabled(bool bEnabled)
 			CameraReferenceUp = TargetGravityUp;
 			const float VerticalViewAmount = FMath::Clamp(
 				FVector::DotProduct(ViewForward, TargetGravityUp), -1.0f, 1.0f);
+			// Rio 14.10 (aps.Character.ZeroGExitPitchMaxDeg): no longer the floating view's 80 deg into the ceiling.
+			const float ExitPitchMax = FMath::Clamp(APSCharacterQueryThrottle::CVarZeroGExitPitchMaxDeg.GetValueOnGameThread(), 0.0f, 80.0f);
 			CameraPitch = FMath::Clamp(
 				-FMath::RadiansToDegrees(FMath::Asin(VerticalViewAmount)),
-				-80.0f, 80.0f);
+				-ExitPitchMax, ExitPitchMax);
 		}
 		bZeroGViewRotationInitialized = false;
 	}

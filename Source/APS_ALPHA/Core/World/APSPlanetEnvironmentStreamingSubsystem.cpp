@@ -182,7 +182,8 @@ namespace APSSurfacePolicyPrivate
 		ECVF_Default);
 
 	TAutoConsoleVariable<float> CVarFreezeLiftMinSeconds(
-		TEXT("aps.Surface.FreezeLiftMinSeconds"), 3.0f,
+		// 14.10: 1 (0.6.5.2 log: three moons seen from behind for 3-10 s each while their lifts queued).
+		TEXT("aps.Surface.FreezeLiftMinSeconds"), 1.0f,
 		TEXT("See aps.Surface.FreezeLiftRadii: the shortest time between two LOD waves of one frozen sibling."),
 		ECVF_Default);
 
@@ -219,6 +220,14 @@ namespace APSSurfacePolicyPrivate
 		TEXT("that wave, since its own tick was off, and every later sibling lift skipped it as still generating: the planet kept ")
 		TEXT("the rings of the 73 km departure observer, the rest of the disc only air and clouds, until the player came back. ")
 		TEXT("1: the subsystem publishes such a wave through the same non-blocking fence as a sibling lift. 0: as 0.6.5.1."),
+		ECVF_Default);
+
+	TAutoConsoleVariable<float> CVarFreezeLiftUrgentPx(
+		TEXT("aps.Surface.FreezeLiftUrgentPx"), 2.0f,
+		TEXT("Rio 14.10 (0.6.5.2: \"the moons are half drawn, then they appear\"; his log: the planet left at 40 km/s lifted five ")
+		TEXT("times in six seconds and every sibling lift waited for those waves, a moon seen 156 deg from its rings' observer for ")
+		TEXT("7 s): a frozen sibling whose uncovered part on screen is at least this wide (px) lifts even while the anchored surface ")
+		TEXT("builds a wave (still one sibling at a time, never beside a live prepared-mesh reservation). 0: as 0.6.5.2."),
 		ECVF_Default);
 
 	TAutoConsoleVariable<float> CVarFreezeLiftLeadSeconds(
@@ -887,8 +896,11 @@ namespace APSSurfacePolicyPrivate
 				}
 			}
 		}
+		// Rio 14.10 (aps.Surface.FreezeLiftUrgentPx): an anchored wave no longer blocks a sibling whose gap is on screen.
+		const bool bAnchoredBusy = IsValid(AnchoredRoot) && AnchoredRoot->WorldScapeLodInGeneration.Num() > 0;
+		const double UrgentPx = CVarFreezeLiftUrgentPx.GetValueOnGameThread();
 		if (State.FrozenLiftRoot.IsValid() || !(CVarFreezeLiftRadii.GetValueOnGameThread() > 0.0) || Camera.ContainsNaN()
-			|| (IsValid(AnchoredRoot) && AnchoredRoot->WorldScapeLodInGeneration.Num() > 0)
+			|| (bAnchoredBusy && !(UrgentPx > 0.0))
 			|| WorldScapePreparedMesh::CurrentBytes() > 0)
 		{
 			return;
@@ -955,11 +967,16 @@ namespace APSSurfacePolicyPrivate
 				LiftRadii = Radii;
 			}
 		}
+		if (LiftRoot && bAnchoredBusy && LiftScore < UrgentPx)
+		{
+			// The anchored surface is building: only a gap already on screen goes ahead of it.
+			LiftRoot = nullptr;
+		}
 		if (LiftRoot)
 		{
-			UE_LOG(LogAPSWorldScapeStreaming, Log, TEXT("[APS.Surface] frozen lift: %s observer %.0f km above the ground moved to the camera %.1f radii out, view turned %.1f deg (allowed %.1f, lead %.0f km, gap %.0f px), one LOD wave"),
+			UE_LOG(LogAPSWorldScapeStreaming, Log, TEXT("[APS.Surface] frozen lift: %s observer %.0f km above the ground moved to the camera %.1f radii out, view turned %.1f deg (allowed %.1f, lead %.0f km, gap %.0f px%s), one LOD wave"),
 				*GetNameSafe(LiftBody), LiftRoot->PlayerDistanceToGround / 1.0e5, LiftRadii, LiftTurnDeg, LiftAllowedDeg,
-				FVector::Distance(LiftAt, Camera) / 1.0e5, LiftScore);
+				FVector::Distance(LiftAt, Camera) / 1.0e5, LiftScore, bAnchoredBusy ? TEXT(", beside the anchored wave") : TEXT(""));
 			LiftRoot->OverridedPlayerPosition = LiftObserverFor(LiftRoot, LiftAt);
 			LiftRoot->UpdatePosition();
 			State.FrozenLiftSeconds.Add(LiftRoot, Now);

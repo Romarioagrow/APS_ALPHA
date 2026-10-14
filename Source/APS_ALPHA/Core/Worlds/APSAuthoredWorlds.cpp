@@ -294,6 +294,12 @@ namespace APSAuthoredWorlds
 		}
 		World.AuthoredWorldId = Card.Id;
 		World.AuthoredLocks = Card.Locks;
+		// Rio 14.10 (0.6.5.2: "the single-game worlds are not full scale at all, astronomical units; every mode must start
+		// the same"): the class defaults keep REAL SCALE off for old saves, so the reset above turned it off for every
+		// card and origin (and for TRIPS / SANDBOX opened after one). A new world from a card starts like NEW WORLD's
+		// sandbox: full scale and REAL SCALE on (MainMenuController), after the preset so no exported field turns it off.
+		World.bGenerateFullScaledWorld = true;
+		World.bRealScale = true;
 		if (Spawn && Card.SpawnPlace != INDEX_NONE)
 		{
 			Spawn->CharacterSpawnPlace = static_cast<ECharSpawnPlace>(Card.SpawnPlace);
