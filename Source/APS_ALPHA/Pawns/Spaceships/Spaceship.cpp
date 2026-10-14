@@ -1144,6 +1144,60 @@ namespace APSShipPerf
 	{
 		FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateStatic(&TickTsrHistory), 0.0f);
 	});
+	// Rio 14.10 (0.6.5.1 video: the dark metal panels of the ship speckle at 1-2 km/s low over a planet, fine in deep space):
+	// Lumen's screen probes traced the screen first, and behind and under the hull that is the ground streaming past, a
+	// different hit every frame, so the hull's bounce light changed every frame (A/B on the level flight over Pangea, 8-frame
+	// bursts: hull change 1.09 -> 0.43, the same as with Lumen GI off; reflection screen traces, the hull distance field,
+	// reflection resolution and TSR resurrection changed nothing; the rest of the frame equal, GPU +0.26 ms).
+	TAutoConsoleVariable<int32> CVarPilotProbeScreenTraces(
+		TEXT("aps.Ship.PilotProbeScreenTraces"), 0,
+		TEXT("Rio 14.10: r.Lumen.ScreenProbeGather.ScreenTraces while the player pilots a ship (-1: leave it as it is). 0 (default): ")
+		TEXT("the bounce light on the hull comes from the radiance cache, not from the ground streaming past on screen; given back ")
+		TEXT("when the pilot leaves the ship. -1: as 0.6.5.1."));
+	/** Sets r.Lumen.ScreenProbeGather.ScreenTraces while the player's pawn is a ship and gives the saved value back otherwise. */
+	bool TickPilotProbeTraces(float)
+	{
+		static IConsoleVariable* const Traces =
+			IConsoleManager::Get().FindConsoleVariable(TEXT("r.Lumen.ScreenProbeGather.ScreenTraces"));
+		static int32 Saved = INT32_MIN;
+		if (!Traces || !GEngine)
+		{
+			return true;
+		}
+		const int32 Wanted = CVarPilotProbeScreenTraces.GetValueOnGameThread();
+		bool bPilots = false;
+		if (Wanted >= 0)
+		{
+			for (const FWorldContext& Context : GEngine->GetWorldContexts())
+			{
+				const UWorld* World = Context.World();
+				const APlayerController* Controller = World
+					&& (Context.WorldType == EWorldType::Game || Context.WorldType == EWorldType::PIE)
+					? World->GetFirstPlayerController() : nullptr;
+				bPilots |= Controller && Cast<ASpaceship>(Controller->GetPawn()) != nullptr;
+			}
+		}
+		if (bPilots && (Saved == INT32_MIN || Traces->GetInt() != Wanted))
+		{
+			if (Saved == INT32_MIN)
+			{
+				Saved = Traces->GetInt();
+			}
+			Traces->Set(Wanted, ECVF_SetByCode);
+			UE_LOG(LogTemp, Log, TEXT("[APS.Ships] piloting: Lumen probe screen traces %d (was %d)"), Wanted, Saved);
+		}
+		else if (!bPilots && Saved != INT32_MIN)
+		{
+			Traces->Set(Saved, ECVF_SetByCode);
+			UE_LOG(LogTemp, Log, TEXT("[APS.Ships] not piloting: Lumen probe screen traces back to %d"), Saved);
+			Saved = INT32_MIN;
+		}
+		return true;
+	}
+	FDelayedAutoRegisterHelper GPilotProbeTracesRegister(EDelayedRegisterRunPhase::EndOfEngineInit, []
+	{
+		FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateStatic(&TickPilotProbeTraces), 0.0f);
+	});
 	TAutoConsoleVariable<float> CVarIdleCameraTickSeconds(
 		TEXT("aps.Ship.IdleCameraTickSeconds"), 0.5f,
 		TEXT("Rio 05.10 (night optimisation; a trace at drive speed: the camera arms of six pawns cost 1.5 ms a frame, the ")
