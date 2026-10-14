@@ -4,6 +4,7 @@
 #include "APS_ALPHA/UI/MainMenu/APSWorldBrowserMetadata.h"
 #include "APS_ALPHA/UI/MainMenu/WorldGenerationViewModel.h"
 #include "Styling/SlateTypes.h"
+#include "UObject/StrongObjectPtr.h"
 #include "Widgets/SCompoundWidget.h"
 
 class AMainMenuController;
@@ -160,6 +161,13 @@ private:
 	TSharedPtr<FSlateBrush> MapPreviewBrush;
 	/** thumb.png of each authored world, loaded once per card id. */
 	TMap<FString, TSharedPtr<FSlateBrush>> AuthoredWorldBrushes;
+	/**
+	 * Rio 14.10 (0.6.5.1: white cards): a card's PNG is decoded into a transient texture held here for the menu's life;
+	 * a runtime FSlateImageBrush named by a file is never loaded outside a style set, so Slate drew its white fallback.
+	 */
+	TArray<TStrongObjectPtr<UTexture2D>> CardPictures;
+	/** The brush of a PNG on disk (or in the pak), else null: the card keeps its glyph, never a white box. */
+	TSharedPtr<FSlateBrush> LoadCardPicture(const FString& Path);
 	FReply PlayAuthoredWorld(FString Id);
 	/** Rio 07–09.10 (concept §2): the MODE row (ORIGIN / SANDBOX / SPACE TRIPS) and, for ORIGIN, the origin chips on
 	 * NEW WORLD; the knobs live on the menu's world model (APSWorldRules). */
