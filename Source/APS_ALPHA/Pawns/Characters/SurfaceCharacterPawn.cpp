@@ -143,7 +143,7 @@ void ASurfaceCharacterPawn::UpdateSurfaceOrientation()
 		bIsOnSurface = true;
 		
 		// Вычисляем угол поверхности
-		SurfaceAngle = FMath::RadiansToDegrees(FMath::Acos(FVector::DotProduct(CurrentSurfaceNormal, FVector::UpVector)));
+		SurfaceAngle = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(FVector::DotProduct(CurrentSurfaceNormal, FVector::UpVector), -1.0, 1.0)));
 		
 		// Ориентируем персонажа по поверхности
 		FVector NewUpVector = -CurrentSurfaceNormal;

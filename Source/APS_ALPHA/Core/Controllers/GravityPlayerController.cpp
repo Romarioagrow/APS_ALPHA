@@ -556,6 +556,10 @@ void AGravityPlayerController::LoadWorld()
 					{
 						FActorSpawnParameters SpawnParams;
 						SpawnParams.Name = FName(*SaveData.ActorName);
+						// Rio 15.10 (audit): a destroyed actor keeps its name until garbage collection; the default name mode
+						// then stops the game with "Cannot generate unique name". Requested takes a free name instead (the
+						// actor is filed under the saved name below either way), as every other named spawn here does.
+						SpawnParams.NameMode = FActorSpawnParameters::ESpawnActorNameMode::Requested;
 						SpawnParams.SpawnCollisionHandlingOverride =
 							ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 						Actor = World->SpawnActor<AActor>(ActorClass,

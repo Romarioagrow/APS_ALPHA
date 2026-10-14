@@ -215,6 +215,10 @@ namespace APSStrategicMapPanelLocal
 
 	FText AuText(const double Cm)
 	{
+		if (FText Ly; APSUINumber::LightYears(Cm, Ly))
+		{
+			return Ly;
+		}
 		FNumberFormattingOptions Options;
 		const double Au = Cm / APSStars::AstronomicalUnitCm;
 		Options.SetMaximumFractionalDigits(Au >= 100.0 ? 0 : Au >= 10.0 ? 1 : 2);

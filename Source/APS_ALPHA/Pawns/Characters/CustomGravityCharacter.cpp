@@ -4,6 +4,9 @@
 #include "APS_ALPHA/Core/World/APSWorldOriginSubsystem.h"
 
 #include "Animation/AnimInstance.h"
+#include "Animation/AnimMontage.h"
+#include "Animation/AnimSequenceBase.h"
+#include "UObject/StrongObjectPtr.h"
 #include "Camera/CameraComponent.h"
 #include "Components/BoxComponent.h"
 #include "Components/CapsuleComponent.h"
@@ -73,6 +76,33 @@ namespace APSCharacterQueryThrottle
 	// the movement (orient-to-movement, a forward-only walk blendspace). With this on, S without much sideways input keeps
 	// the body facing the camera's way and walks it backwards.
 	TMap<TWeakObjectPtr<const ACustomGravityCharacter>, uint64> GBackpedalFrame;
+	// Rio 15.10 (0.6.5.4: "back runs backwards but the animation runs forward"): the backward run (Anim_Run_B, authored at
+	// ~300 cm/s in BS_StationMovements_OnGound) plays in the surface ABP's DefaultSlot while backpedalling.
+	TMap<TWeakObjectPtr<const ACustomGravityCharacter>, TWeakObjectPtr<UAnimMontage>> GBackpedalMontage;
+	TAutoConsoleVariable<int32> CVarBackpedalAnim(TEXT("aps.Character.BackpedalAnim"), 1,
+		TEXT("Rio 15.10: 1 = walking backwards plays the backward run clip (speed-matched); 0 = the forward walk/run as in 0.6.5.4."),
+		ECVF_Default);
+	TAutoConsoleVariable<float> CVarBackpedalAnimSpeed(TEXT("aps.Character.BackpedalAnimSpeed"), 300.0f,
+		TEXT("The speed (cm/s) the backward run clip was authored at; its play rate is the walker's speed over this."),
+		ECVF_Default);
+	// Rio 15.10 ("the camera can be turned into the back of the head"): on foot the view pitched to 80 deg, the arm then
+	// stood over the head (or under it) and in a cabin its probe pulled the camera onto the head.
+	TAutoConsoleVariable<float> CVarCameraPitchMaxDeg(TEXT("aps.Character.CameraPitchMaxDeg"), 60.0f,
+		TEXT("On foot, the largest view pitch up or down (deg); 80: as 0.6.5.4."),
+		ECVF_Default);
+	UAnimSequenceBase* BackpedalClip()
+	{
+		static TStrongObjectPtr<UAnimSequenceBase> Clip;
+		static bool bTried = false;
+		if (!bTried)
+		{
+			bTried = true;
+			Clip.Reset(LoadObject<UAnimSequenceBase>(nullptr,
+				TEXT("/Game/APS/APS_ALPHA/Assets/ControlledPawns/GravityPawn/Animations/Walking/Anim_Run_B.Anim_Run_B")));
+			UE_LOG(LogTemp, Log, TEXT("[APS.Animation] backward run clip %s"), Clip.IsValid() ? TEXT("loaded") : TEXT("missing"));
+		}
+		return Clip.Get();
+	}
 	TAutoConsoleVariable<int32> CVarBackpedal(TEXT("aps.Character.Backpedal"), 1,
 		TEXT("1: on foot in gravity, back (S) without much sideways input walks backwards facing the view; 0: the body turns to ")
 		TEXT("the movement as in 0.6.5.2."),
@@ -371,7 +401,7 @@ void ACustomGravityCharacter::Tick(float DeltaTime)
 	{
 		SynchronizeCharacterToCamera(DeltaTime);
 	}
-	else if (UCharacterMovementComponent* WalkMovement = GetCharacterMovement())
+	else if (UCharacterMovementComponent* WalkMovement = GetCharacterMovement(); WalkMovement && !bIsZeroG)
 	{
 		// Rio 14.10 (aps.Character.Backpedal): while back is held (this or the last frame), the body keeps facing the view's
 		// way instead of turning to the movement; otherwise the movement turns it as before.
@@ -394,6 +424,8 @@ void ACustomGravityCharacter::Tick(float DeltaTime)
 		{
 			WalkMovement->bOrientRotationToMovement = true;
 		}
+		// Rio 15.10 (aps.Character.BackpedalAnim): the legs run backwards, at the walker's own speed.
+		UpdateBackpedalAnimation(bBackpedal);
 	}
 	UpdateGravityAnimationParameters();
 	UpdateBuildCamera(DeltaTime);
@@ -578,12 +610,54 @@ void ACustomGravityCharacter::HandleMove(const FInputActionValue& Value)
 	// Rio 14.10 (aps.Character.Backpedal): back without much sideways input walks backwards facing the view.
 	if (MovementVector.Y < -0.1f && FMath::Abs(MovementVector.Y) >= 1.5f * FMath::Abs(MovementVector.X))
 	{
-		APSCharacterQueryThrottle::GBackpedalFrame.Add(this, GFrameCounter);
+		APSMarkBackpedalInput(this);
 	}
 
 	// Movement and visible facing use exactly the same gravity-relative basis.
 	AddMovementInput(CamForward, MovementVector.Y);
 	AddMovementInput(CamRight, MovementVector.X);
+}
+
+void APSMarkBackpedalInput(ACustomGravityCharacter* Character)
+{
+	if (Character)
+	{
+		APSCharacterQueryThrottle::GBackpedalFrame.Add(Character, GFrameCounter);
+	}
+}
+
+void ACustomGravityCharacter::UpdateBackpedalAnimation(const bool bBackpedal)
+{
+	USkeletalMeshComponent* MeshComponent = GetMesh();
+	UAnimInstance* Anim = MeshComponent ? MeshComponent->GetAnimInstance() : nullptr;
+	if (!Anim)
+	{
+		return;
+	}
+	UAnimMontage* Playing = APSCharacterQueryThrottle::GBackpedalMontage.FindRef(this).Get();
+	const FVector Up = GetGravityUpVector();
+	const float Speed = static_cast<float>(FVector::VectorPlaneProject(GetVelocity(), Up).Size());
+	UAnimSequenceBase* Clip = APSCharacterQueryThrottle::CVarBackpedalAnim.GetValueOnGameThread() != 0 && bBackpedal && Speed > 20.f
+		? APSCharacterQueryThrottle::BackpedalClip() : nullptr;
+	if (Clip)
+	{
+		// The mesh's global rate (the forward stride's pace) multiplies every clip; the montage rate takes it out again.
+		const float Global = FMath::Max(MeshComponent->GlobalAnimRateScale, 0.1f);
+		const float Authored = FMath::Max(APSCharacterQueryThrottle::CVarBackpedalAnimSpeed.GetValueOnGameThread(), 50.0f);
+		const float Rate = FMath::Clamp(Speed / Authored, 0.3f, 2.5f) / Global;
+		if (Playing && Anim->Montage_IsPlaying(Playing))
+		{
+			Anim->Montage_SetPlayRate(Playing, Rate);
+		}
+		else if (UAnimMontage* Started = Anim->PlaySlotAnimationAsDynamicMontage(Clip, TEXT("DefaultSlot"), 0.2f, 0.2f, Rate, 100000))
+		{
+			APSCharacterQueryThrottle::GBackpedalMontage.Add(this, Started);
+		}
+	}
+	else if (Playing && Anim->Montage_IsPlaying(Playing))
+	{
+		Anim->Montage_Stop(0.2f, Playing);
+	}
 }
 
 void ACustomGravityCharacter::HandleLook(const FInputActionValue& Value)
@@ -656,7 +730,9 @@ void ACustomGravityCharacter::HandleLook(const FInputActionValue& Value)
 		CameraForwardOnGravityPlane = FVector::VectorPlaneProject(
 			CameraForwardOnGravityPlane, GravityUp).GetSafeNormal();
 	}
-	CameraPitch = FMath::Clamp(CameraPitch - LookAxisVector.Y * LookSensitivity, -80.f, 80.f);
+	// Rio 15.10 (aps.Character.CameraPitchMaxDeg): not over or under the head.
+	const float PitchMax = FMath::Clamp(APSCharacterQueryThrottle::CVarCameraPitchMaxDeg.GetValueOnGameThread(), 10.f, 80.f);
+	CameraPitch = FMath::Clamp(CameraPitch - LookAxisVector.Y * LookSensitivity, -PitchMax, PitchMax);
 }
 
 void ACustomGravityCharacter::HandleJumpStarted()

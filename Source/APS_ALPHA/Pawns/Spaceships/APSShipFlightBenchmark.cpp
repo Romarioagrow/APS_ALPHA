@@ -10,6 +10,7 @@
 #include "APSShipFlightModel.h"
 #include "APS_ALPHA/Actors/Astro/Moon.h"
 #include "APS_ALPHA/Actors/Astro/PlanetaryBody.h"
+#include "APS_ALPHA/Core/Rendering/APSStellarVisualSubsystem.h"
 #include "APS_ALPHA/Actors/Astro/Planet.h"
 #include "APS_ALPHA/Actors/Astro/Star.h"
 #include "APS_ALPHA/Gameplay/Construction/APSConstructionMode.h"
@@ -1762,6 +1763,7 @@ namespace APSShipBenchmark
 		bool bSprint{false};
 		bool bZeroG{false};
 		bool bStill{false};
+		bool bBack{false};
 		bool bQuit{false};
 		/** at=<s>:<console command> tokens ('+' = space), run once at that second of the walk (keys, shots). */
 		TArray<TPair<double, FString>> At;
@@ -1877,7 +1879,16 @@ namespace APSShipBenchmark
 		// still=1 (10.10, Rio's log: 200 ms render frames while standing at the colony): no input, the walker stands.
 		if (!GTestWalk.bStill)
 		{
-			Walker->AddMovementInput(GTestWalk.Dir, 1.0f, true);
+			// Rio 15.10 (back=1): backwards against the view, as S held (the backpedal facing and clip).
+			if (GTestWalk.bBack && !GTestWalk.bZeroG)
+			{
+				APSMarkBackpedalInput(Walker);
+				Walker->AddMovementInput(-GTestWalk.Dir, 1.0f, true);
+			}
+			else
+			{
+				Walker->AddMovementInput(GTestWalk.Dir, 1.0f, true);
+			}
 		}
 		// Last frame's walker and camera (both final for that frame): the camera's motion against the walker's.
 		const FVector Pawn = Walker->GetActorLocation();
@@ -1900,6 +1911,7 @@ namespace APSShipBenchmark
 				else if (Key == TEXT("sprint")) GTestWalk.bSprint = FCString::Atoi(*Value) != 0;
 				else if (Key == TEXT("zerog")) GTestWalk.bZeroG = FCString::Atoi(*Value) != 0;
 				else if (Key == TEXT("still")) GTestWalk.bStill = FCString::Atoi(*Value) != 0;
+				else if (Key == TEXT("back")) GTestWalk.bBack = FCString::Atoi(*Value) != 0;
 				else if (Key == TEXT("at"))
 				{
 					FString Seconds, Command;
@@ -3103,6 +3115,8 @@ namespace APSShipBenchmark
 		FRotator Control{FRotator::ZeroRotator};
 	};
 	FTestPose GTestPose;
+	/** aps.Test.Pose night: the world chosen by the first night pose (a moon may be nearer from far away). */
+	TWeakObjectPtr<const APlanetaryBody> GNightPoseBody;
 
 	/** Rio 04.10 ("jumped out of the ship and it vanished"): a walker looks at the nearest ship, to shoot its hull after the
 	 * exit's world shift (aps.Test.Pose ship, and the exit run's later shots). */
@@ -3377,6 +3391,60 @@ namespace APSShipBenchmark
 					TEXT("[APS.Test] pose disc %.3f px: %s (%s, %d km) at %.6g AU from its sky place (pixel tangent %.6g), %.0f deg aside"),
 					Pixels, *Nearest->AstroName.ToString().Replace(TEXT(" "), TEXT("_")), *Nearest->GetName(), Nearest->StarRadiusKM,
 					DistanceCm / TestAuCm, PixelTangent, Aside);
+			}
+		}
+		else if (Args[0].Equals(TEXT("night"), ESearchCase::IgnoreCase) && Args.Num() > 1)
+		{
+			// Rio 15.10 (the night side's brightness against height): night <altitude km> [deg from the antisolar point, 30]
+			// [deg aside, 10]: at rest over the nearest world's night side (the first night pose's world after that),
+			// facing its centre.
+			const APlanetaryBody* Body = GNightPoseBody.Get();
+			if (!Body)
+			{
+				double NearestAltitude = TNumericLimits<double>::Max();
+				for (TActorIterator<APlanetaryBody> It(World); It; ++It)
+				{
+					const double Radius = IsValid(*It) ? It->GetWorldScapeBodyRadiusCm() : 0.0;
+					if (!FMath::IsFinite(Radius) || Radius <= 1.0)
+					{
+						continue;
+					}
+					const double Altitude = FVector::Dist(Pawn->GetActorLocation(), It->GetActorLocation()) - Radius;
+					if (Altitude < NearestAltitude)
+					{
+						NearestAltitude = Altitude;
+						Body = *It;
+					}
+				}
+				GNightPoseBody = Body;
+			}
+			const UAPSStellarVisualSubsystem* Stellar = World->GetSubsystem<UAPSStellarVisualSubsystem>();
+			FVector StarLocation;
+			FString StarIdentity;
+			if (Body && Stellar && Stellar->GetActiveStellarTarget(StarLocation, StarIdentity))
+			{
+				const FVector Centre = Body->GetActorLocation();
+				const FVector Anti = (Centre - StarLocation).GetSafeNormal();
+				const FVector Side = FVector::CrossProduct(Anti, FMath::Abs(Anti.Z) < 0.9 ? FVector::UpVector : FVector::ForwardVector)
+					.GetSafeNormal();
+				const double TiltDegrees = Args.Num() > 2 ? FCString::Atod(*Args[2]) : 30.0;
+				const double Tilt = FMath::DegreesToRadians(TiltDegrees);
+				const FVector Out = (Anti * FMath::Cos(Tilt) + Side * FMath::Sin(Tilt)).GetSafeNormal();
+				const double AltitudeKm = FMath::Max(FCString::Atod(*Args[1]), 0.1);
+				if (ASpaceship* Ship = Cast<ASpaceship>(Pawn))
+				{
+					FAPSShipFlightBenchmark::SetKinematicVelocity(*Ship, FVector::ZeroVector);
+				}
+				Pawn->SetActorLocation(Centre + Out * (Body->GetWorldScapeBodyRadiusCm() + AltitudeKm * 100000.0), false, nullptr,
+					ETeleportType::TeleportPhysics);
+				const double Aside = Args.Num() > 3 ? FCString::Atod(*Args[3]) : 10.0;
+				FaceForTest(*Controller, *Pawn, Centre - Pawn->GetActorLocation(), Aside, true);
+				UE_LOG(LogTemp, Log, TEXT("[APS.Test] pose night: %s (%s) %.1f km over its night side, %.0f deg from the antisolar point"),
+					*Body->GetName(), *StarIdentity, AltitudeKm, TiltDegrees);
+			}
+			else
+			{
+				UE_LOG(LogTemp, Warning, TEXT("[APS.Test] pose night: no world or no lighting star"));
 			}
 		}
 		else if (Args[0].Equals(TEXT("turn"), ESearchCase::IgnoreCase) && Args.Num() > 1)

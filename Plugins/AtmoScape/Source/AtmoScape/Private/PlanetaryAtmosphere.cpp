@@ -2,6 +2,10 @@
 
 #include "PlanetaryAtmosphere.h"
 
+// APS (Rio 15.10, flight FPS: ~135 parameter writes per atmosphere a frame, each built its FName from text; 24 atmospheres in
+// a far system cost ~0.6 ms of the game thread): each call site's name is built once.
+#define APS_ATMO_PARAM(Literal) ([]() -> FName { static const FName ParamName(TEXT(Literal)); return ParamName; }())
+
 bool AAtmoScape::ShouldTickIfViewportsOnly() const
 {
 	return true;
@@ -130,9 +134,9 @@ AAtmoScape::AAtmoScape()
 void AAtmoScape::BeginPlay()
 {
 	Super::BeginPlay();
-	AtmosphereMaterial->SetVectorParameterValue("SunlightIntensity", FLinearColor(0, 0, 0, 1.f));
-	SpaceAtmosphereMaterial->SetVectorParameterValue("SunlightIntensity", FLinearColor(0, 0, 0, 1.f));
-	PlanetarySkylightMaterial->SetVectorParameterValue("SunlightIntensity", FLinearColor(0, 0, 0, 1.f));
+	AtmosphereMaterial->SetVectorParameterValue(APS_ATMO_PARAM("SunlightIntensity"), FLinearColor(0, 0, 0, 1.f));
+	SpaceAtmosphereMaterial->SetVectorParameterValue(APS_ATMO_PARAM("SunlightIntensity"), FLinearColor(0, 0, 0, 1.f));
+	PlanetarySkylightMaterial->SetVectorParameterValue(APS_ATMO_PARAM("SunlightIntensity"), FLinearColor(0, 0, 0, 1.f));
 
 	PlanetaryAtmoMesh->SetVisibility(false);
 	SpacePlanetaryAtmoMesh->SetVisibility(true);
@@ -144,10 +148,10 @@ void AAtmoScape::BeginPlay()
 void AAtmoScape::Tick(float DeltaTime)
 {
 	Super::Tick(DeltaTime);
-	AtmosphereMaterial->SetVectorParameterValue("SunlightIntensity", FLinearColor(0, 0, 0, 1.f));
-	SpaceAtmosphereMaterial->SetVectorParameterValue("SunlightIntensity", FLinearColor(0, 0, 0, 1.f));
-	PlanetarySkylightMaterial->SetVectorParameterValue("SunlightIntensity", FLinearColor(0, 0, 0, 1.f));
-	PlanetaryOutterMaterial->SetVectorParameterValue("SunlightIntensity", FLinearColor(0, 0, 0, 1.f));
+	AtmosphereMaterial->SetVectorParameterValue(APS_ATMO_PARAM("SunlightIntensity"), FLinearColor(0, 0, 0, 1.f));
+	SpaceAtmosphereMaterial->SetVectorParameterValue(APS_ATMO_PARAM("SunlightIntensity"), FLinearColor(0, 0, 0, 1.f));
+	PlanetarySkylightMaterial->SetVectorParameterValue(APS_ATMO_PARAM("SunlightIntensity"), FLinearColor(0, 0, 0, 1.f));
+	PlanetaryOutterMaterial->SetVectorParameterValue(APS_ATMO_PARAM("SunlightIntensity"), FLinearColor(0, 0, 0, 1.f));
 
 	UpdateScale();
 }
@@ -161,10 +165,10 @@ void AAtmoScape::OnConstruction(const FTransform& Transform)
 	PlanetaryAbsorptionMaterial = PlanetaryAbsorptionMesh->CreateDynamicMaterialInstance(0, Absorbtion_Material);
 	PlanetaryOutterMaterial = PlanetaryOutterMesh->CreateDynamicMaterialInstance(0, Outter_Material);
 
-	AtmosphereMaterial->SetVectorParameterValue("SunlightIntensity", FLinearColor(0, 0, 0, 1.f));
-	SpaceAtmosphereMaterial->SetVectorParameterValue("SunlightIntensity", FLinearColor(0, 0, 0, 1.f));
-	PlanetarySkylightMaterial->SetVectorParameterValue("SunlightIntensity", FLinearColor(0, 0, 0, 1.f));
-	PlanetaryOutterMaterial->SetVectorParameterValue("SunlightIntensity", FLinearColor(0, 0, 0, 1.f));
+	AtmosphereMaterial->SetVectorParameterValue(APS_ATMO_PARAM("SunlightIntensity"), FLinearColor(0, 0, 0, 1.f));
+	SpaceAtmosphereMaterial->SetVectorParameterValue(APS_ATMO_PARAM("SunlightIntensity"), FLinearColor(0, 0, 0, 1.f));
+	PlanetarySkylightMaterial->SetVectorParameterValue(APS_ATMO_PARAM("SunlightIntensity"), FLinearColor(0, 0, 0, 1.f));
+	PlanetaryOutterMaterial->SetVectorParameterValue(APS_ATMO_PARAM("SunlightIntensity"), FLinearColor(0, 0, 0, 1.f));
 
 	LastPlanetRadius = PlanetRadius;
 	LastAtmosphereHeight = AtmosphereHeight;
@@ -183,51 +187,53 @@ void AAtmoScape::UpdateMaterialParameters(UMaterialInstanceDynamic* Material, fl
 {
 	if (!IsValid(Material)) return;
 
-    Material->SetScalarParameterValue("AtmosRadius", AtmosRadius);
-    Material->SetScalarParameterValue("EarthRadius", PlanetScale);
-    Material->SetScalarParameterValue("LightSegLength", LightSegLength);
-    Material->SetScalarParameterValue("ScaleHeight_R", ScaleHeightR);
-    Material->SetScalarParameterValue("ScaleHeight_M", ScaleHeightM);
-    Material->SetVectorParameterValue("coef_M", MieScatteringCoef);
-    Material->SetVectorParameterValue("coef_R", RayleighScatteringCoef);
-    Material->SetVectorParameterValue("coef_RO", RayleighOzoneScateringCoef);
-    Material->SetScalarParameterValue("ActorScale", Vec_PlanetScale.Y);
-    Material->SetVectorParameterValue("AtmoBack", AtmoBackHSV.HSVToLinearRGB());
-    Material->SetScalarParameterValue("AtmosOpacity",
-		AtmosphereOpacity * FMath::Max(PresentationOpacityScale, 0.0f));
+    Material->SetScalarParameterValue(APS_ATMO_PARAM("AtmosRadius"), AtmosRadius);
+    Material->SetScalarParameterValue(APS_ATMO_PARAM("EarthRadius"), PlanetScale);
+    Material->SetScalarParameterValue(APS_ATMO_PARAM("LightSegLength"), LightSegLength);
+    Material->SetScalarParameterValue(APS_ATMO_PARAM("ScaleHeight_R"), ScaleHeightR);
+    Material->SetScalarParameterValue(APS_ATMO_PARAM("ScaleHeight_M"), ScaleHeightM);
+    Material->SetVectorParameterValue(APS_ATMO_PARAM("coef_M"), MieScatteringCoef);
+    Material->SetVectorParameterValue(APS_ATMO_PARAM("coef_R"), RayleighScatteringCoef);
+    Material->SetVectorParameterValue(APS_ATMO_PARAM("coef_RO"), RayleighOzoneScateringCoef);
+    Material->SetScalarParameterValue(APS_ATMO_PARAM("ActorScale"), Vec_PlanetScale.Y);
+    Material->SetVectorParameterValue(APS_ATMO_PARAM("AtmoBack"), AtmoBackHSV.HSVToLinearRGB());
+    // APS (Rio 15.10): the sky shells carry the game's density gain here, so nothing writes them a second time a frame.
+    Material->SetScalarParameterValue(APS_ATMO_PARAM("AtmosOpacity"),
+		AtmosphereOpacity * FMath::Max(PresentationOpacityScale, 0.0f)
+		* ((Material == AtmosphereMaterial || Material == SpaceAtmosphereMaterial) ? FMath::Max(ShellOpacityGain, 0.0f) : 1.0f));
 	const int32 SafeCameraSamples = FMath::Clamp(CameraSamplesCount, 1, 128);
 	const int32 SafeLightSamples = FMath::Clamp(LightSamplesCount, 1, 128);
-    Material->SetScalarParameterValue("CameraSamples", SafeCameraSamples);
-	Material->SetScalarParameterValue("ParticulateIntensity", AtmosphereParticulatesDensity);
-    Material->SetScalarParameterValue("CameraSamples_Recip", 1.0f / static_cast<float>(SafeCameraSamples));
-    Material->SetScalarParameterValue("LightSamples", SafeLightSamples);
-    Material->SetScalarParameterValue("Mie_G", (MiePhase * 1.55) - (MiePhase * MiePhase * MiePhase * 0.55));
+    Material->SetScalarParameterValue(APS_ATMO_PARAM("CameraSamples"), SafeCameraSamples);
+	Material->SetScalarParameterValue(APS_ATMO_PARAM("ParticulateIntensity"), AtmosphereParticulatesDensity);
+    Material->SetScalarParameterValue(APS_ATMO_PARAM("CameraSamples_Recip"), 1.0f / static_cast<float>(SafeCameraSamples));
+    Material->SetScalarParameterValue(APS_ATMO_PARAM("LightSamples"), SafeLightSamples);
+    Material->SetScalarParameterValue(APS_ATMO_PARAM("Mie_G"), (MiePhase * 1.55) - (MiePhase * MiePhase * MiePhase * 0.55));
 
     // Ajout du paramиtre Skylight
-    Material->SetScalarParameterValue("SkylightIntensity", ScaleSkylightIntensity);
-	Material->SetScalarParameterValue("SkylightShadow", ScaleSkylightShadow);
-	Material->SetScalarParameterValue("StartDistanceAO", ScaleStartDistanceAO);
-	Material->SetScalarParameterValue("StepsNumAO", ScaleStepsNumAO);
+    Material->SetScalarParameterValue(APS_ATMO_PARAM("SkylightIntensity"), ScaleSkylightIntensity);
+	Material->SetScalarParameterValue(APS_ATMO_PARAM("SkylightShadow"), ScaleSkylightShadow);
+	Material->SetScalarParameterValue(APS_ATMO_PARAM("StartDistanceAO"), ScaleStartDistanceAO);
+	Material->SetScalarParameterValue(APS_ATMO_PARAM("StepsNumAO"), ScaleStepsNumAO);
 
 	// Ajout du paramиtre OutterAtmo
-	Material->SetScalarParameterValue("AirGlowIntensity", ScaleAirGlowIntensity);
-	Material->SetVectorParameterValue("OutterColor", OutterColor);
-	Material->SetVectorParameterValue("insideColor", InsideColor);
+	Material->SetScalarParameterValue(APS_ATMO_PARAM("AirGlowIntensity"), ScaleAirGlowIntensity);
+	Material->SetVectorParameterValue(APS_ATMO_PARAM("OutterColor"), OutterColor);
+	Material->SetVectorParameterValue(APS_ATMO_PARAM("insideColor"), InsideColor);
 	// MM_PlanetaryAtmo consumes this scalar for both its directional-light and
 	// custom-position branches.
-	Material->SetScalarParameterValue("LightIntensity",
+	Material->SetScalarParameterValue(APS_ATMO_PARAM("LightIntensity"),
 		FMath::Max(PresentationLightIntensity, 0.0f));
 
     if (IsValid(LightSource))
     {
-        Material->SetScalarParameterValue("CustomLightSource", 1);
-        Material->SetScalarParameterValue("SampleDistance", static_cast<int>(bSampleDistance));
-        Material->SetVectorParameterValue("LightPosition", LightSource->GetActorLocation());
-        //Material->SetScalarParameterValue("LightDistanceScale", 647800000 * LightDistanceScale);
+        Material->SetScalarParameterValue(APS_ATMO_PARAM("CustomLightSource"), 1);
+        Material->SetScalarParameterValue(APS_ATMO_PARAM("SampleDistance"), static_cast<int>(bSampleDistance));
+        Material->SetVectorParameterValue(APS_ATMO_PARAM("LightPosition"), LightSource->GetActorLocation());
+        //Material->SetScalarParameterValue(APS_ATMO_PARAM("LightDistanceScale"), 647800000 * LightDistanceScale);
     }
     else
     {
-        Material->SetScalarParameterValue("CustomLightSource", 0);
+        Material->SetScalarParameterValue(APS_ATMO_PARAM("CustomLightSource"), 0);
     }
 
 }

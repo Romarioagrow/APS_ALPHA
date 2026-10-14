@@ -511,6 +511,8 @@ bool FAPSStarSystems::ReadCatalogue()
 	IndexById.Reset();
 	IndexByGalaxy.Reset();
 	GalaxySystems.Reset();
+	GalaxyGrid.Reset();
+	GalaxyMaxRoomCm = 0.0;
 	ClusterSystemCount = Count;
 	HomeIndex = INDEX_NONE;
 	const FTransform ComponentTransform = Cluster->StarMeshInstances->GetComponentTransform();
@@ -741,6 +743,26 @@ void FAPSStarSystems::Search(const FString& Text, const int32 Limit, TArray<int3
 	for (int32 Each = 0; Each < Found.Num() && Each < Limit; ++Each) OutIndices.Add(Found[Each]);
 }
 
+namespace APSStarSystemsGalaxyGrid
+{
+	TAutoConsoleVariable<int32> CVarGalaxyGrid(
+		TEXT("aps.Stars.GalaxyGrid"), 1,
+		TEXT("Rio 15.10: 1 = the containing query reads the galaxy systems of the cells around the place (a grid by their offset ")
+		TEXT("from home); 0 = every galaxy system registered on the trip, as 0.6.5.4."),
+		ECVF_Default);
+	/** 4 light years: a galaxy room is a few to ~15 ly across, so a query reads a few rings of cells. */
+	constexpr double CellCm = 4.0 * 9.4607304725808e17;
+	/** Wider rooms than this many cells fall back to reading every galaxy system. */
+	constexpr int32 MaxReach = 6;
+}
+
+FIntVector FAPSStarSystems::GalaxyCellOf(const FVector& FromHomeOffset) const
+{
+	using namespace APSStarSystemsGalaxyGrid;
+	return FIntVector(FMath::FloorToInt(FromHomeOffset.X / CellCm), FMath::FloorToInt(FromHomeOffset.Y / CellCm),
+		FMath::FloorToInt(FromHomeOffset.Z / CellCm));
+}
+
 int32 FAPSStarSystems::FindContaining(const FVector& Location) const
 {
 	if (Systems.IsEmpty()) return INDEX_NONE;
@@ -752,7 +774,7 @@ int32 FAPSStarSystems::FindContaining(const FVector& Location) const
 	double BestDistance = TNumericLimits<double>::Max();
 	int32 Best = FindContainingCluster(Location, &BestDistance);
 	// The galaxy systems near the pilot: outside the grid, since a sparse field's rooms may be wider than its cells.
-	for (const int32 Index : GalaxySystems)
+	const auto Consider = [this, &Location, &BestDistance, &Best](const int32 Index)
 	{
 		const double Distance = FVector::DistSquared(Location, LocationOf(Index));
 		if (Distance <= FMath::Square(Systems[Index].RoomCm) && Distance < BestDistance)
@@ -760,6 +782,29 @@ int32 FAPSStarSystems::FindContaining(const FVector& Location) const
 			BestDistance = Distance;
 			Best = Index;
 		}
+	};
+	// Rio 15.10 (aps.Stars.GalaxyGrid): only the cells a room reaching the place can stand in.
+	const int32 Reach = FMath::CeilToInt(GalaxyMaxRoomCm / APSStarSystemsGalaxyGrid::CellCm);
+	if (APSStarSystemsGalaxyGrid::CVarGalaxyGrid.GetValueOnGameThread() != 0 && Reach <= APSStarSystemsGalaxyGrid::MaxReach)
+	{
+		const FIntVector Cell = GalaxyCellOf(Location - HomeLocation);
+		for (int32 X = -Reach; X <= Reach; ++X)
+		for (int32 Y = -Reach; Y <= Reach; ++Y)
+		for (int32 Z = -Reach; Z <= Reach; ++Z)
+		{
+			if (const TArray<int32>* Members = GalaxyGrid.Find(Cell + FIntVector(X, Y, Z)))
+			{
+				for (const int32 Index : *Members)
+				{
+					Consider(Index);
+				}
+			}
+		}
+		return Best;
+	}
+	for (const int32 Index : GalaxySystems)
+	{
+		Consider(Index);
 	}
 	return Best;
 }
@@ -942,6 +987,8 @@ int32 FAPSStarSystems::RegisterGalaxyStar(const int64 CatalogIndex)
 	IndexById.Add(Info.Id, Index);
 	IndexByGalaxy.Add(CatalogIndex, Index);
 	GalaxySystems.Add(Index);
+	GalaxyGrid.FindOrAdd(GalaxyCellOf(FromHome[Index])).Add(Index);
+	GalaxyMaxRoomCm = FMath::Max(GalaxyMaxRoomCm, Info.RoomCm);
 	if (SkyRoot)
 	{
 		// The sky's lag behind its sky place at this registration: one owed step while the stellar view alone moves the sky,

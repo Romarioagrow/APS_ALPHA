@@ -335,7 +335,9 @@ void UAPSPlanetCloudComponent::UpdateFrame()
     Vec(TEXT("CloudSun"),PhysicalSun);
     const auto SunColor = FLinearColor::MakeFromColorTemperature(float(FMath::Clamp(P->ParentStar->SurfaceTemperature, 2000, 12000)));
     CloudMaterial->SetVectorParameterValue(TEXT("CloudSunColor"),SunColor);
-    if (FParse::Param(FCommandLine::Get(), TEXT("APSCloudDiagnostics")) && GetWorld()->GetTimeSeconds() >= NextDiagnosticSeconds)
+    // Rio 15.10 (code audit): the command line is parsed once, not every frame.
+    static const bool bCloudDiagnostics = FParse::Param(FCommandLine::Get(), TEXT("APSCloudDiagnostics"));
+    if (bCloudDiagnostics && GetWorld()->GetTimeSeconds() >= NextDiagnosticSeconds)
     {
         NextDiagnosticSeconds = GetWorld()->GetTimeSeconds()+2.;
         UE_LOG(LogTemp, Display, TEXT("[APS.CloudFrame] owner=%s visible=%d hidden=%d ownerHidden=%d scale=%.12g radius=%.3f componentScale=%g boundsRadius=%g centerErrorCm=%g fade=%g cameraLocalKm=%s sun=%s air=%s aerial=%d"),

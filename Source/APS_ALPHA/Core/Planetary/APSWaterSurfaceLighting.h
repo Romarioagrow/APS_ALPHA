@@ -12,20 +12,19 @@ namespace APSWaterSurfaceLighting
 {
 inline bool RenderContract()
 {
-    for (const TCHAR* Name : {TEXT("r.Material.RoughDiffuse"), TEXT("r.Material.EnergyConservation"), TEXT("r.Substrate")})
+    // Rio 15.10 (code audit, flight FPS): the nine console variables are found once, not every frame.
+    static const TCHAR* const Names[] = {TEXT("r.Material.RoughDiffuse"), TEXT("r.Material.EnergyConservation"), TEXT("r.Substrate"),
+        TEXT("r.Water.SingleLayer.ShadersSupportVSMFiltering"), TEXT("r.Water.SingleLayer.VSMFiltering"),
+        TEXT("r.Water.SingleLayer.ShadersSupportDistanceFieldShadow"), TEXT("r.Shadow.Virtual.Enable"),
+        TEXT("r.Water.SingleLayer.DepthPrepass"), TEXT("r.Lumen.ScreenProbeGather.ShortRangeAO")};
+    static IConsoleVariable* Found[UE_ARRAY_COUNT(Names)] = {};
+    for (int32 Index = 0; Index < UE_ARRAY_COUNT(Names); ++Index)
     {
-        const auto* CVar = IConsoleManager::Get().FindConsoleVariable(Name);
-        if (!CVar || CVar->GetInt() != 0)
-        { UE_LOG(LogTemp,Warning,TEXT("[APS.WaterPass.Contract] %s actual=%d expected=0"),Name,CVar?CVar->GetInt():-999); return false; }
-    }
-    for (const TCHAR* Name : {TEXT("r.Water.SingleLayer.ShadersSupportVSMFiltering"),
-        TEXT("r.Water.SingleLayer.VSMFiltering"), TEXT("r.Water.SingleLayer.ShadersSupportDistanceFieldShadow"),
-        TEXT("r.Shadow.Virtual.Enable"), TEXT("r.Water.SingleLayer.DepthPrepass"),
-        TEXT("r.Lumen.ScreenProbeGather.ShortRangeAO")})
-    {
-        const auto* CVar = IConsoleManager::Get().FindConsoleVariable(Name);
-        if (!CVar || CVar->GetInt() != 1)
-        { UE_LOG(LogTemp,Warning,TEXT("[APS.WaterPass.Contract] %s actual=%d expected=1"),Name,CVar?CVar->GetInt():-999); return false; }
+        if (!Found[Index]) Found[Index] = IConsoleManager::Get().FindConsoleVariable(Names[Index]);
+        const IConsoleVariable* CVar = Found[Index];
+        const int32 Expected = Index < 3 ? 0 : 1;
+        if (!CVar || CVar->GetInt() != Expected)
+        { UE_LOG(LogTemp,Warning,TEXT("[APS.WaterPass.Contract] %s actual=%d expected=%d"),Names[Index],CVar?CVar->GetInt():-999,Expected); return false; }
     }
     return true;
 }

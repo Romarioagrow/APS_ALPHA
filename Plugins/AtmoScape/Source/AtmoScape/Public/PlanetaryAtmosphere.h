@@ -93,6 +93,13 @@ public:
 	UPROPERTY(BlueprintReadWrite, Transient, Category = "Atmosphere | Presentation", meta = (ClampMin = "0"))
 	float PresentationOpacityScale = 1.0f;
 
+	/**
+	 * APS (Rio 15.10, flight FPS): the game's sky density gain on the two sky shells only (the sky seen from inside and the
+	 * shell seen from space), applied in this actor's own write. The game used to write its gained value after this tick,
+	 * so the two shells' AtmosOpacity changed twice every frame. 1: the base, as the plugin shipped.
+	 */
+	float ShellOpacityGain = 1.0f;
+
 	//Change the height of the atmosphere, thicker atmospheres need to be balanced with opacity, default is physically accurate to earth
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Atmosphere",
 		meta = (UIMin = "0", UIMax = "700", ClampMin = "0"))

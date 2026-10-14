@@ -354,8 +354,36 @@ namespace APSWorldOrigin
 	constexpr double RealShiftGrainCm = 1048576.0;
 	constexpr double RealShiftFarGrainCm = 16777216.0;
 	constexpr double RealShiftFarCm = 4.7e21;
+	// Rio 15.10 (0.6.5.4, ~7,000 ly out: after the fast shifts the pawn stayed 58-118 km from 0,0,0, 2-8 km near home; the
+	// character speckled aboard at km/s..Mm/s and every stop brought a full shift): beyond 4.7e21 cm the grain went 16x
+	// coarser at once (168 km), though a double keeps 2^20 cm exact up to 2^73 cm (~10,000 ly). With this on, the grain is
+	// the double step of the origin's size: 2^20 cm (10.5 km) to ~10,000 ly, 2^21 to ~20,000 ly, and so on.
+	TAutoConsoleVariable<int32> CVarFineFarGrain(
+		TEXT("aps.WorldOrigin.FineFarGrain"), 1,
+		TEXT("Rio 15.10: 1 = the fast-shift grain is the double step of the origin's size (10.5 km up to ~10,000 ly); 0 = as ")
+		TEXT("0.6.5.4 (168 km beyond 4.7e21 cm, the pawn then up to ~145 km from 0,0,0)."),
+		ECVF_Default);
+	/** The grain fast REAL SCALE shifts move by, for an origin this far out (its largest axis, cm). */
+	double ShiftGrainCm(const double OriginAbsMax)
+	{
+		if (CVarFineFarGrain.GetValueOnGameThread() == 0)
+		{
+			return OriginAbsMax > RealShiftFarCm ? RealShiftFarGrainCm : RealShiftGrainCm;
+		}
+		// The step of a double in [2^E, 2^(E+1)) is 2^(E-52): whole steps of it add exactly to every value of that size.
+		const int32 Exponent = FMath::FloorToInt(FMath::Log2(FMath::Max(OriginAbsMax, 1.0)));
+		return FMath::Max(RealShiftGrainCm, FMath::Pow(2.0, static_cast<double>(Exponent - 52)));
+	}
 	/** Atmospheres nearer the pawn than this (cm, ~7 AU) re-take their materials' light position right after a shift. */
 	constexpr double AtmosphereRefreshCm = 1.0e14;
+	// Rio 15.10 (0.6.5.4 log, 7,000 ly out: fast shifts 2.8-3.4 ms each, actors 2.0-2.4 ms, in a system with 5-6 WorldScape
+	// surfaces; 1.0-1.3 ms near home with 2): aps.WorldOrigin.ShiftProfile N times each actor's step over the next N shifts
+	// and logs the costliest classes, then sets itself back to 0.
+	TAutoConsoleVariable<int32> CVarShiftProfile(TEXT("aps.WorldOrigin.ShiftProfile"), 0,
+		TEXT("Rio 15.10: N > 0 times every actor's part of the next N world shifts and logs the costliest classes (then 0)."),
+		ECVF_Default);
+	TMap<FName, TPair<double, int32>> GShiftProfile;
+	int32 GShiftProfiled = 0;
 	/** A flow shift re-files the Nanite meshes this near the pawn (cm, 100 000 km); the rest once the flow ends. */
 	constexpr double NaniteNearCm = 1.0e10;
 
@@ -727,6 +755,18 @@ bool UAPSWorldOriginSubsystem::ShiftWorldBy(const FVector& Offset, const TCHAR* 
 	{
 		return false;
 	}
+	// Rio 15.10 (audit): a NaN/Inf offset (one broken pawn transform) would carry every actor, the scene and the origin to
+	// NaN for good, and the next save would keep it.
+	if (Offset.ContainsNaN())
+	{
+		static bool bLoggedNaN = false;
+		if (!bLoggedNaN)
+		{
+			bLoggedNaN = true;
+			UE_LOG(LogTemp, Error, TEXT("[APS.WorldOrigin] refused a non-finite shift (%s): %s"), Reason, *Offset.ToString());
+		}
+		return false;
+	}
 	const APawn* Pawn = APSWorldOrigin::PlayerPawn(World);
 	const FVector PawnBefore = Pawn ? Pawn->GetActorLocation() : FVector::ZeroVector;
 	const double StartSeconds = FPlatformTime::Seconds();
@@ -836,11 +876,19 @@ bool UAPSWorldOriginSubsystem::ShiftWorldBy(const FVector& Offset, const TCHAR* 
 		}
 		// ULevel::ApplyWorldOffset's steps for a world shift (its precomputed lighting moves with the scene), the carried
 		// actors skipped.
+		const bool bProfile = APSWorldOrigin::CVarShiftProfile.GetValueOnGameThread() > 0;
 		for (AActor* Actor : Level->Actors)
 		{
 			if (Actor && !Carried.Contains(Actor))
 			{
+				const double ActorStart = bProfile ? FPlatformTime::Seconds() : 0.0;
 				Actor->ApplyWorldOffset(Actor->bIgnoresOriginShifting ? FVector::ZeroVector : Offset, true);
+				if (bProfile)
+				{
+					TPair<double, int32>& Row = APSWorldOrigin::GShiftProfile.FindOrAdd(Actor->GetClass()->GetFName());
+					Row.Key += (FPlatformTime::Seconds() - ActorStart) * 1000.0;
+					++Row.Value;
+				}
 			}
 		}
 		for (UModelComponent* Model : Level->ModelComponents)
@@ -860,6 +908,30 @@ bool UAPSWorldOriginSubsystem::ShiftWorldBy(const FVector& Offset, const TCHAR* 
 	// shift would have put it (the stellar view keeps it on the home system, which shifted). The scene-wide shift already
 	// moved its proxies there, so the move draws no motion of its own, and everything after this (the listeners of
 	// OnPostDoubleShift below) finds the sky in place.
+	// Rio 15.10 (aps.WorldOrigin.ShiftProfile): after N profiled shifts, the costliest classes once.
+	if (const int32 ProfileShifts = APSWorldOrigin::CVarShiftProfile.GetValueOnGameThread(); ProfileShifts > 0
+		&& ++APSWorldOrigin::GShiftProfiled >= ProfileShifts)
+	{
+		APSWorldOrigin::GShiftProfile.ValueSort([](const TPair<double, int32>& A, const TPair<double, int32>& B) { return A.Key > B.Key; });
+		FString Line;
+		int32 Shown = 0;
+		for (const TPair<FName, TPair<double, int32>>& Entry : APSWorldOrigin::GShiftProfile)
+		{
+			if (Shown++ >= 14)
+			{
+				break;
+			}
+			Line += FString::Printf(TEXT(" | %s %.3f ms (%d)"), *Entry.Key.ToString(), Entry.Value.Key / ProfileShifts,
+				Entry.Value.Value / ProfileShifts);
+		}
+		UE_LOG(LogTemp, Log, TEXT("[APS.WorldOrigin] shift profile over %d shifts, ms per shift (actors):%s"), ProfileShifts, *Line);
+		APSWorldOrigin::GShiftProfile.Reset();
+		APSWorldOrigin::GShiftProfiled = 0;
+		if (IConsoleVariable* Profile = IConsoleManager::Get().FindConsoleVariable(TEXT("aps.WorldOrigin.ShiftProfile")))
+		{
+			Profile->Set(0, ECVF_SetByCode);
+		}
+	}
 	if (CarriedSkyRoot)
 	{
 		CarriedSkyRoot->AddActorWorldOffset(Offset, false, nullptr, ETeleportType::TeleportPhysics);
@@ -1205,8 +1277,7 @@ FVector UAPSWorldOriginSubsystem::FlowPastShip(AActor& Ship, const FVector& InDe
 		}
 		return Delta;
 	}
-	const double Grain = GetOriginOffset().GetAbsMax() > APSWorldOrigin::RealShiftFarCm
-		? APSWorldOrigin::RealShiftFarGrainCm : APSWorldOrigin::RealShiftGrainCm;
+	const double Grain = APSWorldOrigin::ShiftGrainCm(GetOriginOffset().GetAbsMax());
 	const FVector Grains(FMath::RoundToDouble(Target.X / Grain) * Grain, FMath::RoundToDouble(Target.Y / Grain) * Grain,
 		FMath::RoundToDouble(Target.Z / Grain) * Grain);
 	// Exact: the step and its grains differ by about the ship's own small offset from 0,0,0 (Sterbenz), so the ship
@@ -1556,8 +1627,7 @@ void UAPSWorldOriginSubsystem::OweTravel(AActor& Ship, const FVector& Delta)
 {
 	TRACE_CPUPROFILER_EVENT_SCOPE(APS_StillShip_Owe);
 	// Exact: whole grains add up without rounding, the rest stays within half a grain.
-	const double Grain = GetOriginOffset().GetAbsMax() > APSWorldOrigin::RealShiftFarCm
-		? APSWorldOrigin::RealShiftFarGrainCm : APSWorldOrigin::RealShiftGrainCm;
+	const double Grain = APSWorldOrigin::ShiftGrainCm(GetOriginOffset().GetAbsMax());
 	const FVector Total = OwedRest + Delta;
 	const FVector Grains(FMath::RoundToDouble(Total.X / Grain) * Grain, FMath::RoundToDouble(Total.Y / Grain) * Grain,
 		FMath::RoundToDouble(Total.Z / Grain) * Grain);
@@ -1619,8 +1689,7 @@ bool UAPSWorldOriginSubsystem::PayDebt(AActor& Carrier, const FVector& Delta, FV
 	{
 		return false;
 	}
-	const double Grain = GetOriginOffset().GetAbsMax() > APSWorldOrigin::RealShiftFarCm
-		? APSWorldOrigin::RealShiftFarGrainCm : APSWorldOrigin::RealShiftGrainCm;
+	const double Grain = APSWorldOrigin::ShiftGrainCm(GetOriginOffset().GetAbsMax());
 	// The owed whole grains, plus the grains of where the carrier's own small rest and this step would take it: the
 	// world shifts by all of them, the carrier moves by what is left (within half a grain of 0,0,0), exactly as a flow.
 	const FVector Local = Carrier.GetActorLocation() + Delta + OwedRest;
@@ -1958,8 +2027,7 @@ void UAPSWorldOriginSubsystem::UpdateFloatingOrigin(const float DeltaSeconds)
 		if (FastCmPerS > 0.0 && MoverSpeedCm > FastCmPerS && Here.SizeSquared() > FMath::Square(FastDriftCm)
 			&& !IsStellarCatalogueSettling())
 		{
-			const double Grain = GetOriginOffset().GetAbsMax() > APSWorldOrigin::RealShiftFarCm
-				? APSWorldOrigin::RealShiftFarGrainCm : APSWorldOrigin::RealShiftGrainCm;
+			const double Grain = APSWorldOrigin::ShiftGrainCm(GetOriginOffset().GetAbsMax());
 			const FVector Offset(FMath::RoundToDouble(-Here.X / Grain) * Grain, FMath::RoundToDouble(-Here.Y / Grain) * Grain,
 				FMath::RoundToDouble(-Here.Z / Grain) * Grain);
 			if (!Offset.IsNearlyZero())
@@ -2036,8 +2104,7 @@ void UAPSWorldOriginSubsystem::UpdateFloatingOrigin(const float DeltaSeconds)
 	{
 		// Rio 05.10 (real scale, stage 2): a fast REAL SCALE shift moves by whole grains, so the float origin and the far
 		// actors (the home system, parsecs out) take it exactly; the pilot stays within half a grain (~5 km) of 0,0,0.
-		const double Grain = GetOriginOffset().GetAbsMax() > APSWorldOrigin::RealShiftFarCm
-			? APSWorldOrigin::RealShiftFarGrainCm : APSWorldOrigin::RealShiftGrainCm;
+		const double Grain = APSWorldOrigin::ShiftGrainCm(GetOriginOffset().GetAbsMax());
 		Offset = FVector(FMath::RoundToDouble(Offset.X / Grain) * Grain, FMath::RoundToDouble(Offset.Y / Grain) * Grain,
 			FMath::RoundToDouble(Offset.Z / Grain) * Grain);
 	}
@@ -2217,6 +2284,12 @@ bool UAPSWorldOriginSubsystem::RebaseNow(const FVector& WorldLocation, const TCH
 	UWorld* World = GetWorld();
 	if (!World)
 	{
+		return false;
+	}
+	// Rio 15.10 (audit): as ShiftWorldBy, never onto a non-finite place.
+	if (WorldLocation.ContainsNaN())
+	{
+		UE_LOG(LogTemp, Error, TEXT("[APS.WorldOrigin] refused a rebase onto a non-finite place (%s)"), Reason);
 		return false;
 	}
 	const double DistanceCm = WorldLocation.Size();

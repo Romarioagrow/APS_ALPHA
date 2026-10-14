@@ -90,6 +90,17 @@ void AStar::BeginPlay()
 	PlanetarySystemZone->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	PlanetarySystemZone->SetCollisionResponseToAllChannels(ECR_Ignore);
 	PlanetarySystemZone->SetGenerateOverlapEvents(false);
+	// Rio 15.10 (0.6.5.4: "flying, pressed F, the character was pinned to the wall"; his log: in a STELLAR flow ride every
+	// stand-up spot in the cockpit was blocked and the deck trace hit 'StarMesh' inside the cabin): the photosphere is a
+	// visual sphere (its corona already had no collision), and at stellar scale its blocking collision reached the still
+	// ship. Nothing in the game collides with a star's mesh.
+	if (StarMesh)
+	{
+		StarMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		StarMesh->SetCollisionResponseToAllChannels(ECR_Ignore);
+		StarMesh->SetGenerateOverlapEvents(false);
+		StarMesh->SetCanEverAffectNavigation(false);
+	}
 
 	EnsureCanonicalStellarMaterial();
 }

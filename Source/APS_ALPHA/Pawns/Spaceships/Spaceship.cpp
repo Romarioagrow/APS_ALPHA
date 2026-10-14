@@ -1154,7 +1154,15 @@ namespace APSShipPerf
 		TEXT("Rio 14.10: r.Lumen.ScreenProbeGather.ScreenTraces while the player pilots a ship (-1: leave it as it is). 0 (default): ")
 		TEXT("the bounce light on the hull comes from the radiance cache, not from the ground streaming past on screen; given back ")
 		TEXT("when the pilot leaves the ship. -1: as 0.6.5.1."));
-	/** Sets r.Lumen.ScreenProbeGather.ScreenTraces while the player's pawn is a ship and gives the saved value back otherwise. */
+	// Rio 15.10 (0.6.5.4 frames on the bridge: "at km/s and Mm/s the character speckles, the ship does not"): standing up
+	// gave the probe screen traces back, and the windows stream the sky and the ground past him every frame. A player who
+	// rides a ship moving faster than this keeps the pilot's setting.
+	TAutoConsoleVariable<float> CVarPassengerProbeTracesSpeed(
+		TEXT("aps.Ship.PassengerProbeTracesSpeed"), 100.0f,
+		TEXT("Rio 15.10: aboard a ship moving faster than this (m/s) the player on foot keeps aps.Ship.PilotProbeScreenTraces as ")
+		TEXT("its pilot does; -1: only the pilot, as 0.6.5.4."));
+	/** Sets r.Lumen.ScreenProbeGather.ScreenTraces while the player's pawn is a ship (or rides a moving one, aps.Ship.
+	 * PassengerProbeTracesSpeed) and gives the saved value back otherwise. */
 	bool TickPilotProbeTraces(float)
 	{
 		static IConsoleVariable* const Traces =
@@ -1175,6 +1183,14 @@ namespace APSShipPerf
 					&& (Context.WorldType == EWorldType::Game || Context.WorldType == EWorldType::PIE)
 					? World->GetFirstPlayerController() : nullptr;
 				bPilots |= Controller && Cast<ASpaceship>(Controller->GetPawn()) != nullptr;
+				const float RideSpeed = CVarPassengerProbeTracesSpeed.GetValueOnGameThread();
+				const APawn* Rider = Controller ? Controller->GetPawn() : nullptr;
+				for (const AActor* Link = Rider ? Rider->GetAttachParentActor() : nullptr; Link && !bPilots && RideSpeed >= 0.0f;
+					Link = Link->GetAttachParentActor())
+				{
+					const ASpaceship* Ship = Cast<ASpaceship>(Link);
+					bPilots = Ship && Ship->GetShipSpeedMetersPerSecond() > RideSpeed;
+				}
 			}
 		}
 		if (bPilots && (Saved == INT32_MIN || Traces->GetInt() != Wanted))
@@ -1184,12 +1200,12 @@ namespace APSShipPerf
 				Saved = Traces->GetInt();
 			}
 			Traces->Set(Wanted, ECVF_SetByCode);
-			UE_LOG(LogTemp, Log, TEXT("[APS.Ships] piloting: Lumen probe screen traces %d (was %d)"), Wanted, Saved);
+			UE_LOG(LogTemp, Log, TEXT("[APS.Ships] piloting or riding a moving ship: Lumen probe screen traces %d (was %d)"), Wanted, Saved);
 		}
 		else if (!bPilots && Saved != INT32_MIN)
 		{
 			Traces->Set(Saved, ECVF_SetByCode);
-			UE_LOG(LogTemp, Log, TEXT("[APS.Ships] not piloting: Lumen probe screen traces back to %d"), Saved);
+			UE_LOG(LogTemp, Log, TEXT("[APS.Ships] not piloting or riding: Lumen probe screen traces back to %d"), Saved);
 			Saved = INT32_MIN;
 		}
 		return true;
@@ -1246,6 +1262,11 @@ namespace APSShipPerf
 		TEXT("27 -> 4; the hull loses some self-bounce light). 1 keeps the ship in the distance field and the Lumen scene ")
 		TEXT("(before 29.09), 3 takes it out of the Lumen scene only, 0 out of both. Changes apply in flight; the flags ")
 		TEXT("come back when the pilot leaves."));
+	TAutoConsoleVariable<int32> CVarHudGuidesAvoidStarShip(
+		TEXT("aps.Hud.GuidesAvoidStarShip"), 1,
+		TEXT("Rio 15.10 (\"the orbit lines must not cross the star, at least the black hole, and the ship\"): 1 = the orbit ")
+		TEXT("lines and the zone rings leave out what lies over a star's drawn sphere (a black hole's whole envelope) and over ")
+		TEXT("the piloted hull, whatever its depth; 0 = only the bodies hide them, as 0.6.5.4."));
 	TAutoConsoleVariable<int32> CVarHudOrbitPlanets(
 		TEXT("aps.Hud.OrbitPlanets"), 0,
 		TEXT("Rio 04.10 (\"orbits for every planet\"): 0 draws the orbit of every planet listed (a system seen from outside is ")
@@ -1396,12 +1417,13 @@ namespace APSShipPerf
 		bool bHasLength = false;
 		for (int32 Index = 0; Index < Points.Num(); ++Index)
 		{
-			if (!FMath::IsFinite(Points[Index].X) || !FMath::IsFinite(Points[Index].Y))
+			// Rio 15.10 (audit): tested as Slate gets it, in float: a finite double past FLT_MAX turns infinite there.
+			const FVector2f Point(Points[Index]);
+			if (!FMath::IsFinite(Point.X) || !FMath::IsFinite(Point.Y))
 			{
 				return false;
 			}
-			bHasLength = bHasLength || (Index > 0
-				&& (FVector2f(Points[Index]) - FVector2f(Points[Index - 1])).SizeSquared() > 1.0e-4f);
+			bHasLength = bHasLength || (Index > 0 && (Point - FVector2f(Points[Index - 1])).SizeSquared() > 1.0e-4f);
 		}
 		return bHasLength;
 	}
@@ -5238,6 +5260,179 @@ int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, cons
 		}
 	};
 
+	// Rio 15.10 (aps.Hud.GuidesAvoidStarShip; his frame at a black hole: grey and red orbit lines across the hole and its
+	// disc, and over the hull): on screen, each star's drawn sphere (a black hole's envelope holds its shadow, ring and disc)
+	// as a circle and the piloted hull's box as a convex outline. The guides skip what lies inside them; markers are not
+	// touched.
+	struct FGuideCircle
+	{
+		FVector2D Center{FVector2D::ZeroVector};
+		double Radius{0.0};
+	};
+	TArray<FGuideCircle, TInlineAllocator<4>> GuideCircles;
+	TArray<FVector2D, TInlineAllocator<8>> GuideHull;
+	if (APSShipPerf::CVarHudGuidesAvoidStarShip.GetValueOnGameThread() != 0 && NavigationCameraManager && HudSize.X > 1.0
+		&& GetWorld())
+	{
+		const FVector GuideCameraForward = NavigationCameraManager->GetCameraRotation().Vector();
+		const double GuidePixelAngle = 2.0 * FMath::Tan(FMath::DegreesToRadians(0.5 * FMath::Clamp(
+			static_cast<double>(NavigationCameraManager->GetFOVAngle()), 1.0, 170.0))) / HudSize.X;
+		for (TActorIterator<AStar> StarIt(GetWorld()); StarIt; ++StarIt)
+		{
+			const AStar* Star = *StarIt;
+			const UStaticMeshComponent* Sphere = IsValid(Star) ? Star->StarMesh : nullptr;
+			if (!Sphere || !Sphere->IsRegistered())
+			{
+				continue;
+			}
+			// Where the ship sees it (as the zones below): its sky place.
+			const FVector Center = Sphere->Bounds.Origin + (UAPSWorldOriginSubsystem::SkyPlace(*Star) - Star->GetActorLocation());
+			const double Radius = Sphere->Bounds.SphereRadius;
+			const FVector Relative = Center - NavigationCameraLocation;
+			const double Distance = Relative.Size();
+			if (!(Radius > 0.0) || Distance <= Radius * 1.01 || FVector::DotProduct(Relative, GuideCameraForward) <= 0.0)
+			{
+				continue;
+			}
+			const double PixelRadius = FMath::Asin(FMath::Clamp(Radius / Distance, 0.0, 1.0)) / FMath::Max(GuidePixelAngle, 1.0e-9);
+			FVector2D Screen;
+			if (PixelRadius >= 2.0 && ProjectWorldLocationToNavigationScreen(Center, Screen, false))
+			{
+				GuideCircles.Add({Screen, PixelRadius * 1.03 + 2.0});
+			}
+		}
+		const UPrimitiveComponent* Hull = SpaceshipHull && SpaceshipHull->IsVisible()
+			? static_cast<const UPrimitiveComponent*>(SpaceshipHull) : static_cast<const UPrimitiveComponent*>(SkeletalSpaceshipHull);
+		if (Hull && Hull->IsRegistered())
+		{
+			const FBox Local = Hull->CalcBounds(FTransform::Identity).GetBox();
+			const FTransform ToWorld = Hull->GetComponentTransform();
+			TArray<FVector2D, TInlineAllocator<8>> Corners;
+			for (int32 Corner = 0; Corner < 8; ++Corner)
+			{
+				const FVector World = ToWorld.TransformPosition(FVector((Corner & 1) ? Local.Max.X : Local.Min.X,
+					(Corner & 2) ? Local.Max.Y : Local.Min.Y, (Corner & 4) ? Local.Max.Z : Local.Min.Z));
+				FVector2D Screen;
+				// A camera inside the box (the cockpit) leaves the hull out.
+				if (FVector::DotProduct(World - NavigationCameraLocation, GuideCameraForward) <= 10.0
+					|| !ProjectWorldLocationToNavigationScreen(World, Screen, false))
+				{
+					Corners.Reset();
+					break;
+				}
+				Corners.Add(Screen);
+			}
+			if (Corners.Num() == 8)
+			{
+				// The convex outline, counter-clockwise on screen (monotone chain).
+				Corners.Sort([](const FVector2D& A, const FVector2D& B) { return A.X < B.X || (A.X == B.X && A.Y < B.Y); });
+				const auto Cross = [](const FVector2D& O, const FVector2D& A, const FVector2D& B)
+				{
+					return (A.X - O.X) * (B.Y - O.Y) - (A.Y - O.Y) * (B.X - O.X);
+				};
+				TArray<FVector2D, TInlineAllocator<16>> Outline;
+				for (int32 Pass = 0; Pass < 2; ++Pass)
+				{
+					const int32 Start = Outline.Num();
+					for (int32 Index = 0; Index < Corners.Num(); ++Index)
+					{
+						const FVector2D& Point = Corners[Pass == 0 ? Index : Corners.Num() - 1 - Index];
+						while (Outline.Num() >= Start + 2 && Cross(Outline[Outline.Num() - 2], Outline.Last(), Point) <= 0.0)
+						{
+							Outline.Pop(EAllowShrinking::No);
+						}
+						Outline.Add(Point);
+					}
+					Outline.Pop(EAllowShrinking::No);
+				}
+				if (Outline.Num() >= 3)
+				{
+					GuideHull.Append(Outline);
+				}
+			}
+		}
+	}
+
+	auto DrawGuideLine = [&](const TArray<FVector2D>& Points, const FLinearColor& Color, float Thickness, int32 DrawLayer)
+	{
+		if (GuideCircles.IsEmpty() && GuideHull.Num() < 3)
+		{
+			DrawScreenLine(Points, Color, Thickness, DrawLayer);
+			return;
+		}
+		TArray<FVector2D> Piece;
+		const auto Emit = [&](const FVector2D& From, const FVector2D& To)
+		{
+			if (Piece.IsEmpty() || !Piece.Last().Equals(From, 0.01))
+			{
+				DrawScreenLine(Piece, Color, Thickness, DrawLayer);
+				Piece.Reset();
+				Piece.Add(From);
+			}
+			Piece.Add(To);
+		};
+		for (int32 Index = 1; Index < Points.Num(); ++Index)
+		{
+			const FVector2D A = Points[Index - 1];
+			const FVector2D D = Points[Index] - A;
+			const double LengthSquared = D.SizeSquared();
+			// The parts of this segment inside an occluder, as parameter intervals.
+			TArray<FVector2D, TInlineAllocator<6>> Inside;
+			for (const FGuideCircle& Circle : GuideCircles)
+			{
+				if (LengthSquared <= UE_DOUBLE_SMALL_NUMBER) break;
+				const FVector2D F = A - Circle.Center;
+				const double B = FVector2D::DotProduct(F, D);
+				const double C = F.SizeSquared() - Circle.Radius * Circle.Radius;
+				const double Discriminant = B * B - LengthSquared * C;
+				if (Discriminant > 0.0)
+				{
+					const double Root = FMath::Sqrt(Discriminant);
+					const double T0 = FMath::Max((-B - Root) / LengthSquared, 0.0);
+					const double T1 = FMath::Min((-B + Root) / LengthSquared, 1.0);
+					if (T1 > T0) Inside.Add(FVector2D(T0, T1));
+				}
+			}
+			if (GuideHull.Num() >= 3)
+			{
+				double Enter = 0.0;
+				double Leave = 1.0;
+				bool bMisses = false;
+				for (int32 Edge = 0; Edge < GuideHull.Num() && !bMisses; ++Edge)
+				{
+					const FVector2D P = GuideHull[Edge];
+					const FVector2D E = GuideHull[(Edge + 1) % GuideHull.Num()] - P;
+					const FVector2D Outward(E.Y, -E.X);
+					const double Numerator = FVector2D::DotProduct(A - P, Outward);
+					const double Denominator = FVector2D::DotProduct(D, Outward);
+					if (FMath::Abs(Denominator) <= UE_DOUBLE_SMALL_NUMBER)
+					{
+						bMisses = Numerator > 0.0;
+					}
+					else if (Denominator < 0.0)
+					{
+						Enter = FMath::Max(Enter, -Numerator / Denominator);
+					}
+					else
+					{
+						Leave = FMath::Min(Leave, -Numerator / Denominator);
+					}
+					bMisses |= Enter > Leave;
+				}
+				if (!bMisses && Leave > Enter) Inside.Add(FVector2D(Enter, Leave));
+			}
+			Inside.Sort([](const FVector2D& L, const FVector2D& R) { return L.X < R.X; });
+			double T = 0.0;
+			for (const FVector2D& Hidden : Inside)
+			{
+				if (Hidden.X > T) Emit(A + D * T, A + D * Hidden.X);
+				T = FMath::Max(T, Hidden.Y);
+			}
+			if (T < 1.0) Emit(A + D * T, Points[Index]);
+		}
+		DrawScreenLine(Piece, Color, Thickness, DrawLayer);
+	};
+
 	auto DrawProjectedRing = [&](const FVector& Center, const FVector& AxisX, const FVector& AxisY,
 		double Radius, const FLinearColor& Color, float Thickness, bool bDashed, int32 DrawLayer)
 	{
@@ -5258,7 +5453,7 @@ int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, cons
 			{
 				if (bValid && bPreviousValid && SegmentIndex % 3 != 0)
 				{
-					DrawScreenLine({PreviousPoint, ScreenPoint}, Color, Thickness, DrawLayer);
+					DrawGuideLine({PreviousPoint, ScreenPoint}, Color, Thickness, DrawLayer);
 				}
 			}
 			else if (bValid)
@@ -5267,13 +5462,13 @@ int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, cons
 			}
 			else
 			{
-				DrawScreenLine(ContinuousSegment, Color, Thickness, DrawLayer);
+				DrawGuideLine(ContinuousSegment, Color, Thickness, DrawLayer);
 				ContinuousSegment.Reset();
 			}
 			PreviousPoint = ScreenPoint;
 			bPreviousValid = bValid;
 		}
-		DrawScreenLine(ContinuousSegment, Color, Thickness, DrawLayer);
+		DrawGuideLine(ContinuousSegment, Color, Thickness, DrawLayer);
 	};
 
 	// Rio 03.10 ("orbits vanish and show through planets"): a planet's orbit is AU-sized while the ship flies a few
@@ -5397,8 +5592,8 @@ int32 ASpaceship::PaintNavigationOverlay(const FGeometry& AllottedGeometry, cons
 				const double Middle = ChunkAngleSum / ChunkCount - BodyAngle;
 				const float Near = FMath::Pow(0.5f + 0.5f * static_cast<float>(FMath::Cos(Middle)), 1.6f);
 				const float Alpha = Color.A * (0.38f + 0.62f * Near);
-				DrawScreenLine(Chunk, FLinearColor(Color.R, Color.G, Color.B, Alpha * 0.22f), GlowWidth, DrawLayer);
-				DrawScreenLine(Chunk, FLinearColor(Color.R, Color.G, Color.B, Alpha), CoreWidth, DrawLayer + 1);
+				DrawGuideLine(Chunk, FLinearColor(Color.R, Color.G, Color.B, Alpha * 0.22f), GlowWidth, DrawLayer);
+				DrawGuideLine(Chunk, FLinearColor(Color.R, Color.G, Color.B, Alpha), CoreWidth, DrawLayer + 1);
 			}
 			Chunk.Reset();
 			ChunkAngleSum = 0.0;
@@ -7252,6 +7447,12 @@ FTransform ASpaceship::ResolvePilotExitTransform(APawn& LeavingPilot, const FTra
 	Spots.Add({TEXT("aft200"), Seat + Aft * 200.0});
 
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(APSStandUpSpot), false, &LeavingPilot);
+	// Rio 15.10 (0.6.5.4: pinned to the wall after standing up in a STELLAR flow ride; every spot read free=0 and the deck
+	// trace hit a star's mesh in the cabin): stars are never part of the cabin; they no longer block a stand-up spot.
+	for (TActorIterator<AStar> StarIt(World); StarIt; ++StarIt)
+	{
+		Params.AddIgnoredActor(*StarIt);
+	}
 	const FQuat CapsuleRotation = FQuat::FindBetweenNormals(FVector::UpVector, Up);
 	const FCollisionShape Shape = FCollisionShape::MakeCapsule(
 		static_cast<float>(FMath::Max(Radius - 2.0, 1.0)), static_cast<float>(FMath::Max(HalfHeight - 2.0, Radius)));

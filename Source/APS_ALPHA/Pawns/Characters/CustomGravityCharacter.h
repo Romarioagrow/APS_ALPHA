@@ -412,4 +412,10 @@ private:
 	bool bBuildRightHeld = false;
 	FText BuildRefusalText;
 	double BuildRefusalUntilSeconds = 0.0;
+
+	/** Rio 15.10 (aps.Character.BackpedalAnim): the backward run clip while walking backwards, stopped otherwise. */
+	void UpdateBackpedalAnimation(bool bBackpedal);
 };
+
+/** Rio 15.10 (aps.Character.Backpedal): marks this frame's input as "back" for the walker (the test walk's back=1 uses it). */
+APS_ALPHA_API void APSMarkBackpedalInput(ACustomGravityCharacter* Character);

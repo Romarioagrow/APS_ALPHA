@@ -122,6 +122,13 @@ namespace APSInfrastructurePanelPrivate
 		return APSUINumber::Number(Cm / APSStars::AstronomicalUnitCm, &Two);
 	}
 
+	/** Rio 15.10: "12.4 LY" from a tenth of a light year, "1,240 AU" below. */
+	FText AuOrLy(const double Cm)
+	{
+		FText Ly;
+		return APSUINumber::LightYears(Cm, Ly) ? Ly : FText::Format(LOCTEXT("AuUnit", "{0} AU"), Au(Cm));
+	}
+
 	/** "90 S", "6 MIN". */
 	FText Duration(const float Seconds)
 	{
@@ -498,9 +505,9 @@ void SAPSInfrastructureMap::Refresh()
 			Node.bClaimed = State.bClaimed;
 			Node.bInReach = Stars->IsInReach(Info->Id);
 			Node.Position = Direction * OuterRadius(Info->HomeDistanceCm);
-			Node.Detail = FText::Format(LOCTEXT("SystemDetail", "{0}  /  {1}{2}  /  {3} AU FROM HOME{4}"),
+			Node.Detail = FText::Format(LOCTEXT("SystemDetailUnit", "{0}  /  {1}{2}  /  {3} FROM HOME{4}"),
 				FText::FromString(Info->Spectral.IsEmpty() ? FString(TEXT("STAR")) : Info->Spectral), APSStars::KnowledgeName(State.Knowledge),
-				State.bClaimed ? LOCTEXT("SystemClaimed", "  /  CLAIMED") : FText::GetEmpty(), Au(Info->HomeDistanceCm),
+				State.bClaimed ? LOCTEXT("SystemClaimed", "  /  CLAIMED") : FText::GetEmpty(), AuOrLy(Info->HomeDistanceCm),
 				Node.bInReach ? LOCTEXT("SystemInReach", "  /  IN THE NETWORK'S REACH") : FText::GetEmpty());
 			// A claimed system's relay reach as a ring (approximate: the map is radial from home, not from it).
 			if (const double ReachCm = State.bClaimed ? Stars->ReachCm(Each) : 0.0; ReachCm > 0.0)
@@ -1445,8 +1452,8 @@ void SAPSInfrastructurePanel::RefreshNetworkLists(const bool bForce)
 			}
 			else
 			{
-				Row.Detail = FText::Format(LOCTEXT("TargetRow", "{0}  /  {1} AU FROM HOME  /  {2}"), APSStars::KnowledgeName(State.Knowledge),
-					Au(Info->HomeDistanceCm), Stars->IsInReach(Info->Id) ? LOCTEXT("InReachRow", "IN REACH") : LOCTEXT("OutOfReachRow", "OUT OF REACH"));
+				Row.Detail = FText::Format(LOCTEXT("TargetRowUnit", "{0}  /  {1} FROM HOME  /  {2}"), APSStars::KnowledgeName(State.Knowledge),
+					AuOrLy(Info->HomeDistanceCm), Stars->IsInReach(Info->Id) ? LOCTEXT("InReachRow", "IN REACH") : LOCTEXT("OutOfReachRow", "OUT OF REACH"));
 				Targets.Add(Row);
 			}
 		}

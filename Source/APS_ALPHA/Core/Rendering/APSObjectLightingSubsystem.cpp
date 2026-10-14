@@ -104,6 +104,21 @@ namespace APSObjectLighting
 	/** Far from the world (its centre this many radii away) the fill fades: its night side is small by then. */
 	constexpr double NightFillFullRadii = 8.0;
 	constexpr double NightFillEndRadii = 12.0;
+	// Rio 15.10 (0.6.5.4: "far away the planet is dark, closer it lightens, then at some point it is black again, then light
+	// again"; his frames: dark at 75 Mm, lighter at 36-18 Mm, black at 45-60 km, lit grey at 23-32 km): the night had two
+	// lights in turn, this fill (0.6 lux, in from 150 to 60 km, out past 8-12 radii, off at once below 60 km) and the
+	// near-surface fill (from 50 km down, up to 2.2 lux on the night side as well). One level everywhere now: the gameplay
+	// surface fill (UAPSStellarVisualSubsystem) carries it at every height and distance; this one stays off.
+	TAutoConsoleVariable<int32> CVarNightOneLevel(
+		TEXT("aps.Planet.NightOneLevel"), 1,
+		TEXT("Rio 15.10: 1 = one night light at every height and distance (aps.Planet.NightLevel lux); 0 = as 0.6.5.4 ")
+		TEXT("(this orbital fill 60-150 km within 8-12 radii, the 2.2 lux surface fill below 50 km on both sides)."),
+		ECVF_Default);
+	TAutoConsoleVariable<float> CVarNightLevel(
+		TEXT("aps.Planet.NightLevel"), 0.3f,
+		TEXT("Rio 15.10: lux of the one night light (against the star's rays from orbit, the accepted near-ground direction ")
+		TEXT("below 50 km). Read by UAPSStellarVisualSubsystem."),
+		ECVF_Default);
 }
 
 bool UAPSObjectLightingSubsystem::ShouldCreateSubsystem(UObject* Outer) const
@@ -268,7 +283,9 @@ void UAPSObjectLightingSubsystem::UpdateNightFill(const float DeltaTime)
 	bool bNearSurface = false;
 	FVector RayDirection = FVector::ZeroVector;
 	// Gameplay pawns only: the menu's planet preview has its own fill, and its water expects exactly one.
-	if (World && Lux > 0.0f && Pawn && (Pawn->IsA<ACustomGravityCharacter>() || Pawn->IsA<APilotingVehicle>()))
+	// Rio 15.10 (aps.Planet.NightOneLevel): the surface fill carries the night everywhere; this one stays off.
+	if (World && Lux > 0.0f && APSObjectLighting::CVarNightOneLevel.GetValueOnGameThread() == 0
+		&& Pawn && (Pawn->IsA<ACustomGravityCharacter>() || Pawn->IsA<APilotingVehicle>()))
 	{
 		const FVector Observer = Pawn->GetActorLocation();
 		const APlanetaryBody* Nearest = nullptr;

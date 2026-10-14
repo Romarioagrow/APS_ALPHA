@@ -13,6 +13,56 @@
 #include "APS_ALPHA/Gameplay/Gravity/GravitySource.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
 #include "GameFramework/Character.h"
+#include "HAL/IConsoleManager.h"
+#include "HAL/PlatformTime.h"
+
+// Rio 15.10 (code audit, flight FPS: every ship, parked fleet ships and ground vehicles too, walked every actor of the world
+// five times a second for the gravity sources, and again for the world bodies, ships spawned together in the same frame):
+// the two lists are shared by every detector for a short while.
+namespace APSGravitySourceLists
+{
+	TAutoConsoleVariable<float> CVarListSeconds(
+		TEXT("aps.Gravity.SourceListSeconds"), 0.2f,
+		TEXT("Rio 15.10: the gravity sources and the world bodies found by one scan of the world serve every detector for this ")
+		TEXT("long, s (a source spawned since is seen this much later); 0: a scan per call, as 0.6.5.4."),
+		ECVF_Default);
+
+	struct FList
+	{
+		TWeakObjectPtr<UWorld> World;
+		double Seconds = -1.0;
+		TArray<TWeakObjectPtr<AActor>> Actors;
+	};
+	FList GInterfaceSources;
+	FList GWorldActors;
+
+	template <typename ScanType>
+	void Get(UWorld* World, FList& List, TArray<AActor*>& Out, ScanType&& Scan)
+	{
+		Out.Reset();
+		const float Keep = CVarListSeconds.GetValueOnGameThread();
+		const double Now = FPlatformTime::Seconds();
+		if (Keep <= 0.0f || List.World.Get() != World || Now - List.Seconds > Keep)
+		{
+			Scan(Out);
+			List.World = World;
+			List.Seconds = Now;
+			List.Actors.Reset(Out.Num());
+			for (AActor* Each : Out)
+			{
+				List.Actors.Add(Each);
+			}
+			return;
+		}
+		for (const TWeakObjectPtr<AActor>& Each : List.Actors)
+		{
+			if (AActor* Live = Each.Get())
+			{
+				Out.Add(Live);
+			}
+		}
+	}
+}
 
 namespace APSGravityDetectorLocal
 {
@@ -301,8 +351,12 @@ AActor* UGravityDetectorComponent::FindBestOverlappingSource(AActor* Actor) cons
 	if (!Actor->IsA(ACharacter::StaticClass()) && Actor->GetWorld())
 	{
 		TArray<AActor*> GravitySources;
-		UGameplayStatics::GetAllActorsWithInterface(
-			Actor->GetWorld(), UGravitySource::StaticClass(), GravitySources);
+		UWorld* const SourceWorld = Actor->GetWorld();
+		APSGravitySourceLists::Get(SourceWorld, APSGravitySourceLists::GInterfaceSources, GravitySources,
+			[SourceWorld](TArray<AActor*>& Found)
+			{
+				UGameplayStatics::GetAllActorsWithInterface(SourceWorld, UGravitySource::StaticClass(), Found);
+			});
 		for (AActor* Candidate : GravitySources)
 		{
 			if (!IsValid(Candidate) || Candidate == Actor)
@@ -369,7 +423,12 @@ AWorldActor* UGravityDetectorComponent::FindClosestFullScaleSource(AActor* Actor
 	}
 
 	TArray<AActor*> WorldActors;
-	UGameplayStatics::GetAllActorsOfClass(Actor->GetWorld(), AWorldActor::StaticClass(), WorldActors);
+	UWorld* const BodiesWorld = Actor->GetWorld();
+	APSGravitySourceLists::Get(BodiesWorld, APSGravitySourceLists::GWorldActors, WorldActors,
+		[BodiesWorld](TArray<AActor*>& Found)
+		{
+			UGameplayStatics::GetAllActorsOfClass(BodiesWorld, AWorldActor::StaticClass(), Found);
+		});
 
 	AWorldActor* ClosestSource = nullptr;
 	double ClosestSurfaceDistanceKm = DBL_MAX;

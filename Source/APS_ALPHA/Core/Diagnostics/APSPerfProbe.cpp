@@ -211,6 +211,9 @@ void APSPerfProbe::Tick(UWorld* World, const float DeltaSeconds)
 	if (GWindow.Frame.Samples > 0 && World && GEngine && !bGTracing && GTracesUsed < CVarAutoTraces.GetValueOnGameThread()
 		&& Now - GWorldStart > 30.0 && GWindow.BackgroundSeconds < 0.5
 		&& GWindow.Frame.Samples / ActiveSeconds < CVarAutoTraceFps.GetValueOnGameThread()
+		// Rio 15.10 (his 0.6.5.4 log: a "3 fps" window of 74.6 s with 8.3 ms frames took the first trace): an ordinary window
+		// whose frames are slow, not a stretched one (a pause, a load).
+		&& Seconds <= 3.0 * Interval && GWindow.Frame.Average() > 1000.0 / FMath::Max(CVarAutoTraceFps.GetValueOnGameThread(), 1.0f)
 		&& !World->GetMapName().Contains(TEXT("MainMenu")))
 	{
 		++GTracesUsed;

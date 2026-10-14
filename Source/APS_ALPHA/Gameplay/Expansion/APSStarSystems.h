@@ -237,6 +237,13 @@ private:
 	/** The galaxy systems after the cluster's, by catalogue index, and their states a load brought that wait for them. */
 	TMap<int64, int32> IndexByGalaxy;
 	TArray<int32> GalaxySystems;
+	/**
+	 * Rio 15.10 (aps.Stars.GalaxyGrid): the galaxy systems by the cell of their offset from home, and the widest room among
+	 * them, so the containing query reads the cells around the asked place instead of every system registered on a trip.
+	 */
+	TMap<FIntVector, TArray<int32>> GalaxyGrid;
+	double GalaxyMaxRoomCm{0.0};
+	FIntVector GalaxyCellOf(const FVector& FromHomeOffset) const;
 	/** Systems [0, ClusterSystemCount) are the cluster catalogue's, read once. */
 	int32 ClusterSystemCount{0};
 	TMap<FGuid, TPair<int64, FAPSStarSystemState>> HeldGalaxyStates;

@@ -370,9 +370,13 @@ namespace APSStrategicMapViewLocal
 		Text(Out, Layer + 1, Geometry, Position, String, Font, Colour);
 	}
 
-	/** "1.24 AU", "38,400 KM", "820 M". */
+	/** "14.5 LY", "1.24 AU", "38,400 KM", "820 M". */
 	FString DistanceString(const double Cm)
 	{
+		if (FText Ly; APSUINumber::LightYears(Cm, Ly))
+		{
+			return Ly.ToString();
+		}
 		FNumberFormattingOptions Options;
 		if (Cm >= 0.01 * APSStars::AstronomicalUnitCm)
 		{
@@ -1325,9 +1329,12 @@ int32 SAPSStrategicMapView::OnPaint(const FPaintArgs& Args, const FGeometry& All
 		const double Wanted = CmPerUnit * 140.0;
 		if (FMath::IsFinite(Wanted) && Wanted > 0.0)
 		{
-			const bool bAu = Wanted >= 0.05 * APSStars::AstronomicalUnitCm;
-			const bool bKm = !bAu && Wanted >= 100000.0;
-			const double UnitCm = bAu ? APSStars::AstronomicalUnitCm : bKm ? 100000.0 : 100.0;
+			// Rio 15.10: light years from a tenth of one (the bar read 100,000,000 AU over the galaxy).
+			constexpr double LightYearCm = 9.4607304725808e17;
+			const bool bLy = Wanted >= 0.1 * LightYearCm;
+			const bool bAu = !bLy && Wanted >= 0.05 * APSStars::AstronomicalUnitCm;
+			const bool bKm = !bLy && !bAu && Wanted >= 100000.0;
+			const double UnitCm = bLy ? LightYearCm : bAu ? APSStars::AstronomicalUnitCm : bKm ? 100000.0 : 100.0;
 			const double InUnits = Wanted / UnitCm;
 			const double Power = FMath::Pow(10.0, FMath::FloorToDouble(FMath::LogX(10.0, InUnits)));
 			const double Leading = InUnits / Power;
@@ -1342,7 +1349,7 @@ int32 SAPSStrategicMapView::OnPaint(const FPaintArgs& Args, const FGeometry& All
 			FNumberFormattingOptions Options;
 			Options.SetMaximumFractionalDigits(Nice < 1.0 ? 2 : 0);
 			Text(OutDrawElements, LayerTop, Geometry, Start + FVector2D(0.0, -21.0),
-				APSUINumber::Number(Nice, &Options).ToString() + (bAu ? TEXT(" AU") : bKm ? TEXT(" KM") : TEXT(" M")), SmallFont,
+				APSUINumber::Number(Nice, &Options).ToString() + (bLy ? TEXT(" LY") : bAu ? TEXT(" AU") : bKm ? TEXT(" KM") : TEXT(" M")), SmallFont,
 				ScaleColour);
 		}
 	}

@@ -129,6 +129,9 @@ namespace APSGameplayStellarDay
 		TEXT("1 logs every change of the stars' daylight visibility (smoothness checks)."));
 	TAutoConsoleVariable<int32> CVarDayFade(TEXT("aps.Stars.DayFade"), 1,
 		TEXT("1 fades the catalogue stars with daylight and altitude in their material; 0 switches them off in a day sky."));
+	TAutoConsoleVariable<int32> CVarShellGainInPlugin(TEXT("aps.Sky.ShellGainInPlugin"), 1,
+		TEXT("Rio 15.10 (flight FPS): 1 = the atmosphere actor applies aps.Sky.AtmosphereDensityGain to its two sky shells in its ")
+		TEXT("own write (one writer a frame); 0 = this view writes the gained value over the plugin's every frame, as 0.6.5.4."));
 	TAutoConsoleVariable<float> CVarAtmosphereDensityGain(TEXT("aps.Sky.AtmosphereDensityGain"), 12.0f,
 		TEXT("How much denser an Earth-like or thicker atmosphere is drawn than its generated base, from the ground and from ")
 		TEXT("space alike (1 = the base). Thin air gets less of it, an airless body none."));
@@ -172,7 +175,13 @@ namespace APSGameplayStellarDay
 	{
 		static const FName InsideSky(TEXT("PlanetaryAtmoMesh"));
 		static const FName SpaceShell(TEXT("SpacePlanetaryAtmoMesh"));
-		if (FMath::IsNearlyEqual(DensityGain, 1.0f))
+		// Rio 15.10 (aps.Sky.ShellGainInPlugin): the plugin's own write carries the gain; the shells are written here only in
+		// the frame the gain changes (the plugin's write this frame still had the old one).
+		const bool bInPlugin = CVarShellGainInPlugin.GetValueOnGameThread() != 0;
+		const float PluginGain = bInPlugin ? FMath::Max(DensityGain, 0.0f) : 1.0f;
+		const bool bPluginGainChanged = !FMath::IsNearlyEqual(Atmosphere.ShellOpacityGain, PluginGain);
+		Atmosphere.ShellOpacityGain = PluginGain;
+		if (!bPluginGainChanged && (bInPlugin || FMath::IsNearlyEqual(DensityGain, 1.0f)))
 		{
 			return;
 		}

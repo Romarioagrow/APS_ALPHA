@@ -1,4 +1,16 @@
 #include "WorldActor.h"
+#include "HAL/IConsoleManager.h"
+
+namespace APSWorldActorTick
+{
+	// Rio 15.10 (code audit, flight FPS: every star, planet, moon, orbit, system and station ran an empty Tick every frame;
+	// their Blueprints' Event Tick nodes are disabled): no C++ class under AWorldActor overrides Tick, so one whose Blueprint
+	// has no Event Tick stops ticking at BeginPlay (its components keep their own ticks, latent actions still run).
+	TAutoConsoleVariable<int32> CVarSkipEmptyTick(TEXT("aps.Actors.SkipEmptyWorldTick"), 1,
+		TEXT("Rio 15.10: 1 = a world actor (star, planet, moon, orbit, system, station) without a Blueprint Event Tick does not ")
+		TEXT("tick; 0 = every one ticks its empty Tick each frame, as 0.6.5.4 (read at BeginPlay)."),
+		ECVF_Default);
+}
 
 // Sets default values
 AWorldActor::AWorldActor()
@@ -11,6 +23,11 @@ AWorldActor::AWorldActor()
 void AWorldActor::BeginPlay()
 {
 	Super::BeginPlay();
+	if (APSWorldActorTick::CVarSkipEmptyTick.GetValueOnGameThread() != 0
+		&& !GetClass()->IsFunctionImplementedInScript(GET_FUNCTION_NAME_CHECKED(AActor, ReceiveTick)))
+	{
+		SetActorTickEnabled(false);
+	}
 }
 
 // Called every frame

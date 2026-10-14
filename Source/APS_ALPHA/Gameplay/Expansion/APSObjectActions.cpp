@@ -53,6 +53,10 @@ namespace APSObjectActionsLocal
 		const APawn* Pawn = Controller ? Controller->GetPawn() : nullptr;
 		if (!Pawn || !Object) return FText::GetEmpty();
 		const double Cm = FVector::Dist(Pawn->GetActorLocation(), Object->GetActorLocation());
+		if (FText Ly; APSUINumber::LightYears(Cm, Ly))
+		{
+			return Ly;
+		}
 		FNumberFormattingOptions Two;
 		Two.SetMaximumFractionalDigits(2);
 		return Cm >= 0.01 * APSStars::AstronomicalUnitCm
@@ -680,8 +684,12 @@ void APSObjectActions::Describe(UWorld* World, const AActor* Object, TArray<TPai
 				? APSUINumber::Number(Info->PotentialPlanets) : LOCTEXT("ScanToKnow", "unknown until scanned"));
 			Add(LOCTEXT("FieldKnown", "KNOWN"), APSStars::KnowledgeName(State.Knowledge));
 			Add(LOCTEXT("FieldClaimed", "CLAIMED"), State.bClaimed ? LOCTEXT("Yes", "YES") : LOCTEXT("No", "NO"));
-			Add(LOCTEXT("FieldRoom", "SYSTEM SPHERE"), FText::Format(LOCTEXT("RoomAu", "{0} AU"),
-				APSUINumber::Number(Info->RoomCm / APSStars::AstronomicalUnitCm, &Two)));
+			FText RoomText;
+			if (!APSUINumber::LightYears(Info->RoomCm, RoomText))
+			{
+				RoomText = FText::Format(LOCTEXT("RoomAu", "{0} AU"), APSUINumber::Number(Info->RoomCm / APSStars::AstronomicalUnitCm, &Two));
+			}
+			Add(LOCTEXT("FieldRoom", "SYSTEM SPHERE"), RoomText);
 			Add(LOCTEXT("FieldReach", "NETWORK"), Stars->IsInReach(SystemId) ? LOCTEXT("InReach", "in reach of a relay")
 				: LOCTEXT("OutOfReach", "out of reach"));
 			if (const int32 Kind = Stars->AnomalyKindOf(SystemId); Kind != INDEX_NONE && State.Anomaly > 0)

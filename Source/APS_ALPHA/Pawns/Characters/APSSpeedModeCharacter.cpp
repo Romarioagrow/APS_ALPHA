@@ -14,6 +14,11 @@
 
 namespace APSSpeedModeFeel
 {
+	// Rio 15.10: the walk sample's speed in the surface walk/run blendspace (BS_MF_Unarmed_WalkRun: walk-in-place 0, walk
+	// 230, run 500); 0 = the 0.6.5.4 feed (the in-place steps blended in at low speed).
+	TAutoConsoleVariable<float> CVarAnimWalkSampleSpeed(TEXT("aps.Character.AnimWalkSampleSpeed"), 230.0f,
+		TEXT("Moving, the walk/run blendspace gets at least this speed (cm/s) and the stride slows below it; 0: as 0.6.5.4."),
+		ECVF_Default);
 	// Rio 09.10 (playtest: "the walker is cardboard: instant speed and direction changes, no weight; zero-G has no
 	// paces and no C view"). Every CVar at 0 restores the behaviour before 09.10.
 	TAutoConsoleVariable<int32> CVarWeight(
@@ -376,8 +381,14 @@ void AAPSSpeedModeCharacter::UpdateLocomotionAnimation(float DeltaTime)
 	SmoothedSpeed = FMath::Lerp(SmoothedSpeed, static_cast<float>(LocalVelocity.Size()), Alpha);
 	SmoothedDirection = FRotator::NormalizeAxis(SmoothedDirection
 		+ FMath::FindDeltaAngleDegrees(SmoothedDirection, Direction) * (GroundSpeed > 3.f ? Alpha : 0.f));
-	SetNumber(TEXT("GroundSpeed"), SmoothedGroundSpeed);
-	SetNumber(TEXT("Speed"), SmoothedSpeed);
+	// Rio 15.10 ("at a small speed he treads on the spot, the steps run faster than he moves"): the walk/run blendspace
+	// puts MM_Walk_InPlace at speed 0 and the walk at 230, so a slow start blended stepping on the spot into the walk at the
+	// full stride rate. Moving, it gets at least the walk's speed and the stride slows with the walker instead.
+	const bool bMovingNow = SmoothedGroundSpeed > 3.f;
+	const float WalkSample = APSSpeedModeFeel::CVarAnimWalkSampleSpeed.GetValueOnGameThread();
+	const bool bMatchStride = bMovingNow && WalkSample > 0.f;
+	SetNumber(TEXT("GroundSpeed"), bMatchStride ? FMath::Max(SmoothedGroundSpeed, WalkSample) : SmoothedGroundSpeed);
+	SetNumber(TEXT("Speed"), bMatchStride ? FMath::Max(SmoothedSpeed, WalkSample) : SmoothedSpeed);
 	SetNumber(TEXT("Direction"), SmoothedDirection);
 	SetNumber(TEXT("MovementDirection"), SmoothedDirection);
 	const bool bMoving = SmoothedGroundSpeed > 3.f;
@@ -387,7 +398,12 @@ void AAPSSpeedModeCharacter::UpdateLocomotionAnimation(float DeltaTime)
 	// Above the pace the run animation was authored for, step faster (sub-linearly, like a real stride) instead of
 	// only while Shift is held; the base's rate assumes its own 600 cm/s walk.
 	const float PaceRatio = SmoothedGroundSpeed / FMath::Max(AnimationRunSpeed, 1.f);
-	const float TargetPlayRate = FMath::Clamp(1.f + (PaceRatio - 1.f) * 0.6f, 1.f, MaxAnimationPlayRate);
+	float TargetPlayRate = FMath::Clamp(1.f + (PaceRatio - 1.f) * 0.6f, 1.f, MaxAnimationPlayRate);
+	if (bMatchStride && SmoothedGroundSpeed < WalkSample)
+	{
+		// Below the walk's own speed: the walk's stride, slowed to the walker's pace.
+		TargetPlayRate = FMath::Clamp(SmoothedGroundSpeed / WalkSample, 0.3f, 1.f);
+	}
 	MeshComponent->GlobalAnimRateScale = FMath::FInterpTo(MeshComponent->GlobalAnimRateScale, TargetPlayRate, DeltaTime, 4.f);
 }
 

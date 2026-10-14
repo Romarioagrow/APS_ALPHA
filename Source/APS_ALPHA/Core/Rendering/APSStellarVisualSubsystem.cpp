@@ -11,6 +11,8 @@
 #include "APS_ALPHA/Actors/Astro/StarCluster.h"
 #include "APS_ALPHA/Actors/Astro/PlanetaryBody.h"
 #include "APS_ALPHA/Actors/Tech/SpaceStation.h"
+#include "APS_ALPHA/Pawns/Characters/CustomGravityCharacter.h"
+#include "APS_ALPHA/Pawns/Vehicles/PilotingVehicle.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
 #include "APS_ALPHA/Generation/StarGenerator.h"
 #include "Components/DirectionalLightComponent.h"
@@ -53,6 +55,29 @@ namespace
 	// generated star key (about 9.5 lux in the standard handoff).
 	constexpr float GameplaySurfaceFillLightIntensity = 2.20f;
 	const FLinearColor GameplaySurfaceFillLightColor(0.78f, 0.84f, 0.94f, 1.0f);
+	/** Rio 15.10: the one night light's colour (the orbital night fill's, UAPSObjectLightingSubsystem). */
+	const FLinearColor NightLevelColor(0.55f, 0.68f, 1.0f, 1.0f);
+	/** aps.Planet.NightOneLevel / aps.Planet.NightLevel (UAPSObjectLightingSubsystem) through the console manager. */
+	IConsoleVariable* FindNightCVar(const TCHAR* Name, IConsoleVariable*& Cached)
+	{
+		if (!Cached)
+		{
+			Cached = IConsoleManager::Get().FindConsoleVariable(Name);
+		}
+		return Cached;
+	}
+	bool NightOneLevel()
+	{
+		static IConsoleVariable* Cached = nullptr;
+		const IConsoleVariable* CVar = FindNightCVar(TEXT("aps.Planet.NightOneLevel"), Cached);
+		return CVar && CVar->GetInt() != 0;
+	}
+	float NightLevelLux()
+	{
+		static IConsoleVariable* Cached = nullptr;
+		const IConsoleVariable* CVar = FindNightCVar(TEXT("aps.Planet.NightLevel"), Cached);
+		return CVar ? FMath::Max(0.0f, CVar->GetFloat()) : 0.3f;
+	}
 }
 
 bool UAPSStellarVisualSubsystem::ShouldCreateSubsystem(UObject* Outer) const
@@ -698,6 +723,120 @@ void UAPSStellarVisualSubsystem::UpdateGameplaySurfaceFillLight(
 				ClosestSurfaceAltitudeCm = SurfaceAltitudeCm;
 			}
 		}
+	}
+
+	// Rio 15.10 (aps.Planet.NightOneLevel; 0.6.5.4: the night side darker far away, lighter closer, black at 45-60 km,
+	// lit grey again lower): this one light carries the night at every height and distance, at aps.Planet.NightLevel lux.
+	// From orbit it travels against the star's rays (the night hemisphere is lit, the day one keeps its look); below 50 km
+	// it turns to the accepted near-ground direction as the surface comes closer. On the day side near the ground it stays
+	// the accepted 2.2 lux daylight fill; the twilight (the star within ~6 deg of the horizon) blends the two.
+	if (World && bHasObserverLocation && bHasTargetStar && NightOneLevel() && IsValid(CharacterPawn)
+		&& (CharacterPawn->IsA<ACustomGravityCharacter>() || CharacterPawn->IsA<APilotingVehicle>()))
+	{
+		const FVector TowardStar = (TargetStarLocation - ObserverLocation).GetSafeNormal();
+		if (TowardStar.IsNearlyZero())
+		{
+			return;
+		}
+		const float NightLux = NightLevelLux();
+		FVector Ray = TowardStar;
+		float TargetLux = NightLux;
+		FLinearColor Color = NightLevelColor;
+		float DaySide = 0.0f;
+		const FVector Outward = ClosestSurfaceBody
+			? (ObserverLocation - ClosestSurfaceBody->GetActorLocation()).GetSafeNormal() : FVector::ZeroVector;
+		if (!Outward.IsNearlyZero())
+		{
+			FVector Azimuth = FVector::VectorPlaneProject(-TowardStar, Outward).GetSafeNormal();
+			if (Azimuth.IsNearlyZero())
+			{
+				const FVector ReferenceAxis = FMath::Abs(Outward.Z) < 0.82 ? FVector::UpVector : FVector::ForwardVector;
+				Azimuth = FVector::CrossProduct(ReferenceAxis, Outward).GetSafeNormal(UE_DOUBLE_SMALL_NUMBER, FVector::RightVector);
+			}
+			// The accepted near-surface direction (below): 46 deg above the horizon, from the star's side.
+			const FVector Accepted = (-Outward * 0.72 + Azimuth * 0.69).GetSafeNormal();
+			const double Near = APSPlanetSurfaceFill::Weight(ClosestSurfaceAltitudeCm);
+			const FVector NightRay = (Accepted * Near + TowardStar * (1.0 - Near)).GetSafeNormal(UE_SMALL_NUMBER, Accepted);
+			DaySide = static_cast<float>(FMath::SmoothStep(-0.1, 0.1, FVector::DotProduct(Outward, TowardStar)));
+			const float DayLux = GameplaySurfaceFillLightIntensity * static_cast<float>(Near);
+			TargetLux = FMath::Lerp(NightLux, DayLux, DaySide);
+			Ray = (Accepted * (DaySide * DayLux) + NightRay * ((1.0f - DaySide) * NightLux))
+				.GetSafeNormal(UE_SMALL_NUMBER, NightRay);
+			Color = FMath::Lerp(NightLevelColor, GameplaySurfaceFillLightColor, DaySide);
+		}
+		const FRotator WantedRotation = Ray.Rotation();
+		const bool bCreate = !FillComponent;
+		if (bCreate)
+		{
+			FActorSpawnParameters SpawnParameters;
+			SpawnParameters.ObjectFlags |= RF_Transient;
+			SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+			FillLight = World->SpawnActor<ADirectionalLight>(ADirectionalLight::StaticClass(), FVector::ZeroVector,
+				WantedRotation, SpawnParameters);
+			FillComponent = FillLight ? Cast<UDirectionalLightComponent>(FillLight->GetLightComponent()) : nullptr;
+			if (!FillLight || !FillComponent)
+			{
+				return;
+			}
+			FillLight->Tags.AddUnique(GameplaySurfaceFillLightTag);
+			FillLight->SetActorEnableCollision(false);
+			FillComponent->SetMobility(EComponentMobility::Movable);
+			FillComponent->SetCastShadows(false);
+			FillComponent->SetAtmosphereSunLight(false);
+			FillComponent->SetForwardShadingPriority(0);
+			FillComponent->SetVolumetricScatteringIntensity(0.0f);
+			FillComponent->SetSpecularScale(0.0f);
+			FillComponent->SetLightingChannels(true, false, false);
+			FillComponent->SetIntensity(0.0f);
+			FillComponent->SetVisibility(false);
+			GameplaySurfaceFillLight = FillLight;
+		}
+		// Eased (a crossing of 50 km on the day side, a console change); the first frame takes the level at once.
+		const bool bWasVisible = FillComponent->IsVisible();
+		const float Current = bCreate ? TargetLux : (bWasVisible ? FillComponent->Intensity : 0.0f);
+		const float Lux = FMath::FInterpTo(Current, TargetLux, DeltaTime, 2.0f);
+		if (GameplayFillBody.Get() != ClosestSurfaceBody || bCreate)
+		{
+			GameplayFillBody = ClosestSurfaceBody;
+			UE_LOG(LogAPSStellarVisuals, Log, TEXT("[APS.Lighting] night one level: %s body=%s altitude=%.1f km day=%.2f lux %.2f"),
+				ClosestSurfaceBody ? TEXT("near a surface") : TEXT("orbit/space"), *GetNameSafe(ClosestSurfaceBody),
+				ClosestSurfaceBody ? ClosestSurfaceAltitudeCm / 100000.0 : -1.0, DaySide, TargetLux);
+		}
+		if (Lux < 0.001f && TargetLux < 0.001f)
+		{
+			if (bWasVisible)
+			{
+				FillComponent->SetVisibility(false);
+			}
+			return;
+		}
+		if (!FMath::IsNearlyZero(FillComponent->SpecularScale))
+		{
+			FillComponent->SetSpecularScale(0.0f);
+		}
+		if (!FillComponent->GetLightColor().Equals(Color, 0.0005f))
+		{
+			FillComponent->SetLightColor(Color);
+		}
+		if (!FMath::IsNearlyEqual(FillComponent->Intensity, Lux, 0.00001f))
+		{
+			FillComponent->SetIntensity(Lux);
+		}
+		const FRotator CurrentRotation = FillLight->GetActorRotation();
+		FRotator UpdatedRotation = bWasVisible ? FMath::RInterpTo(CurrentRotation, WantedRotation, DeltaTime, 8.0f) : WantedRotation;
+		if (UpdatedRotation.Equals(WantedRotation, 0.05f))
+		{
+			UpdatedRotation = WantedRotation;
+		}
+		if (!CurrentRotation.Equals(UpdatedRotation, 0.001f))
+		{
+			FillLight->SetActorRotation(UpdatedRotation);
+		}
+		if (!bWasVisible)
+		{
+			FillComponent->SetVisibility(true);
+		}
+		return;
 	}
 
 	if (!ClosestSurfaceBody)
