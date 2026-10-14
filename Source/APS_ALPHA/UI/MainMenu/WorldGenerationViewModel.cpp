@@ -40,6 +40,16 @@
 #include "Kismet/GameplayStatics.h"
 #include "TimerManager.h"
 
+namespace APSStartFallback
+{
+	// Rio 14.10 (0.6.5.2: "START PLANET IS A GAS GIANT" while a solid world stood in the preview; 64 GENERATE clicks
+	// rejected): the commit moved the start to a solid world (SetStartPlanetIndex rebuilds the preview) and finishes
+	// itself once that preview is ready.
+	TWeakObjectPtr<UWorldGenerationViewModel> GPendingViewModel;
+	FName GPendingLevel;
+	int32 GAttempts = 0;
+}
+
 #define LOCTEXT_NAMESPACE "WorldGenerationViewModel"
 
 /**
@@ -2502,6 +2512,28 @@ void UWorldGenerationViewModel::ExecutePreview()
 		bGenerated);
 	bPreserveCameraOnNextPreview = false;
 	bForceRefocusOnNextPreview = false;
+	// Rio 14.10: a commit whose start moved to a solid world goes on now that the preview stands around it.
+	if (APSStartFallback::GPendingViewModel.Get() == this)
+	{
+		APSStartFallback::GPendingViewModel.Reset();
+		if (UWorld* PendingWorld = bGenerated && WorldContext.IsValid() ? WorldContext->GetWorld() : nullptr)
+		{
+			const FName Level = APSStartFallback::GPendingLevel;
+			TWeakObjectPtr<UWorldGenerationViewModel> WeakThis(this);
+			PendingWorld->GetTimerManager().SetTimerForNextTick([WeakThis, Level]()
+			{
+				if (UWorldGenerationViewModel* ViewModel = WeakThis.Get())
+				{
+					UE_LOG(LogTemp, Log, TEXT("[APS.Civilization] commit resumes on the solid start world"));
+					ViewModel->CommitAndOpenLevel(Level);
+				}
+			});
+		}
+		else
+		{
+			APSStartFallback::GAttempts = 0;
+		}
+	}
 }
 
 AAstroGenerator* UWorldGenerationViewModel::FindOrCreatePreviewGenerator()
@@ -2716,13 +2748,68 @@ void UWorldGenerationViewModel::CommitAndOpenLevel(FName LevelName)
 		const APlanet* StartWorld = ReadyPreviewGenerator->HomePlanet;
 		if (IsValid(StartWorld) && !UAPSPlanetSurfaceProfileResolver::SupportsWorldScape(StartWorld->PlanetType))
 		{
+			// Rio 14.10 (0.6.5.2: the start index had run to 5 (an ice giant) in one second, likely the mouse wheel over
+			// HOME START PLANET, while he edited a solid world; every mode refused to start): the start moves to a solid
+			// world of the home family, the one in the editor's panel when it is one, else the nearest by orbit, and the
+			// commit finishes by itself once the preview has rebuilt the family around it.
+			const AStarSystem* FallbackSystem = ReadyPreviewGenerator->GetPreviewHomeSystem();
+			const AStar* FallbackSun = IsValid(FallbackSystem) ? FallbackSystem->MainStar : nullptr;
+			const APlanetarySystem* FallbackFamily = IsValid(FallbackSun) ? FallbackSun->PlanetarySystem : nullptr;
+			const int32 FamilyCount = IsValid(FallbackFamily)
+				? FMath::Min(FallbackFamily->PlanetsActorsList.Num(), GetHomeStartPlanetCount()) : 0;
+			const auto IsSolidAt = [FallbackFamily](const int32 Index)
+			{
+				const APlanet* Planet = FallbackFamily->PlanetsActorsList.IsValidIndex(Index - 1)
+					? static_cast<const APlanet*>(FallbackFamily->PlanetsActorsList[Index - 1]) : nullptr;
+				return IsValid(Planet) && UAPSPlanetSurfaceProfileResolver::SupportsWorldScape(Planet->PlanetType);
+			};
+			int32 SolidIndex = 0;
+			APlanetaryBody* PanelBody = ReadyPreviewGenerator->GetActivePreviewWorldScapeBody();
+			if (!IsValid(PanelBody)) PanelBody = Cast<APlanetaryBody>(SelectedPreviewBody.Get());
+			APlanet* PanelPlanet = Cast<APlanet>(PanelBody);
+			if (const AMoon* PanelMoon = Cast<AMoon>(PanelBody); !PanelPlanet && IsValid(PanelMoon))
+			{
+				PanelPlanet = PanelMoon->ParentPlanet;
+			}
+			if (IsValid(PanelPlanet) && IsValid(FallbackFamily))
+			{
+				const int32 PanelIndex = FallbackFamily->PlanetsActorsList.IndexOfByKey(PanelPlanet) + 1;
+				if (PanelIndex > 0 && PanelIndex <= FamilyCount && IsSolidAt(PanelIndex))
+				{
+					SolidIndex = PanelIndex;
+				}
+			}
+			for (int32 Step = 1; SolidIndex == 0 && Step < FamilyCount; ++Step)
+			{
+				for (const int32 Candidate : {GeneratedWorld->StartPlanetIndex - Step, GeneratedWorld->StartPlanetIndex + Step})
+				{
+					if (SolidIndex == 0 && Candidate >= 1 && Candidate <= FamilyCount && IsSolidAt(Candidate))
+					{
+						SolidIndex = Candidate;
+					}
+				}
+			}
 			UE_LOG(LogTemp, Warning,
-				TEXT("[APS.Civilization] Commit rejected: start planet %d %s '%s' (%s) has no surface"),
+				TEXT("[APS.Civilization] start planet %d %s '%s' (%s) has no surface: %s"),
 				GeneratedWorld->StartPlanetIndex, *ReadyPreviewGenerator->GetPreviewBodyStableKey(StartWorld),
-				*StartWorld->AstroName.ToString(), *UEnum::GetValueAsString(StartWorld->PlanetType));
-			SetPreviewStatus(LOCTEXT("StartPlanetGasGiant", "START PLANET IS A GAS GIANT: PICK A SOLID WORLD AS HOME"), true);
+				*StartWorld->AstroName.ToString(), *UEnum::GetValueAsString(StartWorld->PlanetType),
+				SolidIndex > 0 ? *FString::Printf(TEXT("the start moves to planet %d and the commit follows the preview"), SolidIndex)
+					: TEXT("no solid world in the home family, commit rejected"));
+			if (SolidIndex == 0 || APSStartFallback::GAttempts >= 2)
+			{
+				APSStartFallback::GPendingViewModel.Reset();
+				APSStartFallback::GAttempts = 0;
+				SetPreviewStatus(LOCTEXT("StartPlanetNoSurface", "NO SOLID WORLD IN THE HOME SYSTEM: ADD A ROCKY PLANET"), true);
+				return;
+			}
+			++APSStartFallback::GAttempts;
+			APSStartFallback::GPendingViewModel = this;
+			APSStartFallback::GPendingLevel = LevelName;
+			SetStartPlanetIndex(static_cast<double>(SolidIndex));
+			SetPreviewStatus(LOCTEXT("StartPlanetMoved", "START MOVED TO A SOLID WORLD: PREPARING"), false);
 			return;
 		}
+		APSStartFallback::GAttempts = 0;
 	}
 
 	bool bHandoffCommitted = false;
