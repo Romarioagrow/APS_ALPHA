@@ -3459,6 +3459,18 @@ namespace APSShipBenchmark
 		{
 			LookAtNearestShip(World, Pawn, true);
 		}
+		else if (Args[0].Equals(TEXT("view"), ESearchCase::IgnoreCase) && Args.Num() > 1)
+		{
+			// Rio 15.10 evening (test runs): view <yaw deg from the walker's facing> [pitch deg]: the chase camera beside or
+			// in front of a walking character (SetViewDirection; the walk keeps its own direction).
+			if (ACustomGravityCharacter* Walker = Cast<ACustomGravityCharacter>(Pawn))
+			{
+				const FVector Up = Walker->GetActorUpVector();
+				const FQuat Turn(Up, FMath::DegreesToRadians(FCString::Atod(*Args[1])));
+				Walker->SetViewDirection(Turn.RotateVector(Walker->GetActorForwardVector()),
+					Args.Num() > 2 ? FCString::Atof(*Args[2]) : 0.0f);
+			}
+		}
 		UE_LOG(LogTemp, Log, TEXT("[APS.Test] pose %s: %s at %s"), *Args[0], *Pawn->GetName(),
 			*(Origin + Pawn->GetActorLocation()).ToCompactString());
 	}

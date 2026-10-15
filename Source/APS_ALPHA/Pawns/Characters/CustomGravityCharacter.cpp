@@ -87,8 +87,9 @@ namespace APSCharacterQueryThrottle
 		ECVF_Default);
 	// Rio 15.10 ("the camera can be turned into the back of the head"): on foot the view pitched to 80 deg, the arm then
 	// stood over the head (or under it) and in a cabin its probe pulled the camera onto the head.
-	TAutoConsoleVariable<float> CVarCameraPitchMaxDeg(TEXT("aps.Character.CameraPitchMaxDeg"), 60.0f,
-		TEXT("On foot, the largest view pitch up or down (deg); 80: as 0.6.5.4."),
+	// Rio 15.10 evening (0.6.5.4-stabilize, "the camera is broken"): 60 deg took away the look up and down he had; 80 again.
+	TAutoConsoleVariable<float> CVarCameraPitchMaxDeg(TEXT("aps.Character.CameraPitchMaxDeg"), 80.0f,
+		TEXT("On foot, the largest view pitch up or down (deg); 80: as 0.6.5.4 (60 in 0.6.5.4-stabilize)."),
 		ECVF_Default);
 	UAnimSequenceBase* BackpedalClip()
 	{
