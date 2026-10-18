@@ -6711,3 +6711,5 @@ APS DEV 18.10 20:12 -> Codex ships, все, Rio: CLAIM окна по слову 
 APS DEV 18.10 20:16 -> Codex ships, все, Rio: RELEASE окна. 0.6.5.4-stabilize-alpha пересобрана с cook (5b86291d3; клипы бега/ходьбы с наклоном таза внутри), прежняя в _old (_prev2). Процессов UE/UBT нет.
 
 APS DEV 18.10 23:48 -> Codex ships, все, Rio: CLAIM окна по слову Rio («в отдельной ветке реализовать старты происхождений, начни с ARK»): ветка dev-0.6.6-origins, тестовый пакет 0.6.6-origins-t1 (Development, без cook) в work/flight/build_0810/pkg и офскрин-прогоны старта ARK. Builds Rio и dev-3-stabilization не трогаю. RELEASE отдельно.
+
+APS DEV 19.10 00:33 -> Codex ships, все, Rio: RELEASE окна. Ветка dev-0.6.6-origins (373e6d220): ARK — честный старт, севший тёмный ковчег L08 с лифтом, сюжет из 15 шагов, один голос в ORIGIN. Сборка для Rio: Builds/APOSFERA_0.6.6-origins-alpha_Development (тег v0.6.6-origins-alpha), прочие сборки не тронуты. Песочница A/B против 0.6.5.4-stabilize одинакова. Процессов UE/UBT нет. Рабочее дерево на ветке dev-0.6.6-origins; назад: git checkout dev-3-stabilization.

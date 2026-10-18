@@ -4,6 +4,13 @@
 #include "APS_ALPHA/Actors/Astro/Planet.h"
 #include "APS_ALPHA/Actors/Astro/PlanetaryBody.h"
 #include "APS_ALPHA/Actors/Astro/Star.h"
+#include "APS_ALPHA/Actors/Astro/StarCluster.h"
+#include "APS_ALPHA/Core/Enums/PlanetHabitability.h"
+#include "APS_ALPHA/Core/Enums/StarSpectralClass.h"
+#include "APS_ALPHA/Gameplay/Ancients/APSAncients.h"
+#include "APS_ALPHA/Gameplay/Ancients/APSAncientsTypes.h"
+#include "APS_ALPHA/Gameplay/Trips/APSSpaceTripsHud.h"
+#include "APS_ALPHA/UI/Colony/APSMissionTracker.h"
 #include "APS_ALPHA/Core/Enums/PlanetType.h"
 #include "APS_ALPHA/Core/Enums/StellarType.h"
 #include "APS_ALPHA/Core/Model/APSWorldRules.h"
@@ -54,6 +61,8 @@ namespace APSSpaceTripsLocal
 	/** The helm counts as still while the nose turns less than this between looks, degrees (a drifting hull wobbles). */
 	constexpr float HelmStillDegrees = 1.5f;
 	constexpr float ArrivingTimeoutSeconds = 60.0f;
+	/** The route card left open this long at the start: the home route begins by itself. */
+	constexpr float CardAutoStartSeconds = 45.0f;
 	constexpr double HelmTurnDegrees = 2.0;
 
 	struct FWorldTrip
@@ -86,6 +95,46 @@ namespace APSSpaceTripsLocal
 			Letters.AppendChar(Char);
 		}
 		return Letters;
+	}
+
+	/** The primary's model in the cluster's record (null for a galaxy star, which carries its string). */
+	const FStarModel* ClusterModel(const FAPSStarSystems& Stars, const FAPSStarSystemInfo& Info)
+	{
+		const AStarCluster* Cluster = Stars.GetCluster();
+		return Info.GalaxyIndex == INDEX_NONE && Cluster && Cluster->PotentialStarSystems.IsValidIndex(Info.Record)
+			? &Cluster->PotentialStarSystems[Info.Record].PrimaryStarModel : nullptr;
+	}
+
+	/** Rio 19.10 (ark-t/trip review: RED, BLUE and THE DARK were nearly empty): the class letters of any star of the catalogue. */
+	FString SpectralOf(const FAPSStarSystems& Stars, const FAPSStarSystemInfo& Info)
+	{
+		const FString Letters = SpectralLetters(Info.Spectral);
+		if (!Letters.IsEmpty())
+		{
+			return Letters;
+		}
+		const FStarModel* Model = ClusterModel(Stars, Info);
+		if (!Model)
+		{
+			return Letters;
+		}
+		switch (Model->StellarType)
+		{
+		case EStellarType::BlackHole: return TEXT("BH");
+		case EStellarType::Neutron:
+		case EStellarType::Pulsar: return TEXT("NS");
+		case EStellarType::WhiteDwarf: return TEXT("D");
+		default: break;
+		}
+		const FString Name = StaticEnum<ESpectralClass>()->GetNameStringByValue(static_cast<int64>(Model->SpectralClass));
+		return Name == TEXT("Unknown") ? FString() : Name;
+	}
+
+	bool IsGiantStar(const FAPSStarSystems& Stars, const FAPSStarSystemInfo& Info)
+	{
+		const FStarModel* Model = ClusterModel(Stars, Info);
+		return Model && (Model->StellarType == EStellarType::Giant || Model->StellarType == EStellarType::BrightGiant
+			|| Model->StellarType == EStellarType::SuperGiant || Model->StellarType == EStellarType::HyperGiant);
 	}
 
 	FText TypeName(const EPlanetType Type)
@@ -183,6 +232,60 @@ namespace APSSpaceTripsLocal
 		default:
 			return LOCTEXT("WonderWorld", "A world. Someone will name its mountains.");
 		}
+	}
+
+	FText LookFor(const EPlanetType Type)
+	{
+		switch (Type)
+		{
+		case EPlanetType::HotGiant:
+		case EPlanetType::GasGiant:
+			return LOCTEXT("LookGiant", "Look along the terminator: the bands fold into storms there, and the moons cast black dots on the clouds.");
+		case EPlanetType::IceGiant:
+			return LOCTEXT("LookIceGiant", "Against the blue, look for a moon's shadow crossing the cloud deck.");
+		case EPlanetType::Ocean:
+		case EPlanetType::Water:
+		case EPlanetType::Archipelago:
+			return LOCTEXT("LookOcean", "Watch the sunlit limb: the sea throws the star back like a mirror.");
+		case EPlanetType::Terrestrial:
+		case EPlanetType::Forest:
+		case EPlanetType::Savanna:
+		case EPlanetType::Pangea:
+		case EPlanetType::Oasis:
+			return LOCTEXT("LookLiving", "On the night side, look for lightning under the clouds; at the limb, the thin blue shell of the air.");
+		case EPlanetType::Desert:
+		case EPlanetType::Sand:
+		case EPlanetType::Tundra:
+		case EPlanetType::Nordic:
+		case EPlanetType::HighMountain:
+			return LOCTEXT("LookDry", "At the terminator every ridge throws a shadow kilometres long.");
+		case EPlanetType::Volcanic:
+		case EPlanetType::Lava:
+		case EPlanetType::Melted:
+		case EPlanetType::Sulfur:
+		case EPlanetType::Basalt:
+			return LOCTEXT("LookFire", "Wait for the night side: the cracks glow, and the glow moves.");
+		case EPlanetType::Ice:
+		case EPlanetType::Frozen:
+		case EPlanetType::Ammonia:
+			return LOCTEXT("LookIce", "Ice catches the low sun: the whole limb glitters.");
+		case EPlanetType::Greenhouse:
+			return LOCTEXT("LookGreenhouse", "Nothing of the ground shows; the cloud deck itself is the view, lit gold from inside.");
+		default:
+			return LOCTEXT("LookDefault", "Fly the terminator line: the light changes fastest there.");
+		}
+	}
+
+	/** The colour of a sun's light, by its surface temperature. */
+	FText StarLight(const int32 Kelvin)
+	{
+		if (Kelvin <= 0) return FText::GetEmpty();
+		if (Kelvin < 3700) return LOCTEXT("LightRed", "Its light is the colour of embers: noon under it looks like dusk at home.");
+		if (Kelvin < 5200) return LOCTEXT("LightOrange", "Orange light, warm and patient; its worlds see a gold sky.");
+		if (Kelvin < 6000) return LOCTEXT("LightYellow", "Yellow-white, like our own: shadows here would look familiar.");
+		if (Kelvin < 7500) return LOCTEXT("LightWhite", "White light, a little harsher than ours.");
+		if (Kelvin < 10000) return LOCTEXT("LightHot", "White-hot: the sky it lights stays deep blue even at noon.");
+		return LOCTEXT("LightBlue", "Blue-white and furious: it will burn out in a few million years.");
 	}
 
 	FText StarWonder(const EStellarType Type)
@@ -304,6 +407,11 @@ void APSSpaceTrips::Tick(UWorld* World, const float DeltaSeconds)
 	{
 		Trip->Tick(DeltaSeconds);
 	}
+	if (bTripWorld)
+	{
+		// Rio 19.10: the route card (O) and the photo (P) without the console.
+		APSSpaceTripsHud::Tick(World);
+	}
 }
 
 // The trip
@@ -324,6 +432,12 @@ ASpaceship* APSSpaceTrips::FTrip::PilotShip() const
 void APSSpaceTrips::FTrip::Guide(const FText& Text) const
 {
 	UAPSCivilizationJournalSubsystem::Post(World.Get(), APSSpaceTripsLocal::GuideCategory, Text);
+	// Rio 19.10 (SPACE TRIPS without the console): the guide speaks on screen, in the notices' own card.
+	const bool bRoute = Phase != EPhase::Idle && !Route.Id.IsEmpty();
+	APSMissionTracker::PushNotice(World.Get(), bRoute ? FText::Format(LOCTEXT("GuideKickerRoute", "SPACE TRIPS  ·  {0}"), Route.Name)
+		: LOCTEXT("GuideKicker", "SPACE TRIPS  ·  THE GUIDE"),
+		Route.Stops.IsValidIndex(StopIndex) && bRoute ? FText::FromString(Route.Stops[StopIndex].Name.ToUpper()) : LOCTEXT("GuideTitle", "THE GUIDE"),
+		Text, LOCTEXT("GuideKeys", "O routes  ·  P photo"), FLinearColor(0.55f, 0.72f, 0.90f));
 	UE_LOG(LogTemp, Log, TEXT("[APS.Trip] %s"), *Text.ToString());
 }
 
@@ -334,6 +448,40 @@ FString APSSpaceTrips::FTrip::Describe() const
 		: Phase == EPhase::Hold ? TEXT("hold") : Phase == EPhase::Paused ? TEXT("paused") : TEXT("done");
 	return FString::Printf(TEXT("route %s, stop %d/%d, world %d/%d, %s (%.0f s)"), *Route.Id, StopIndex + 1, Route.Stops.Num(),
 		WorldIndex + 1, Worlds.Num(), PhaseName, PhaseSeconds);
+}
+
+void APSSpaceTrips::FTrip::Objective(FText& OutTitle, FText& OutBody) const
+{
+	using namespace APSSpaceTripsLocal;
+	const bool bRoute = Phase != EPhase::Idle && Phase != EPhase::Done;
+	OutTitle = bRoute ? FText::Format(LOCTEXT("ObjTitle", "{0}   {1}/{2}"), Route.Name, FText::AsNumber(FMath::Max(StopIndex, 0) + 1),
+		FText::AsNumber(Route.Stops.Num())) : LOCTEXT("ObjTitleIdle", "SPACE TRIPS");
+	const ASpaceship* Ship = PilotShip();
+	const FText Stop = Route.Stops.IsValidIndex(StopIndex) ? FText::FromString(Route.Stops[StopIndex].Name) : FText::GetEmpty();
+	const FText Body = Ship && Target.IsValid() ? NameOf(*Ship, Target.Get()) : Stop;
+	switch (Phase)
+	{
+	case EPhase::Idle: OutBody = LOCTEXT("ObjIdle", "Choose a route: O. The guide flies, you watch; P takes a photo."); break;
+	case EPhase::Done: OutBody = LOCTEXT("ObjDone", "The route is done. O for another, or the sky is yours."); break;
+	case EPhase::Waiting: OutBody = LOCTEXT("ObjWaiting", "Take the seat and start the engine (G): the route begins."); break;
+	case EPhase::StarLeg: OutBody = FText::Format(LOCTEXT("ObjStarLeg", "Star drive to {0}."), Stop); break;
+	case EPhase::Arriving: OutBody = FText::Format(LOCTEXT("ObjArriving", "Arriving at {0}: its worlds come into view."), Stop); break;
+	case EPhase::WorldLeg: OutBody = FText::Format(LOCTEXT("ObjWorldLeg", "Flying to {0}."), Body); break;
+	case EPhase::Hold: OutBody = FText::Format(LOCTEXT("ObjHold", "At {0}. Look around; P for a photo."), Body); break;
+	case EPhase::Paused: OutBody = LOCTEXT("ObjPaused", "Paused: leave the helm still and the guide takes it back; O for routes."); break;
+	default: OutBody = FText::GetEmpty(); break;
+	}
+}
+
+bool APSSpaceTrips::GetObjective(const UWorld* World, FText& OutTitle, FText& OutBody)
+{
+	const FTrip* Trip = World && APSWorldRules::IsTrip(World) ? Find(World, false) : nullptr;
+	if (!Trip)
+	{
+		return false;
+	}
+	Trip->Objective(OutTitle, OutBody);
+	return !OutTitle.IsEmpty();
 }
 
 void APSSpaceTrips::FTrip::BuildRoutes(TArray<FRoute>& OutRoutes) const
@@ -352,6 +500,26 @@ void APSSpaceTrips::FTrip::BuildRoutes(TArray<FRoute>& OutRoutes) const
 		FStop& Stop = Added.Stops.AddDefaulted_GetRef();
 		Stop.SystemIndex = HomeIndex;
 		Stop.Name = Stars && Stars->GetHome() ? Stars->GetHome()->Name : TEXT("home");
+	}
+	// Rio 19.10: what someone left near home, when the Builders' sites stand (SPACE TRIPS keeps their traces).
+	if (const FAPSAncients* Ancients = APSAncientsFind(LiveWorld))
+	{
+		int32 Sites = 0;
+		for (const FAPSAncients::FSite& Site : Ancients->GetSites())
+		{
+			Sites += Site.Spec.bHomeSystem && Site.Actor.IsValid() ? 1 : 0;
+		}
+		if (Sites > 0)
+		{
+			FRoute& Added = OutRoutes.AddDefaulted_GetRef();
+			Added.Id = TEXT("builders");
+			Added.Name = LOCTEXT("RouteBuilders", "THE BUILDERS' TRAIL");
+			Added.Subtitle = LOCTEXT("RouteBuildersSub", "What someone left here before us: stone kilometres high, a hull in a high orbit, a ring of standing stones.");
+			FStop& Stop = Added.Stops.AddDefaulted_GetRef();
+			Stop.SystemIndex = HomeIndex;
+			Stop.Name = Stars && Stars->GetHome() ? Stars->GetHome()->Name : TEXT("home");
+			Stop.bBuilders = true;
+		}
 	}
 	if (!Stars || !Stars->IsReady())
 	{
@@ -378,13 +546,15 @@ void APSSpaceTrips::FTrip::BuildRoutes(TArray<FRoute>& OutRoutes) const
 		{TEXT("nearest"), LOCTEXT("RouteNearest", "THE NEAREST SUNS"), LOCTEXT("RouteNearestSub", "Four stars within reach, as the crow flies."), 4,
 			[](const FAPSStarSystemInfo&) { return true; }},
 		{TEXT("red"), LOCTEXT("RouteRed", "RED AND COLD"), LOCTEXT("RouteRedSub", "The small red suns that outlive everything else."), 4,
-			[](const FAPSStarSystemInfo& Info) { const FString L = SpectralLetters(Info.Spectral); return L == TEXT("M") || L == TEXT("K"); }},
+			[Stars](const FAPSStarSystemInfo& Info) { const FString L = SpectralOf(*Stars, Info); return L == TEXT("M") || L == TEXT("K"); }},
 		{TEXT("blue"), LOCTEXT("RouteBlue", "BLUE AND WHITE"), LOCTEXT("RouteBlueSub", "The hot young suns that burn bright and short."), 4,
-			[](const FAPSStarSystemInfo& Info) { const FString L = SpectralLetters(Info.Spectral); return L == TEXT("O") || L == TEXT("B") || L == TEXT("A"); }},
+			[Stars](const FAPSStarSystemInfo& Info) { const FString L = SpectralOf(*Stars, Info); return L == TEXT("O") || L == TEXT("B") || L == TEXT("A"); }},
 		{TEXT("doubles"), LOCTEXT("RouteDoubles", "DOUBLES AND TRIPLES"), LOCTEXT("RouteDoublesSub", "Suns that share a sky."), 4,
 			[](const FAPSStarSystemInfo& Info) { return Info.StarCount >= 2; }},
+		{TEXT("giants"), LOCTEXT("RouteGiants", "THE OLD GIANTS"), LOCTEXT("RouteGiantsSub", "Suns in their last age, swollen to the size of orbits."), 3,
+			[Stars](const FAPSStarSystemInfo& Info) { return IsGiantStar(*Stars, Info); }},
 		{TEXT("dark"), LOCTEXT("RouteDark", "THE DARK"), LOCTEXT("RouteDarkSub", "What suns leave behind: dwarfs, neutron stars, the holes."), 3,
-			[](const FAPSStarSystemInfo& Info) { const FString L = SpectralLetters(Info.Spectral); return L == TEXT("NS") || L == TEXT("BH") || L == TEXT("PS"); }},
+			[Stars](const FAPSStarSystemInfo& Info) { const FString L = SpectralOf(*Stars, Info); return L == TEXT("NS") || L == TEXT("BH") || L == TEXT("PS") || L == TEXT("D"); }},
 		{TEXT("crowded"), LOCTEXT("RouteCrowded", "THE CROWDED SKIES"), LOCTEXT("RouteCrowdedSub", "Systems with the most worlds to see."), 4,
 			[](const FAPSStarSystemInfo& Info) { return Info.PotentialPlanets >= 6; }}};
 	for (const FTheme& Theme : Themes)
@@ -418,6 +588,41 @@ void APSSpaceTrips::FTrip::BuildRoutes(TArray<FRoute>& OutRoutes) const
 			Stop.WorldsToShow = Foreign;
 		}
 	}
+	// Rio 19.10 ("the nearest wonders"): one of each of the strangest suns within reach, nearest first.
+	{
+		TArray<int32> Picked;
+		const TFunction<bool(const FAPSStarSystemInfo&)> Kinds[] = {
+			[Stars](const FAPSStarSystemInfo& Info) { const FString L = SpectralOf(*Stars, Info); return L == TEXT("BH") || L == TEXT("NS"); },
+			[Stars](const FAPSStarSystemInfo& Info) { return IsGiantStar(*Stars, Info); },
+			[](const FAPSStarSystemInfo& Info) { return Info.StarCount >= 3; },
+			[Stars](const FAPSStarSystemInfo& Info) { const FString L = SpectralOf(*Stars, Info); return L == TEXT("O") || L == TEXT("B"); }};
+		for (const TFunction<bool(const FAPSStarSystemInfo&)>& Kind : Kinds)
+		{
+			for (const int32 Index : Nearest)
+			{
+				if (!Picked.Contains(Index) && Kind(*Stars->Get(Index)))
+				{
+					Picked.Add(Index);
+					break;
+				}
+			}
+		}
+		if (Picked.Num() >= 2)
+		{
+			ChainByDistance<int32>(From, Picked, [Stars](const int32& Index) { return Stars->Get(Index)->Location; });
+			FRoute& Added = OutRoutes.AddDefaulted_GetRef();
+			Added.Id = TEXT("wonders");
+			Added.Name = LOCTEXT("RouteWonders", "THE NEAREST WONDERS");
+			Added.Subtitle = LOCTEXT("RouteWondersSub", "One of each of the strangest suns within reach: the remnant, the giant, the many-sunned, the blue.");
+			for (const int32 Index : Picked)
+			{
+				FStop& Stop = Added.Stops.AddDefaulted_GetRef();
+				Stop.SystemIndex = Index;
+				Stop.Name = Stars->Get(Index)->Name;
+				Stop.WorldsToShow = Foreign;
+			}
+		}
+	}
 }
 
 bool APSSpaceTrips::FTrip::Start(const FString& IdOrIndex)
@@ -440,6 +645,8 @@ bool APSSpaceTrips::FTrip::Start(const FString& IdOrIndex)
 		Stop(LOCTEXT("StopForNew", "another route"));
 	}
 	Route = *Found;
+	bAutoStarted = true;
+	APSSpaceTripsHud::CloseCard(World.Get());
 	StopIndex = 0;
 	WorldIndex = INDEX_NONE;
 	Worlds.Reset();
@@ -595,12 +802,27 @@ void APSSpaceTrips::FTrip::Tick(const float DeltaSeconds)
 		if (!bWelcomed)
 		{
 			bWelcomed = true;
-			Guide(LOCTEXT("Welcome", "Welcome aboard. This sky is for looking at: the guide flies, you watch. Routes: aps.Trip.Routes; a route: aps.Trip.Start home."));
+			Guide(LOCTEXT("Welcome", "Welcome aboard. This sky is for looking at: the guide flies, you watch. O opens the routes, P takes a photo."));
 		}
-		if (!bAutoStarted && CVarAutoStart.GetValueOnGameThread() != 0)
+		if (!bCardOffered && Ship)
 		{
 			PhaseSeconds += DeltaSeconds;
-			if (PhaseSeconds >= AutoStartGraceSeconds && Ship && Ship->GetEngineRunning())
+			if (PhaseSeconds >= AutoStartGraceSeconds)
+			{
+				// Rio 19.10: the routes to choose from, on screen; the home route by itself only if the card stays untouched.
+				bCardOffered = true;
+				PhaseSeconds = 0.0f;
+				APSSpaceTripsHud::OpenCard(LiveWorld);
+			}
+		}
+		else if (bCardOffered && !bAutoStarted && CVarAutoStart.GetValueOnGameThread() != 0)
+		{
+			PhaseSeconds += DeltaSeconds;
+			if (!APSSpaceTripsHud::IsCardOpen(LiveWorld))
+			{
+				bAutoStarted = true;
+			}
+			else if (PhaseSeconds >= CardAutoStartSeconds)
 			{
 				bAutoStarted = true;
 				Start(TEXT("home"));
@@ -651,8 +873,20 @@ void APSSpaceTrips::FTrip::Tick(const float DeltaSeconds)
 		break;
 	case EPhase::Hold:
 		HoldSeconds += DeltaSeconds;
+		if (bRotated && Ship->GetActorQuat().AngularDistance(LastSetRotation) > FMath::DegreesToRadians(HelmTurnDegrees))
+		{
+			// The pilot's hand: the guide lets the view be theirs.
+			bRotated = false;
+			Pause(LOCTEXT("HelmHold", "You have the helm."));
+			break;
+		}
+		if (const AActor* Sight = Target.Get())
+		{
+			TurnNoseTo(*Ship, SightOf(*Ship, *Sight), DeltaSeconds);
+		}
 		if (HoldSeconds >= FMath::Max(CVarHoldSeconds.GetValueOnGameThread(), 1.0f))
 		{
+			bRotated = false;
 			NextWorld(*Ship);
 		}
 		break;
@@ -871,7 +1105,25 @@ void APSSpaceTrips::FTrip::ListWorlds(ASpaceship& Ship)
 			}
 		}
 	}
-	Guide(DescribeStar(Star, Stop));
+	if (Stop.bBuilders)
+	{
+		Bodies.Reset();
+		if (const FAPSAncients* Ancients = APSAncientsFind(World.Get()))
+		{
+			for (const FAPSAncients::FSite& Site : Ancients->GetSites())
+			{
+				if (Site.Spec.bHomeSystem && Site.Actor.IsValid())
+				{
+					Bodies.Add(Site.Actor.Get());
+				}
+			}
+		}
+		Guide(LOCTEXT("BuildersIntro", "THE BUILDERS' TRAIL: nobody knows who they were. They built in stone that does not weather, at sizes nothing alive needs, and left the lights on."));
+	}
+	else
+	{
+		Guide(DescribeStar(Star, Stop));
+	}
 	ChainByDistance<AActor*>(Ship.GetActorLocation(), Bodies, [&Ship](AActor* const& Body) { return UAPSWorldOriginSubsystem::PlaceFor(&Ship, *Body); });
 	if (Stop.WorldsToShow > 0 && Bodies.Num() > Stop.WorldsToShow)
 	{
@@ -908,8 +1160,15 @@ void APSSpaceTrips::FTrip::BeginWorldLeg(ASpaceship& Ship)
 	Ship.FlightModel->EngageAutopilot(Body);
 	const double Away = FVector::Dist(Ship.GetActorLocation(), UAPSWorldOriginSubsystem::PlaceFor(&Ship, *Body));
 	const APlanetaryBody* Planet = Cast<APlanetaryBody>(Body);
-	Guide(FText::Format(LOCTEXT("WorldNext", "Next: {0}, {1}, {2}."), Planet ? TypeName(Planet->PlanetType) : LOCTEXT("TypeBody", "A BODY"),
-		NameOf(Ship, Body), DistanceText(Away)));
+	FText Kind = Planet ? TypeName(Planet->PlanetType) : LOCTEXT("TypeBody", "A BODY");
+	if (const FAPSAncients* Ancients = Planet ? nullptr : APSAncientsFind(World.Get()))
+	{
+		if (const FAPSAncients::FSite* Site = Ancients->FindByActor(Body))
+		{
+			Kind = FText::FromString(FString(APSAncients::KindLabel(Site->Spec.Kind)).Replace(TEXT("_"), TEXT(" ")).ToUpper());
+		}
+	}
+	Guide(FText::Format(LOCTEXT("WorldNext", "Next: {0}, {1}, {2}."), Kind, NameOf(Ship, Body), DistanceText(Away)));
 }
 
 void APSSpaceTrips::FTrip::TickWorldLeg(ASpaceship& Ship)
@@ -953,10 +1212,69 @@ void APSSpaceTrips::FTrip::TickWorldLeg(ASpaceship& Ship)
 		}
 		Phase = EPhase::Hold;
 		HoldSeconds = 0.0f;
+		bRotated = false;
 		Guide(DescribeWorld(Ship, Body));
 		return;
 	}
 	Pause(LOCTEXT("HelmWorld", "You have the helm."));
+}
+
+void APSSpaceTrips::FTrip::TurnNoseTo(ASpaceship& Ship, const FVector& Direction, const float DeltaSeconds)
+{
+	using namespace APSSpaceTripsLocal;
+	if (Direction.IsNearlyZero())
+	{
+		return;
+	}
+	FVector Up = Ship.GetActorUpVector();
+	Up = (Up - Direction * FVector::DotProduct(Up, Direction)).GetSafeNormal(UE_SMALL_NUMBER, FVector::UpVector);
+	const FQuat Wanted = FAPSShipFlightBenchmark::GetRotationForFlightAxes(Ship, Direction, Up);
+	const FQuat Current = Ship.GetActorQuat();
+	const double Angle = Current.AngularDistance(Wanted);
+	// Half the star leg's rate: a slow look round, not a snap.
+	const double MaxStep = FMath::DegreesToRadians(FMath::Max(CVarTurnRate.GetValueOnGameThread() * 0.5f, 1.0f)) * DeltaSeconds;
+	const double Alpha = Angle > UE_SMALL_NUMBER ? FMath::Min(1.0, MaxStep / Angle) : 1.0;
+	Ship.SetActorRotation(FQuat::Slerp(Current, Wanted, Alpha), ETeleportType::TeleportPhysics);
+	LastSetRotation = Ship.GetActorQuat();
+	bRotated = true;
+}
+
+FVector APSSpaceTrips::FTrip::SightOf(const ASpaceship& Ship, const AActor& Body) const
+{
+	const FVector From = Ship.GetActorLocation();
+	const FVector Centre = UAPSWorldOriginSubsystem::PlaceFor(&Ship, Body);
+	FVector Toward = (Centre - From).GetSafeNormal();
+	const APlanetaryBody* Planet = Cast<APlanetaryBody>(&Body);
+	if (!Planet || Toward.IsNearlyZero())
+	{
+		if (!Planet)
+		{
+			// A site: the middle of what was built (its actor stands at a navigation point beside it).
+			FVector Origin;
+			FVector Extent;
+			Body.GetActorBounds(false, Origin, Extent);
+			const FVector Middle = UAPSWorldOriginSubsystem::PlaceFor(&Ship, Body) + (Origin - Body.GetActorLocation());
+			const FVector ToMiddle = (Middle - From).GetSafeNormal();
+			return ToMiddle.IsNearlyZero() ? Toward : ToMiddle;
+		}
+		return Toward;
+	}
+	// A world: its limb on the sunlit side, so the terminator, the air's shell and the sun share the view.
+	const double Distance = FVector::Dist(Centre, From);
+	const double Radius = FMath::Max(Planet->GetWorldScapeBodyRadiusCm(), 1.0);
+	const double Limb = Distance > Radius ? FMath::Asin(FMath::Clamp(Radius / Distance, 0.0, 1.0)) : UE_HALF_PI;
+	const APlanet* AsPlanet = Cast<APlanet>(&Body);
+	const AMoon* AsMoon = Cast<AMoon>(&Body);
+	const AStar* Star = AsPlanet ? AsPlanet->ParentStar : AsMoon && IsValid(AsMoon->ParentPlanet) ? AsMoon->ParentPlanet->ParentStar : nullptr;
+	FVector Side = IsValid(Star) ? FVector::VectorPlaneProject(UAPSWorldOriginSubsystem::PlaceFor(&Ship, *Star) - From, Toward).GetSafeNormal()
+		: FVector::ZeroVector;
+	if (Side.IsNearlyZero())
+	{
+		FVector Unused;
+		Toward.FindBestAxisVectors(Side, Unused);
+	}
+	// Toward the limb, 80 % of the way out from the centre.
+	return (Toward * FMath::Cos(Limb * 0.8) + Side * FMath::Sin(Limb * 0.8)).GetSafeNormal();
 }
 
 void APSSpaceTrips::FTrip::NextWorld(ASpaceship& Ship)
@@ -976,6 +1294,13 @@ FText APSSpaceTrips::FTrip::NameOf(const ASpaceship& Ship, const AActor* Body) c
 	if (!Body)
 	{
 		return FText::GetEmpty();
+	}
+	if (const FAPSAncients* Ancients = Cast<APlanetaryBody>(Body) ? nullptr : APSAncientsFind(World.Get()))
+	{
+		if (const FAPSAncients::FSite* Site = Ancients->FindByActor(Body))
+		{
+			return Ancients->DisplayName(*Site);
+		}
 	}
 	if (Ship.ShipNavigation)
 	{
@@ -1004,11 +1329,23 @@ FText APSSpaceTrips::FTrip::DescribeStar(const AStar* Star, const FStop& Stop) c
 	Args.Add(TEXT("Suns"), FText::AsNumber(Info ? FMath::Max(Info->StarCount, 1) : 1));
 	Args.Add(TEXT("Worlds"), FText::AsNumber(Star ? Star->Planets.Num() : Info ? Info->PotentialPlanets : 0));
 	Args.Add(TEXT("Wonder"), Star ? StarWonder(Star->StellarClass) : FText::GetEmpty());
+	// Rio 19.10 ("more depth and detail"): the sun in numbers, and the colour of its light.
+	FText Numbers = FText::GetEmpty();
+	if (Star && Star->SurfaceTemperature > 0 && Star->StellarClass != EStellarType::BlackHole)
+	{
+		FNumberFormattingOptions Two;
+		Two.SetMaximumFractionalDigits(2);
+		Numbers = FText::Format(LOCTEXT("StarNumbers", " {0} K at the surface, {1} times the Sun's width, {2} times its light."),
+			FText::AsNumber(Star->SurfaceTemperature), FText::AsNumber(Star->StarRadiusKM / 696340.0, &Two),
+			FText::AsNumber(Star->Luminosity, &Two));
+	}
+	Args.Add(TEXT("Numbers"), Numbers);
+	Args.Add(TEXT("Light"), Star ? StarLight(Star->SurfaceTemperature) : FText::GetEmpty());
 	if (Info && Info->StarCount >= 2)
 	{
-		return FText::Format(LOCTEXT("StarMulti", "{Name}: {Suns} suns, the primary {Spectral}, {Worlds} worlds. {Wonder}"), Args);
+		return FText::Format(LOCTEXT("StarMultiDeep", "{Name}: {Suns} suns, the primary {Spectral}, {Worlds} worlds.{Numbers} {Wonder} {Light}"), Args);
 	}
-	return FText::Format(LOCTEXT("StarSingle", "{Name}: a {Spectral} sun with {Worlds} worlds. {Wonder}"), Args);
+	return FText::Format(LOCTEXT("StarSingleDeep", "{Name}: a {Spectral} sun with {Worlds} worlds.{Numbers} {Wonder} {Light}"), Args);
 }
 
 FText APSSpaceTrips::FTrip::DescribeWorld(const ASpaceship& Ship, const AActor* Body) const
@@ -1017,6 +1354,15 @@ FText APSSpaceTrips::FTrip::DescribeWorld(const ASpaceship& Ship, const AActor* 
 	const APlanetaryBody* Planet = Cast<APlanetaryBody>(Body);
 	if (!Planet)
 	{
+		// A Builders' site: its own description (the kind, its size), then the trail's line.
+		if (const FAPSAncients* Ancients = APSAncientsFind(World.Get()))
+		{
+			if (const FAPSAncients::FSite* Site = Ancients->FindByActor(Body))
+			{
+				return FText::Format(LOCTEXT("SiteLine", "{0}: {1} Nobody has seen it lit by anything but its own glyphs and our sun."),
+					Ancients->DisplayName(*Site), APSAncients::KindDescription(Site->Spec.Kind, Site->Metrics));
+			}
+		}
 		return FText::Format(LOCTEXT("BodyPlain", "{0}. Look."), NameOf(Ship, Body));
 	}
 	FFormatNamedArguments Args;
@@ -1027,15 +1373,33 @@ FText APSSpaceTrips::FTrip::DescribeWorld(const ASpaceship& Ship, const AActor* 
 	const APlanet* AsPlanet = Cast<APlanet>(Body);
 	const int32 Moons = AsPlanet ? AsPlanet->Moons.Num() : 0;
 	Args.Add(TEXT("Moons"), FText::AsNumber(Moons));
+	// Rio 19.10 ("more depth and detail"): the weight, the heat and the air of it, and where to look.
+	FNumberFormattingOptions One;
+	One.SetMaximumFractionalDigits(1);
+	FText Facts = FText::GetEmpty();
+	if (Planet->PlanetGravityStrength > 0.01)
+	{
+		Facts = FText::Format(LOCTEXT("FactGravity", ", {0} g"), FText::AsNumber(Planet->PlanetGravityStrength, &One));
+	}
+	if (Planet->Temperature > 20 && Planet->Temperature < 3000)
+	{
+		Facts = FText::Format(LOCTEXT("FactHeat", "{0}, {1} °C"), Facts, FText::AsNumber(Planet->Temperature - 273));
+	}
+	if (Planet->PlanetHabitability == EPlanetHabitability::Habitable)
+	{
+		Facts = FText::Format(LOCTEXT("FactAir", "{0}, air we could breathe"), Facts);
+	}
+	Args.Add(TEXT("Facts"), Facts);
+	Args.Add(TEXT("Look"), LookFor(Planet->PlanetType));
 	if (Cast<AMoon>(Body))
 	{
-		return FText::Format(LOCTEXT("MoonLine", "{Name}, a moon: {Type}, {Radius} km across the middle. {Wonder}"), Args);
+		return FText::Format(LOCTEXT("MoonLineDeep", "{Name}, a moon: {Type}, {Radius} km across{Facts}. {Wonder} {Look}"), Args);
 	}
 	if (Moons > 0)
 	{
-		return FText::Format(LOCTEXT("PlanetMoonsLine", "{Name}: {Type}, {Radius} km, {Moons} moons. {Wonder}"), Args);
+		return FText::Format(LOCTEXT("PlanetMoonsLineDeep", "{Name}: {Type}, {Radius} km{Facts}, {Moons} moons. {Wonder} {Look}"), Args);
 	}
-	return FText::Format(LOCTEXT("PlanetLine", "{Name}: {Type}, {Radius} km. {Wonder}"), Args);
+	return FText::Format(LOCTEXT("PlanetLineDeep", "{Name}: {Type}, {Radius} km{Facts}. {Wonder} {Look}"), Args);
 }
 
 // Console
@@ -1123,6 +1487,19 @@ namespace APSSpaceTripsLocal
 		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>& Args, UWorld* World)
 		{
 			if (FTrip* Trip = TripFor(World, true)) Trip->Photo(Args.Num() > 0 ? Args[0] : FString());
+		}));
+
+	FAutoConsoleCommandWithWorldAndArgs EngineCommand(TEXT("aps.Trip.Engine"),
+		TEXT("Test: the piloted ship's engine on, as G does (offscreen runs have no keys)."),
+		FConsoleCommandWithWorldAndArgsDelegate::CreateLambda([](const TArray<FString>&, UWorld* World)
+		{
+			const APlayerController* Controller = World ? World->GetFirstPlayerController() : nullptr;
+			ASpaceship* Ship = Controller ? Cast<ASpaceship>(Controller->GetPawn()) : nullptr;
+			if (Ship && !Ship->GetEngineRunning())
+			{
+				Ship->SwitchEngines();
+			}
+			UE_LOG(LogTemp, Log, TEXT("[APS.Trip] engine %s"), Ship ? (Ship->GetEngineRunning() ? TEXT("on") : TEXT("off")) : TEXT("(no piloted ship)"));
 		}));
 
 	FAutoConsoleCommandWithWorldAndArgs StatusCommand(TEXT("aps.Trip.Status"),

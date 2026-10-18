@@ -31,6 +31,8 @@ namespace APSSpaceTrips
 		FString Name;
 		/** How many of its worlds to show (0: all). */
 		int32 WorldsToShow{0};
+		/** Rio 19.10: the stop's sights are the Builders' sites of the home system (the stone, the hull, the circle). */
+		bool bBuilders{false};
 	};
 
 	struct FRoute
@@ -83,6 +85,8 @@ namespace APSSpaceTrips
 		int32 GetStopIndex() const { return StopIndex; }
 		/** One line for the log: the route, the stop, what the guide is doing. */
 		FString Describe() const;
+		/** Rio 19.10: the TASKS card's lines in a trip world (the route, the stop, what the guide does, the keys). */
+		void Objective(FText& OutTitle, FText& OutBody) const;
 
 	private:
 		ASpaceship* PilotShip() const;
@@ -95,6 +99,10 @@ namespace APSSpaceTrips
 		void TickWorldLeg(ASpaceship& Ship);
 		void NextWorld(ASpaceship& Ship);
 		void Guide(const FText& Text) const;
+		/** Rio 19.10 (trip-t2: at the quiet hull only stars were in view): the nose comes round onto the sight at a hold. */
+		void TurnNoseTo(ASpaceship& Ship, const FVector& Direction, float DeltaSeconds);
+		/** Where to look at a body: a world's lit limb with its sun aside, a site's middle. */
+		FVector SightOf(const ASpaceship& Ship, const AActor& Body) const;
 		/** The guidebook's lines for a star and for a world. */
 		FText DescribeStar(const AStar* Star, const FStop& Stop) const;
 		FText DescribeWorld(const ASpaceship& Ship, const AActor* Body) const;
@@ -120,6 +128,8 @@ namespace APSSpaceTrips
 		bool bToldToBoard{false};
 		bool bAutoStarted{false};
 		bool bWelcomed{false};
+		/** Rio 19.10: the route card was offered once the pilot sat with the engine on. */
+		bool bCardOffered{false};
 		int32 PhotoSerial{0};
 		/**
 		 * APS DEV 14.10 (audit): a pause the pilot's hand caused ends by itself once the pilot sits with the engine on,
@@ -135,4 +145,6 @@ namespace APSSpaceTrips
 	APS_ALPHA_API FTrip* Find(const UWorld* World, bool bCreate = false);
 	/** Once a frame from the fleet command subsystem: runs the trip of a SPACE TRIPS world (and any started by console). */
 	APS_ALPHA_API void Tick(UWorld* World, float DeltaSeconds);
+	/** Rio 19.10: the TASKS card's lines in a trip world; false outside one. */
+	APS_ALPHA_API bool GetObjective(const UWorld* World, FText& OutTitle, FText& OutBody);
 }

@@ -14277,8 +14277,9 @@ void AAstroGenerator::DestroyConfiguredCivilizationAssets()
 bool AAstroGenerator::SpawnConfiguredCivilizationAssets(const USpawnParameters* Parameters)
 {
 	UWorld* World = GetWorld();
-	// Rio 18.10 (ARK honest start): the ark is the whole fleet and nothing else is raised (APSOriginArk::ApplyStartKit).
-	if (World && Parameters && IsValid(HomeSpaceship) && !IsValid(HomeSpaceShipyard) && APSOriginArk::IsArk(HomeSpaceship))
+	// Rio 18.10 (ARK honest start; 19.10 SPACE TRIPS): the one hull is the whole fleet and nothing else is raised
+	// (APSOriginArk::ApplyStartKit).
+	if (World && Parameters && IsValid(HomeSpaceship) && !IsValid(HomeSpaceShipyard) && APSOriginArk::IsHullOnlyStart(World))
 	{
 		DestroyConfiguredCivilizationAssets();
 		GeneratedStartingFleet.Add(HomeSpaceship);
@@ -14474,8 +14475,10 @@ bool AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> Start
 			IsValid(HomePlanet) ? TEXT("OK") : TEXT("NULL"), PlanetGenerator ? TEXT("OK") : TEXT("NULL"));
 		return false;
 	}
-	// Rio 18.10 (0.6.6 origins): the ARK starts with the ark alone; every other world builds the home complex as before.
-	const bool bArkStart = !bIsPreviewGeneration && APSOriginArk::IsArkWorld(World);
+	// Rio 18.10 (0.6.6 origins): the ARK starts with the ark alone, a SPACE TRIPS world (19.10) with its ship alone; every
+	// other world builds the home complex as before.
+	const bool bHullOnlyStart = !bIsPreviewGeneration && APSOriginArk::IsHullOnlyStart(World);
+	const bool bArkWorld = bHullOnlyStart && APSOriginArk::IsArkWorld(World);
 	if (bStarterHierarchySpawned || IsValid(HomeSpaceHeadquarters) || IsValid(HomeSpaceStation)
 		|| IsValid(HomeSpaceShipyard) || IsValid(HomeSpaceship)
 		|| !GeneratedStartingFleet.IsEmpty() || !GeneratedCivilizationInfrastructure.IsEmpty())
@@ -14571,7 +14574,7 @@ bool AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> Start
 		HomeSpaceStationOrbitHeight, PlanetRadiusCm);
 	FVector PlanetPosition = ComplexBody->GetActorLocation();
 
-	if (!bArkStart)
+	if (!bHullOnlyStart)
 	{
 		HomeSpaceHeadquarters = World->SpawnActor<ASpaceHeadquarters>(
 			BP_HomeSpaceHeadquarters, PlanetPosition, FRotator::ZeroRotator, SpawnParams);
@@ -14626,7 +14629,7 @@ bool AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> Start
 	// Where the headquarters stands (or, at an ARK start, would stand): the gameplay frame's anchor.
 	const FVector StarterAnchor = PlanetPosition + Offset;
 	ASpaceship* NewHomeSpaceship = nullptr;
-	if (bArkStart)
+	if (bHullOnlyStart)
 	{
 		// Rio 18.10 (ARK honest start, APSOriginArk): no headquarters, station or orbital yard. Their place stays the frame's
 		// anchor (the saved positions use it) and the sunlit landing's bearing; the ark waits there until the colony lands
@@ -14635,8 +14638,28 @@ bool AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> Start
 		StarterAnchorOutwardLocal = ComplexBody->GetActorTransform().InverseTransformVectorNoScale(AnchorUp);
 		FActorSpawnParameters ArkSpawnParams;
 		ArkSpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-		NewHomeSpaceship = World->SpawnActor<ASpaceship>(BP_HomeSpaceship, StarterAnchor,
-			FRotationMatrix::MakeFromZ(AnchorUp).Rotator(), ArkSpawnParams);
+		FRotator HullRotation = FRotationMatrix::MakeFromZ(AnchorUp).Rotator();
+		if (!bArkWorld)
+		{
+			// A trip's ship looks along the planet's horizon, a little down onto the limb, its sun 30 degrees aside: the
+			// curve of the world, its air and the star in the first frame.
+			FVector Azimuth = FVector::ZeroVector;
+			if (const AStar* Star = APSCivilizationSpawn::ParentStarOf(ComplexBody, HomeStar); IsValid(Star))
+			{
+				Azimuth = FVector::VectorPlaneProject(Star->GetActorLocation() - StarterAnchor, AnchorUp).GetSafeNormal();
+			}
+			if (Azimuth.IsNearlyZero())
+			{
+				FVector Unused;
+				AnchorUp.FindBestAxisVectors(Azimuth, Unused);
+			}
+			Azimuth = Azimuth.RotateAngleAxis(30.0, AnchorUp);
+			const double Altitude = FMath::Max(FVector::Dist(StarterAnchor, PlanetPosition) - PlanetRadiusCm, 1.0);
+			const double LimbDip = FMath::Acos(FMath::Clamp(PlanetRadiusCm / (PlanetRadiusCm + Altitude), -1.0, 1.0));
+			const FVector View = Azimuth * FMath::Cos(LimbDip * 0.85) - AnchorUp * FMath::Sin(LimbDip * 0.85);
+			HullRotation = FRotationMatrix::MakeFromXZ(View.GetSafeNormal(), AnchorUp).Rotator();
+		}
+		NewHomeSpaceship = World->SpawnActor<ASpaceship>(BP_HomeSpaceship, StarterAnchor, HullRotation, ArkSpawnParams);
 		HomeSpaceship = NewHomeSpaceship;
 		if (!IsValid(NewHomeSpaceship) || !IsValid(GeneratedHomeStarSystem))
 		{
@@ -14644,7 +14667,10 @@ bool AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> Start
 				IsValid(NewHomeSpaceship) ? TEXT("OK") : TEXT("NULL"), IsValid(GeneratedHomeStarSystem) ? TEXT("OK") : TEXT("NULL"));
 			return false;
 		}
-		NewHomeSpaceship->Tags.AddUnique(APSOriginArk::Tag());
+		if (bArkWorld)
+		{
+			NewHomeSpaceship->Tags.AddUnique(APSOriginArk::Tag());
+		}
 		// Rides with the home system into the gameplay frame (the ship at a yard rides with the yard).
 		NewHomeSpaceship->AttachToActor(ComplexBody, FAttachmentTransformRules::KeepWorldTransform);
 		NewHomeSpaceship->OffsetSystem = GeneratedHomeStarSystem;
@@ -14652,8 +14678,8 @@ bool AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> Start
 		{
 			NewHomeSpaceship->OnboardComputer->OffsetSystem = GeneratedHomeStarSystem;
 		}
-		UE_LOG(LogTemp, Log, TEXT("[APS.Origin.Ark] the ark %s (size class %d) waits at the complex's place; no headquarters, station or yard"),
-			*GetNameSafe(NewHomeSpaceship), static_cast<int32>(NewHomeSpaceship->SizeClass));
+		UE_LOG(LogTemp, Log, TEXT("[APS.Origin] the one hull %s (size class %d, %s) waits at the complex's place; no headquarters, station or yard"),
+			*GetNameSafe(NewHomeSpaceship), static_cast<int32>(NewHomeSpaceship->SizeClass), bArkWorld ? TEXT("the ark") : TEXT("a trip"));
 	}
 	else
 	{
@@ -14759,9 +14785,9 @@ bool AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> Start
 		&& PlayerCharacter->IsA(BP_CharacterClass);
 	if (!bExistingPawnMatchesSelection && BP_CharacterClass)
 	{
-		const FVector InitialSpawnLocation = bArkStart ? StarterAnchor : HomeSpaceHeadquarters->GetStartPointPosition();
+		const FVector InitialSpawnLocation = bHullOnlyStart ? StarterAnchor : HomeSpaceHeadquarters->GetStartPointPosition();
 		APawn* SelectedPlayerCharacter = World->SpawnActor<APawn>(BP_CharacterClass, InitialSpawnLocation,
-			bArkStart ? NewHomeSpaceship->GetActorRotation() : HomeSpaceShipyard->GetActorRotation(), SpawnParams);
+			bHullOnlyStart ? NewHomeSpaceship->GetActorRotation() : HomeSpaceShipyard->GetActorRotation(), SpawnParams);
 		if (IsValid(SelectedPlayerCharacter))
 		{
 			SpawnedSelectedPlayerCharacter = SelectedPlayerCharacter;
@@ -14778,7 +14804,7 @@ bool AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> Start
 		// AAstroGenerator root used to drag the galaxy/cluster presentation hierarchy
 		// after physics actors and cameras had already spawned, leaving gameplay actors
 		// under 1e9 parents with ~1e-9 compensated relative transforms.
-		FVector PlayerLocation = bArkStart ? StarterAnchor : HomeSpaceHeadquarters->GetActorLocation();
+		FVector PlayerLocation = bHullOnlyStart ? StarterAnchor : HomeSpaceHeadquarters->GetActorLocation();
 		const bool bUseGameplayLocalFrame = !bIsPreviewGeneration && !bIntegrateStartPlanet;
 		if (bUseGameplayLocalFrame && IsValid(GeneratedHomeStarSystem))
 		{
@@ -14787,7 +14813,7 @@ bool AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> Start
 			UE_LOG(LogTemp, Log,
 				TEXT("[APS.FullScale.LocalFrame] Home system detached=%d anchorResidual=%.3fcm generatorScale=%.3e"),
 				GeneratedHomeStarSystem->GetAttachParentActor() == nullptr ? 1 : 0,
-				bArkStart ? (StarterAnchor - PlayerLocation).Size() : HomeSpaceHeadquarters->GetActorLocation().Size(),
+				bHullOnlyStart ? (StarterAnchor - PlayerLocation).Size() : HomeSpaceHeadquarters->GetActorLocation().Size(),
 				GetActorTransform().GetScale3D().GetAbsMax());
 		}
 		else
@@ -14984,15 +15010,15 @@ bool AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> Start
 			&& GeneratedCivilizationInfrastructure.Num() + 1
 				== CommittedSpawnParameters->GetPlannedInfrastructureActorCount();
 		// A Moon Orbit start hangs the complex on the first moon (see the complex spawn above).
-		const AActor* ComplexParent = bArkStart ? nullptr : HomeSpaceHeadquarters->GetAttachParentActor();
+		const AActor* ComplexParent = bHullOnlyStart ? nullptr : HomeSpaceHeadquarters->GetAttachParentActor();
 		const bool bComplexOnHomeBody = ComplexParent == HomePlanet
 			|| (CharSpawnPlace == ECharSpawnPlace::MoonOrbit && ComplexParent && IsValid(HomePlanet)
 				&& HomePlanet->Moons.ContainsByPredicate([ComplexParent](const AMoon* Moon) { return Moon == ComplexParent; }));
 		// The ARK: the ark alone, of the selected class, the pilot possessed, nothing else raised.
-		const bool bArkValid = bArkStart && IsValid(HomeSpaceship) && HomeSpaceship->IsA(BP_HomeSpaceship)
-			&& APSOriginArk::IsArk(HomeSpaceship) && PlayerCharacter->IsA(BP_CharacterClass) && bTeleportSuccess
+		const bool bArkValid = bHullOnlyStart && IsValid(HomeSpaceship) && HomeSpaceship->IsA(BP_HomeSpaceship)
+			&& (!bArkWorld || APSOriginArk::IsArk(HomeSpaceship)) && PlayerCharacter->IsA(BP_CharacterClass) && bTeleportSuccess
 			&& bSelectedCharacterPossessed && bPhysicalManifestValid;
-		const bool bHierarchyValid = bArkStart ? bArkValid :
+		const bool bHierarchyValid = bHullOnlyStart ? bArkValid :
 			bComplexOnHomeBody
 			&& HomeSpaceStation->GetAttachParentActor() == HomeSpaceHeadquarters
 			&& HomeSpaceShipyard->GetAttachParentActor() == HomeSpaceHeadquarters
@@ -15006,7 +15032,7 @@ bool AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> Start
 			&& bSelectedCharacterPossessed
 			&& bPhysicalManifestValid
 			&& (!GameplayInstance || HomeSpaceHeadquarters->Civilization == GameplayInstance->CurrentCivilization);
-		if (!bHierarchyValid && bArkStart)
+		if (!bHierarchyValid && bHullOnlyStart)
 		{
 			UE_LOG(LogTemp, Error, TEXT("[APS.Origin.Ark] Starter validation failed: Ark=%s Character=%s Possessed=%s Manifest=%s"),
 				*GetNameSafe(HomeSpaceship), PlayerCharacter->IsA(BP_CharacterClass) ? TEXT("OK") : TEXT("MISMATCH"),

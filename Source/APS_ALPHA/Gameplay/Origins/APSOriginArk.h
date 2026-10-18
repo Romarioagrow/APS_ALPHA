@@ -32,6 +32,10 @@ namespace APSOriginArk
 	APS_ALPHA_API bool IsHonestStart(const UWorld* World);
 	/** The running world plays the ARK origin's honest start. */
 	APS_ALPHA_API bool IsArkWorld(const UWorld* World);
+	/** Rio 19.10 (SPACE TRIPS, "a clean sky"): a trip world founded with the trip's kit (the ship alone, no colony in sight). */
+	APS_ALPHA_API bool IsTripKitWorld(const UWorld* World);
+	/** The start builds no home complex: the ARK (the ark lands on the ground) or a trip (the ship waits in orbit). */
+	APS_ALPHA_API bool IsHullOnlyStart(const UWorld* World);
 	/** Before travel (the menu's commit, on the game's copy): the origin's start kit; SANDBOX and trips untouched. */
 	APS_ALPHA_API void ApplyStartKit(const UGeneratedWorld& World, USpawnParameters& Spawn);
 	/** Back in the menu: the kit's numbers go back to the defaults (the next world is not founded with them). */

@@ -1016,7 +1016,9 @@ bool UAPSCivilizationMaterializationSubsystem::TryMaterializeEntities(
 	// foundation clear of the highest ground under all of it, and the construction's plinth fills beneath.
 	AColony* HomeColony = Cast<AColony>(MaterializedBase);
 	const bool bArkWorld = APSOriginArk::IsArkWorld(GetWorld());
-	if (HomeColony && !bArkWorld)
+	// Rio 19.10 (SPACE TRIPS, "a clean sky"): a trip's colony keeps its records but is not seen either.
+	const bool bHullOnlyWorld = APSOriginArk::IsHullOnlyStart(GetWorld());
+	if (HomeColony && !bHullOnlyWorld)
 	{
 		HomeColony->UseHeadquartersLook();
 	}
@@ -1109,6 +1111,13 @@ bool UAPSCivilizationMaterializationSubsystem::TryMaterializeEntities(
 	}
 	BindIdentity(MaterializedShip, *ShipEntity);
 
+	if (bHullOnlyWorld && !bArkWorld)
+	{
+		HideStarterActor(MaterializedBase);
+		HideStarterActor(MaterializedPad);
+		MaterializedBase->Tags.AddUnique(TEXT("APS.Nav.Hidden"));
+		MaterializedPad->Tags.AddUnique(TEXT("APS.Nav.Hidden"));
+	}
 	if (bArkWorld)
 	{
 		// Rio 18.10 (ARK): the modules' site anchor stands 60 m past the ark's hull on the base side of the old layout (the
@@ -1141,6 +1150,7 @@ bool UAPSCivilizationMaterializationSubsystem::TryMaterializeEntities(
 		}
 		HideStarterActor(MaterializedBase);
 		HideStarterActor(MaterializedPad);
+		MaterializedPad->Tags.AddUnique(TEXT("APS.Nav.Hidden"));
 		APSOriginArk::AdoptArk(*MaterializedShip);
 	}
 

@@ -95,7 +95,8 @@ void UShipNavigationComponent::RefreshContacts(const FVector& ObserverLocation, 
 	for (TActorIterator<AWorldActor> It(World); It; ++It)
 	{
 		AWorldActor* WorldActor = *It;
-		if (!IsValid(WorldActor) || WorldActor == GetOwner())
+		// Rio 19.10 (0.6.6): a start's hidden records (a trip's colony, the ark's pad) are not places to fly to.
+		if (!IsValid(WorldActor) || WorldActor == GetOwner() || WorldActor->ActorHasTag(TEXT("APS.Nav.Hidden")))
 		{
 			continue;
 		}

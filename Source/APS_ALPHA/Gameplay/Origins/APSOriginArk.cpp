@@ -450,6 +450,17 @@ FName APSOriginArk::PowerToken()
 	return Name;
 }
 
+namespace APSOriginArkLocal
+{
+	/** The start kit the running world was founded with (USpawnParameters::OriginStartKit: 0 none, 1 origin, 2 trip). */
+	uint8 KitOf(const UWorld* World)
+	{
+		const UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
+		const UMainGameplayInstance* Gameplay = GameInstance ? GameInstance->GetSubsystem<UMainGameplayInstance>() : nullptr;
+		return Gameplay && Gameplay->SpawnParameters ? Gameplay->SpawnParameters->OriginStartKit : 0;
+	}
+}
+
 bool APSOriginArk::IsHonestStart(const UWorld* World)
 {
 	if (APSOriginArkLocal::CVarHonestStart.GetValueOnGameThread() == 0 || !APSWorldRules::IsLadder(World)
@@ -458,9 +469,18 @@ bool APSOriginArk::IsHonestStart(const UWorld* World)
 		return false;
 	}
 	// Founded with the origin's kit (saved with the spawn parameters): an ORIGIN save from before 0.6.6 keeps its old start.
-	const UGameInstance* GameInstance = World ? World->GetGameInstance() : nullptr;
-	const UMainGameplayInstance* Gameplay = GameInstance ? GameInstance->GetSubsystem<UMainGameplayInstance>() : nullptr;
-	return Gameplay && Gameplay->SpawnParameters && Gameplay->SpawnParameters->OriginStartKit != 0;
+	return APSOriginArkLocal::KitOf(World) == 1;
+}
+
+bool APSOriginArk::IsTripKitWorld(const UWorld* World)
+{
+	return APSOriginArkLocal::CVarHonestStart.GetValueOnGameThread() != 0 && APSWorldRules::IsTrip(World)
+		&& APSWorldRules::OfGame(World).Mode == APSWorldRules::EMode::SpaceTrips && APSOriginArkLocal::KitOf(World) == 2;
+}
+
+bool APSOriginArk::IsHullOnlyStart(const UWorld* World)
+{
+	return IsArkWorld(World) || IsTripKitWorld(World);
 }
 
 bool APSOriginArk::IsArkWorld(const UWorld* World)
@@ -472,6 +492,23 @@ void APSOriginArk::ApplyStartKit(const UGeneratedWorld& World, USpawnParameters&
 {
 	using namespace APSOriginArkLocal;
 	const APSWorldRules::FRules Rules = APSWorldRules::Of(&World);
+	if (CVarHonestStart.GetValueOnGameThread() != 0 && Rules.Mode == APSWorldRules::EMode::SpaceTrips)
+	{
+		// Rio 19.10 (SPACE TRIPS, "a sky for looking at"): the ship alone in orbit, the pilot in its seat; no complex, no
+		// escorts, no colony in sight, no vehicles.
+		Spawn.OriginStartKit = 2;
+		Spawn.StartingFleetSize = 1;
+		Spawn.StarOutposts = 0;
+		Spawn.PlanetOutposts = 0;
+		Spawn.OrbitalOutposts = 1;
+		Spawn.GroundOutposts = 0;
+		Spawn.ColonyStartPackage = EAPSColonyStartPackage::Outpost;
+		Spawn.GroundVehicleMask = 0;
+		Spawn.CharacterSpawnPlace = ECharSpawnPlace::SpaceShip;
+		UE_LOG(LogTemp, Log, TEXT("[APS.Trip] start kit: the ship alone in orbit (%s), no complex, colony or vehicles"),
+			*GetNameSafe(Spawn.BP_HomeSpaceship.Get()));
+		return;
+	}
 	if (CVarHonestStart.GetValueOnGameThread() == 0 || Rules.Mode != APSWorldRules::EMode::Origin
 		|| Rules.Reach != APSWorldRules::EReach::Ladder || Rules.Origin == APSWorldRules::EOrigin::None)
 	{

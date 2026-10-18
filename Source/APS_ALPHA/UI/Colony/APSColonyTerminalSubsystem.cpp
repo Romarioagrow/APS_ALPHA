@@ -1,6 +1,7 @@
 #include "APSColonyTerminalSubsystem.h"
 #include "APS_ALPHA/Core/Model/APSWorldRules.h"
 #include "APS_ALPHA/Gameplay/Origins/APSOriginQuests.h"
+#include "APS_ALPHA/Gameplay/Trips/APSSpaceTrips.h"
 
 #include "APSMissionTracker.h"
 #include "SAPSColonyTerminal.h"
@@ -269,6 +270,11 @@ void UAPSColonyTerminalSubsystem::ShowOverlays()
 		if (!Self || Self->IsTerminalOpen() || (Controller && Controller->IsStrategicMapOpen()))
 		{
 			return false;
+		}
+		// Rio 19.10 (SPACE TRIPS): the route, the stop and what the guide does.
+		if (APSWorldRules::IsTrip(Self->GetWorld()))
+		{
+			return APSSpaceTrips::GetObjective(Self->GetWorld(), OutTitle, OutBody);
 		}
 		// Rio 18.10 (one voice in ORIGIN): the origin's story step heads the card; the onboarding route is off there.
 		if (APSWorldRules::IsLadder(Self->GetWorld()))

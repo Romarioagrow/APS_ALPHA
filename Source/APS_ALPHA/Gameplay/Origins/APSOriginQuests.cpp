@@ -601,6 +601,11 @@ bool APSOriginQuests::GetObjective(const UWorld* World, FText& OutTitle, FText& 
 
 bool APSOriginQuests::IsMissionInStory(const UWorld* World, const FName Template)
 {
+	// Rio 19.10 (SPACE TRIPS: no goals): a trip's card shows the route only.
+	if (APSWorldRules::IsTrip(World))
+	{
+		return false;
+	}
 	const FView V = View(World);
 	const FStep* Step = V.IsValid() ? V.Current() : nullptr;
 	if (!Step)
