@@ -63,6 +63,7 @@ CSV_DECLARE_CATEGORY_EXTERN(APSPreview);
 #include "APS_ALPHA/Pawns/Characters/CustomGravityCharacter.h"
 #include "APS_ALPHA/Pawns/Characters/GravityCharacterPawn.h"
 #include "APS_ALPHA/Actors/Tech/SpaceHeadquarters.h"
+#include "APS_ALPHA/Gameplay/Origins/APSOriginAdrift.h"
 #include "APS_ALPHA/Gameplay/Origins/APSOriginArk.h"
 #include "Engine/World.h"
 #include "Engine/GameViewportClient.h"
@@ -14659,7 +14660,10 @@ bool AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> Start
 			const FVector View = Azimuth * FMath::Cos(LimbDip * 0.85) - AnchorUp * FMath::Sin(LimbDip * 0.85);
 			HullRotation = FRotationMatrix::MakeFromXZ(View.GetSafeNormal(), AnchorUp).Rotator();
 		}
-		NewHomeSpaceship = World->SpawnActor<ASpaceship>(BP_HomeSpaceship, StarterAnchor, HullRotation, ArkSpawnParams);
+		FVector HullPlace = StarterAnchor;
+		const bool bAdriftStart = !bArkWorld && APSOriginAdrift::IsAdriftWorld(World) && IsValid(HomeStar)
+			&& APSOriginAdrift::StartPlace(*HomeStar, *ComplexBody, HullPlace, HullRotation);
+		NewHomeSpaceship = World->SpawnActor<ASpaceship>(BP_HomeSpaceship, HullPlace, HullRotation, ArkSpawnParams);
 		HomeSpaceship = NewHomeSpaceship;
 		if (!IsValid(NewHomeSpaceship) || !IsValid(GeneratedHomeStarSystem))
 		{
@@ -14671,15 +14675,17 @@ bool AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> Start
 		{
 			NewHomeSpaceship->Tags.AddUnique(APSOriginArk::Tag());
 		}
-		// Rides with the home system into the gameplay frame (the ship at a yard rides with the yard).
-		NewHomeSpaceship->AttachToActor(ComplexBody, FAttachmentTransformRules::KeepWorldTransform);
+		// Rides with the home system into the gameplay frame (the ship at a yard rides with the yard); ADRIFT's, far out at the
+		// system's edge, rides with the system itself rather than a turning world.
+		NewHomeSpaceship->AttachToActor(bAdriftStart ? static_cast<AActor*>(GeneratedHomeStarSystem) : static_cast<AActor*>(ComplexBody),
+			FAttachmentTransformRules::KeepWorldTransform);
 		NewHomeSpaceship->OffsetSystem = GeneratedHomeStarSystem;
 		if (NewHomeSpaceship->OnboardComputer)
 		{
 			NewHomeSpaceship->OnboardComputer->OffsetSystem = GeneratedHomeStarSystem;
 		}
 		UE_LOG(LogTemp, Log, TEXT("[APS.Origin] the one hull %s (size class %d, %s) waits at the complex's place; no headquarters, station or yard"),
-			*GetNameSafe(NewHomeSpaceship), static_cast<int32>(NewHomeSpaceship->SizeClass), bArkWorld ? TEXT("the ark") : TEXT("a trip"));
+			*GetNameSafe(NewHomeSpaceship), static_cast<int32>(NewHomeSpaceship->SizeClass), bArkWorld ? TEXT("the ark") : APSOriginAdrift::IsAdriftWorld(World) ? TEXT("adrift") : TEXT("a trip"));
 	}
 	else
 	{

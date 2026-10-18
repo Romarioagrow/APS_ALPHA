@@ -788,6 +788,40 @@ void UAPSCivilizationMaterializationSubsystem::TickPilotArrival()
 		TEXT("[APS.Civilization.Materialization] still no terrain collision under the landing site; the pilot keeps hovering"));
 }
 
+bool UAPSCivilizationMaterializationSubsystem::RelocateBaseNear(const FVector& Location)
+{
+	APlanetaryBody* HomeBody = MaterializedHomeBody.Get();
+	AActor* Base = MaterializedBase.Get();
+	FAPSCivilizationManifestEntity* BaseEntity = RuntimeManifest.FindEntity(EAPSCivilizationEntityRole::BaseModule);
+	const APlanetarySurfaceGenerator* Surface = IsValid(HomeBody) ? HomeBody->PlanetaryEnvironmentGenerator : nullptr;
+	AWorldScapeRoot* Root = IsValid(Surface) ? Surface->WorldScapeRootInstance : nullptr;
+	if (!Base || !BaseEntity || !IsValid(Root) || Root->PlanetScale <= 0.0)
+	{
+		return false;
+	}
+	const FVector RootCentre = Root->GetActorLocation();
+	const FVector Up = (Location - RootCentre).GetSafeNormal();
+	FVector Side;
+	FVector Unused;
+	Up.FindBestAxisVectors(Side, Unused);
+	// 40 m from where the pilot stands: the modules gather around it, beside the landed ship.
+	const FVector Toward = (Location + Side * 4000.0 - RootCentre).GetSafeNormal();
+	const double GroundCm = Root->GetGroundHeight(RootCentre + Toward * Root->PlanetScale, false);
+	if (!FMath::IsFinite(GroundCm) || FMath::Abs(GroundCm) > FMath::Max(2.0 * Root->NoiseIntensity, 100000.0))
+	{
+		return false;
+	}
+	Base->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+	Base->SetActorLocationAndRotation(RootCentre + Toward * (Root->PlanetScale + GroundCm + SupportClearanceCm),
+		FRotationMatrix::MakeFromZX(Toward, Side).Rotator(), false, nullptr, ETeleportType::TeleportPhysics);
+	Base->AttachToActor(HomeBody, FAttachmentTransformRules::KeepWorldTransform);
+	PersistRelativeTransform(Base, HomeBody, *BaseEntity);
+	Base->Tags.Remove(TEXT("APS.Nav.Hidden"));
+	UE_LOG(LogTemp, Log, TEXT("[APS.Civilization.Materialization] the colony's site anchor moved to the landing (%s)"),
+		*Base->GetActorLocation().ToCompactString());
+	return true;
+}
+
 bool UAPSCivilizationMaterializationSubsystem::PlacePilotAboardArk(ACustomGravityCharacter* Pilot)
 {
 	ASpaceship* Ark = Cast<ASpaceship>(MaterializedShip.Get());

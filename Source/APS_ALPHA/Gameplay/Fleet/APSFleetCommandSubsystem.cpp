@@ -9,6 +9,7 @@
 #include "APS_ALPHA/Core/Diagnostics/APSSurfaceDiag.h"
 #include "APS_ALPHA/UI/Colony/APSMissionTracker.h"
 #include "APS_ALPHA/Gameplay/Origins/APSOriginQuests.h"
+#include "APS_ALPHA/Gameplay/Origins/APSOriginAdrift.h"
 #include "APS_ALPHA/Gameplay/Origins/APSOriginArk.h"
 #include "APS_ALPHA/Gameplay/Trips/APSSpaceTrips.h"
 #include "APS_ALPHA/Gameplay/Vehicles/APSGroundVehicles.h"
@@ -94,6 +95,8 @@ void UAPSFleetCommandSubsystem::Tick(const float DeltaTime)
 		APSOriginQuests::Tick(GetWorld(), DeltaTime);
 		// Rio 18.10 (ARK): the ark's light wave and the story's camera moments; nothing outside an ARK world.
 		APSOriginArk::Tick(GetWorld(), DeltaTime);
+		// Rio 19.10 (ADRIFT): the reactor, the wrecks, the dead station; nothing outside an ADRIFT world.
+		APSOriginAdrift::Tick(GetWorld(), DeltaTime);
 	}
 	{
 		TRACE_CPUPROFILER_EVENT_SCOPE(APS_Fleet_SurfaceDiagAndTracker);

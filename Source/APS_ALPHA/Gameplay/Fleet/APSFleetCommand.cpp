@@ -24,6 +24,7 @@
 #include "APS_ALPHA/Gameplay/Expansion/APSStarSystems.h"
 #include "APS_ALPHA/Gameplay/Expansion/APSSystemMaterializer.h"
 #include "APS_ALPHA/Gameplay/Megastructures/APSMegastructures.h"
+#include "APS_ALPHA/Gameplay/Origins/APSOriginAdrift.h"
 #include "APS_ALPHA/Gameplay/Origins/APSOriginArk.h"
 #include "APS_ALPHA/Gameplay/Origins/APSOrigins.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
@@ -134,7 +135,7 @@ namespace APSFleetPrivate
 	{
 		// Ground vehicles (rover, hover, drone; Rio 02.10) are the colony's, never fleet units or orders.
 		// Rio 18.10 (ARK): neither is the ark, which never flies again (APSOriginArk).
-		return IsValid(Ship) && !Ship->IsGroundVehicle() && !APSOriginArk::IsArk(Ship) && (Ship->ActorHasTag(HomeShipTag) || Ship->ActorHasTag(EscortTag)
+		return IsValid(Ship) && !Ship->IsGroundVehicle() && !APSOriginArk::IsArk(Ship) && !APSOriginAdrift::IsDeadHull(Ship) && (Ship->ActorHasTag(HomeShipTag) || Ship->ActorHasTag(EscortTag)
 			|| Ship->ActorHasTag(MaterializedTag) || Ship->ActorHasTag(UnitTag));
 	}
 

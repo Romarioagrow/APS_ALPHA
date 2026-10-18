@@ -32,6 +32,9 @@ namespace APSOriginArkLocal
 	TAutoConsoleVariable<FString> CVarArkShip(TEXT("aps.Origin.ArkShip"),
 		TEXT("/Game/APS/APS_ALPHA/Core/Spaceships/L/BP_Spaceship_L_P1_08.BP_Spaceship_L_P1_08_C"),
 		TEXT("Rio 18.10: the ARK's temporary ark until the A-00 exists, an L ship with an interior (read at the menu's commit)."));
+	TAutoConsoleVariable<FString> CVarAdriftShip(TEXT("aps.Origin.AdriftShip"),
+		TEXT("/Game/APS/APS_ALPHA/Core/Spaceships/S/BP_Spaceship_S_P3_01.BP_Spaceship_S_P3_01_C"),
+		TEXT("Rio 19.10: ADRIFT's ship, a class S hull with a cabin (read at the menu's commit)."));
 	TAutoConsoleVariable<int32> CVarArkStartSpot(TEXT("aps.Origin.ArkStartSpot"), 0,
 		TEXT("Where a new ARK start puts the pilot aboard: 0 at the top of the entrance ramp (the way out is behind them), ")
 		TEXT("1 on the bridge behind the seat. Either falls back to the other when no deck answers there."));
@@ -480,7 +483,8 @@ bool APSOriginArk::IsTripKitWorld(const UWorld* World)
 
 bool APSOriginArk::IsHullOnlyStart(const UWorld* World)
 {
-	return IsArkWorld(World) || IsTripKitWorld(World);
+	return IsArkWorld(World) || IsTripKitWorld(World)
+		|| (IsHonestStart(World) && APSWorldRules::OfGame(World).Origin == APSWorldRules::EOrigin::Adrift);
 }
 
 bool APSOriginArk::IsArkWorld(const UWorld* World)
@@ -537,6 +541,15 @@ void APSOriginArk::ApplyStartKit(const UGeneratedWorld& World, USpawnParameters&
 		{
 			UE_LOG(LogTemp, Warning, TEXT("[APS.Origin.Ark] aps.Origin.ArkShip '%s' does not load; the chosen ship is the ark"),
 				*CVarArkShip.GetValueOnGameThread());
+		}
+	}
+	if (Rules.Origin == APSWorldRules::EOrigin::Adrift)
+	{
+		Spawn.CharacterSpawnPlace = ECharSpawnPlace::SpaceShip;
+		if (UClass* ShipClass = LoadClass<ASpaceship>(nullptr, *CVarAdriftShip.GetValueOnGameThread()))
+		{
+			Spawn.BP_HomeSpaceship = ShipClass;
+			Ship = ShipClass->GetName();
 		}
 	}
 	UE_LOG(LogTemp, Log, TEXT("[APS.Origin] start kit %s: one hull (%s), no escorts, outposts or settlements"),

@@ -1,5 +1,6 @@
 ﻿#include "APSShipFlightModel.h"
 #include "APS_ALPHA/UI/Hud/APSFlightReadout.h"
+#include "APS_ALPHA/Gameplay/Origins/APSOriginAdrift.h"
 #include "APSShipFlightBenchmark.h"
 #include "Components/MeshComponent.h"
 
@@ -2810,6 +2811,11 @@ double UAPSShipFlightModel::BandBoost(EAPSFlightBand InBand, double Alpha) const
 double UAPSShipFlightModel::BandLimitCm(EAPSFlightBand InBand, double Alpha) const
 {
 	FAPSFlightBandSettings Settings = GetBandSettings(InBand);
+	// Rio 19.10 (ADRIFT: "every flight burns the reactor"): dry, the cruise limps on at a fraction (never stranded).
+	if (InBand == EAPSFlightBand::Cruise)
+	{
+		Settings.MaxSpeed *= APSOriginAdrift::CruiseScale(GetShip());
+	}
 	const double FactorScale = FMath::Max(APSShipFlightModelLocal::CVarDistanceFactorScale.GetValueOnGameThread(), 0.0f);
 	Settings.DistanceSpeedFactor *= FactorScale;
 	Settings.StarDistanceSpeedFactor *= FactorScale;

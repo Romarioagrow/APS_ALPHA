@@ -10,6 +10,7 @@
 #include "APS_ALPHA/Gameplay/Expansion/APSInfrastructure.h"
 #include "APS_ALPHA/Gameplay/Expansion/APSMissions.h"
 #include "APS_ALPHA/Gameplay/Fleet/APSFleetCommand.h"
+#include "APS_ALPHA/Gameplay/Origins/APSOriginAdrift.h"
 #include "APS_ALPHA/Gameplay/Origins/APSOriginArk.h"
 #include "APS_ALPHA/Gameplay/Origins/APSOrigins.h"
 #include "APS_ALPHA/Core/Audio/APSAudioSubsystem.h"
@@ -250,21 +251,33 @@ namespace APSOriginQuestsLocal
 			Chain.Origin = APSWorldRules::EOrigin::Adrift;
 			Chain.Key = TEXT("Adrift");
 			Chain.Name = LOCTEXT("AdriftChain", "THE LONG NIGHT");
+			// Rio 19.10 (0.6.6): the departments speak once the ship is down and the colony stands.
+			Chain.BoardOpensAfter = TEXT("Light");
 			Chain.Steps.Add(Make(TEXT("Drift"), LOCTEXT("DriftTitle", "DRIFT"),
-				LOCTEXT("DriftStory", "Drift. Reactor 11 %. No surface on record. Only the navigation answers."),
-				LOCTEXT("DriftObjective", "Open the console (Tab): the system map shows worlds without data."),
-				LOCTEXT("DriftDone", "Five worlds on the map and nothing known of any of them. Pick the nearest."),
+				LOCTEXT("DriftStory", "Drift. Reactor 11 %. No surface on record. The cabin is dark; only the navigation answers."),
+				LOCTEXT("DriftObjective", "Start the engine (G) and open the console (Tab): the map shows worlds without data."),
+				LOCTEXT("DriftDone", "Five worlds on the map and nothing known of any of them. And a ping that is not a world."),
 				ETrigger::TerminalOpened, NAME_None, 0.0f, 0));
+			Chain.Steps.Add(Make(TEXT("Wreck"), LOCTEXT("WreckTitle", "SOMEONE CAME BEFORE"),
+				LOCTEXT("WreckStory", "A hull adrift, our make, older than us. Its cells might still hold a charge."),
+				LOCTEXT("WreckObjective", "Fly to the wreck (the course is set) and hold beside it, slow: the drones strip its cells."),
+				LOCTEXT("WreckDone", "Their log names a station and a blue world. We were not the first to come this way."),
+				ETrigger::Token, FName(TEXT("ORIGIN_ADRIFT_SALVAGE")), 0.0f, 0));
 			Chain.Steps.Add(Make(TEXT("NotHere"), LOCTEXT("NotHereTitle", "NOT HERE"),
-				LOCTEXT("NotHereStory", "Every flight burns the reactor down. Survey the nearest worlds and move on."),
-				LOCTEXT("NotHereObjective", "Survey three worlds: fly close, or order SURVEY from FLEET ORDERS."),
-				LOCTEXT("NotHereDone", "Rock, ice, no air. Not here. One more on the map is worth the fuel."),
+				LOCTEXT("NotHereStory", "Every flight burns the reactor down. Survey the worlds and choose; the second wreck has cells too."),
+				LOCTEXT("NotHereObjective", "Survey three worlds: fly close to each (the reactor line shows what is left)."),
+				LOCTEXT("NotHereDone", "Rock, ice, no air. Not here. But over the blue one hangs something with straight edges."),
 				ETrigger::WorldsSurveyed, NAME_None, 3.0f, 0));
+			Chain.Steps.Add(Make(TEXT("Station"), LOCTEXT("StationTitle", "THE DEAD STATION"),
+				LOCTEXT("StationStory", "Their station, over the living world, dark. Its tanks may be full; its bays are cold."),
+				LOCTEXT("StationObjective", "Fly to the dead station (the course is set) and hold beside it, slow: it wakes."),
+				LOCTEXT("StationDone", "The station wakes bay by bay. The reactor reads a hundred percent. Below it: water and land."),
+				ETrigger::Token, FName(TEXT("ORIGIN_ADRIFT_STATION")), 0.0f, 1));
 			Chain.Steps.Add(Make(TEXT("Down"), LOCTEXT("DownTitle", "DOWN"),
-				LOCTEXT("DownStory", "One world answers: air we can breathe. Land on it and walk out."),
+				LOCTEXT("DownStory", "Air we can breathe, by the station's last survey. Land on it and walk out."),
 				LOCTEXT("DownObjective", "Land on the living world and step out of the ship."),
-				LOCTEXT("DownDone", "Down. The ship is the Ark now."),
-				ETrigger::OnHomeGround, NAME_None, 0.0f, 0));
+				LOCTEXT("DownDone", "Down. The ship is the ark now; the colony's site is marked beside her."),
+				ETrigger::OnHomeGround, NAME_None, 0.0f, 1));
 			AddGroundSteps(Chain.Steps, false);
 		}
 		{
@@ -596,6 +609,11 @@ bool APSOriginQuests::GetObjective(const UWorld* World, FText& OutTitle, FText& 
 	OutTitle = FText::Format(LOCTEXT("ObjectiveTitle", "{0}   {1}/{2}"), Step->Title, FText::AsNumber(V.Done + 1),
 		FText::AsNumber(V.Chain->Steps.Num()));
 	OutBody = Step->Objective;
+	// Rio 19.10 (ADRIFT): the reactor under every step.
+	if (const FText Reactor = APSOriginAdrift::ReactorLine(World); !Reactor.IsEmpty())
+	{
+		OutBody = FText::Format(LOCTEXT("ObjectiveReactor", "{0}\n{1}"), OutBody, Reactor);
+	}
 	return true;
 }
 

@@ -76,6 +76,11 @@ private:
 	void BeginPilotArrival(APlanetaryBody* HomeBody, const FVector& BaseLocation, const FVector& PadLocation);
 	void TickPilotArrival();
 	bool PlacePilotInHeadquarters(class ACustomGravityCharacter* Pilot);
+public:
+	/** Rio 19.10 (ADRIFT): the colony's site anchor moves near Location on the home world's ground (the landing makes the
+	 * ship the home); persisted like a new site. False without a materialized base. */
+	bool RelocateBaseNear(const FVector& Location);
+private:
 	/** Rio 18.10 (ARK): a new ARK start puts the pilot aboard the landed ark; false while its deck does not answer yet. */
 	bool PlacePilotAboardArk(class ACustomGravityCharacter* Pilot);
 	void FinishPilotArrival(class ACustomGravityCharacter* Pilot, const TCHAR* Where);
