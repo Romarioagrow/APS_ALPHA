@@ -579,6 +579,8 @@ public:
 	void ToggleNearStarLabels();
 	void SelectNextNavigationTarget();
 	void SelectPreviousNavigationTarget();
+	/** Rio 18.10 (0.6.6 origins): the ARK's ark has a dead drive for good; nobody takes its seat (APSOriginArk). */
+	virtual bool CanRequestVehicleControl(APawn* RequestingPawn) const override;
 
 protected:
 	virtual USceneComponent* GetPilotSeatComponent() const override;

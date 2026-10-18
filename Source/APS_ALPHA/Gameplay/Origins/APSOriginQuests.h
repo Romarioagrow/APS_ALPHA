@@ -38,7 +38,17 @@ namespace APSOriginQuests
 		/** Number worlds of the home system or more are surveyed. */
 		WorldsSurveyed,
 		/** The pilot on foot on the home world. */
-		OnHomeGround
+		OnHomeGround,
+		/** Rio 18.10: step Number (1-based) of an Ancients chain of key Param is done (at any of its sites). */
+		AncientsStepDone
+	};
+
+	/** Rio 18.10 (0.6.6 origins): a camera moment when a step completes (APSOriginArk::LookAt). */
+	enum class EMoment : uint8
+	{
+		None,
+		/** The view turns to the Builders' monument on the horizon. */
+		Monument
 	};
 
 	struct FStep
@@ -58,6 +68,10 @@ namespace APSOriginQuests
 		float Number{0.0f};
 		/** The rung of the ladder the step belongs to (0..4). */
 		uint8 Rung{0};
+		/** Rio 18.10 (0.6.6, "as little grind as possible"): what the step's completion brings to the stocks (story supplies). */
+		int16 GrantMetals{0};
+		int16 GrantEnergy{0};
+		EMoment Moment{EMoment::None};
 	};
 
 	struct FChain
@@ -66,10 +80,12 @@ namespace APSOriginQuests
 		const TCHAR* Key{TEXT("")};
 		FText Name;
 		TArray<FStep> Steps;
+		/** Rio 18.10 (one voice in ORIGIN): the departments' mission board offers nothing until this step is done (empty: at once). */
+		const TCHAR* BoardOpensAfter{TEXT("")};
 	};
 
 	APS_ALPHA_API const FChain* ChainOf(APSWorldRules::EOrigin Origin);
-	/** The token that records step Index done: ORIGIN_<Key>_<Index + 1>. */
+	/** The token that records step Index done: ORIGIN_<Key>_<step id> (by id: an edited chain keeps older progress). */
 	APS_ALPHA_API FName StepToken(const FChain& Chain, int32 Index);
 	/** The five rungs' names (0..4). */
 	APS_ALPHA_API FText RungName(int32 Rung);
@@ -84,6 +100,14 @@ namespace APSOriginQuests
 		const FStep* Current() const { return Chain && Chain->Steps.IsValidIndex(Done) ? &Chain->Steps[Done] : nullptr; }
 	};
 	APS_ALPHA_API FView View(const UWorld* World);
+
+	/** Rio 18.10 (one voice in ORIGIN): the current step for the TASKS card (title, objective); false outside a story. */
+	APS_ALPHA_API bool GetObjective(const UWorld* World, FText& OutTitle, FText& OutBody);
+	/** Rio 19.10 (one voice in ORIGIN): a tracked mission shows under the story's step (always outside a story; in one, only
+	 * the Builders' chain the current step is about, and department missions once the board is open). */
+	APS_ALPHA_API bool IsMissionInStory(const UWorld* World, FName Template);
+	/** Rio 18.10: the departments' mission board offers missions (always outside a story; in one, after its gate step). */
+	APS_ALPHA_API bool IsDepartmentBoardOpen(const UWorld* World);
 
 	/** Once a frame from the fleet command subsystem: the world's origin story, when the ladder is on. */
 	APS_ALPHA_API void Tick(UWorld* World, float DeltaSeconds);

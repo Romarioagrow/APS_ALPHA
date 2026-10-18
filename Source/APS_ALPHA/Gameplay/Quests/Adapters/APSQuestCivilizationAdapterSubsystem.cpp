@@ -107,6 +107,12 @@ bool UAPSQuestCivilizationAdapterSubsystem::TryConsumeReadyManifest(
 		UE_LOG(LogTemp, Log, TEXT("[APS.Quest.CivilizationAdapter] space trips: the onboarding route stays off"));
 		return true;
 	}
+	// Rio 18.10 (one voice in ORIGIN): the origin's story leads there (APSOriginQuests); the tutorial route stays off.
+	if (APSWorldRules::IsLadder(GetWorld()))
+	{
+		UE_LOG(LogTemp, Log, TEXT("[APS.Quest.CivilizationAdapter] origin story: the onboarding route stays off"));
+		return true;
+	}
 	// The quest runtime lives on the game instance: a new world in the same game session found the previous world's
 	// onboarding and could not start its own (audit B5). Another manifest's instance gives way; a load restored this
 	// manifest's own instance before this point and keeps it.

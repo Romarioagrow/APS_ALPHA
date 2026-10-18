@@ -37,6 +37,8 @@ public:
 	UFUNCTION(BlueprintCallable, Category="Audio") void SaveVolumes();
 	UFUNCTION(BlueprintCallable, Category="Audio") void PlayConfirm();
 	UFUNCTION(BlueprintCallable, Category="Audio") void PlayBack();
+	/** Rio 18.10 (ARK): the ark's main bus coming back, the engine-start sound pitched down (effects channel). */
+	UFUNCTION(BlueprintCallable, Category="Audio") void PlayPowerUp();
 	bool ApplyButtonSounds(FButtonStyle& Style) const;
 
 private:

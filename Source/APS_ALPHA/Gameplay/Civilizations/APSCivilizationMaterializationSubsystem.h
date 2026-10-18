@@ -76,6 +76,8 @@ private:
 	void BeginPilotArrival(APlanetaryBody* HomeBody, const FVector& BaseLocation, const FVector& PadLocation);
 	void TickPilotArrival();
 	bool PlacePilotInHeadquarters(class ACustomGravityCharacter* Pilot);
+	/** Rio 18.10 (ARK): a new ARK start puts the pilot aboard the landed ark; false while its deck does not answer yet. */
+	bool PlacePilotAboardArk(class ACustomGravityCharacter* Pilot);
 	void FinishPilotArrival(class ACustomGravityCharacter* Pilot, const TCHAR* Where);
 	bool TryMaterializeEntities(AAstroGenerator* Generator, APlanetaryBody* HomeBody,
 		const FAPSCivilizationFootprintResult& Placement);

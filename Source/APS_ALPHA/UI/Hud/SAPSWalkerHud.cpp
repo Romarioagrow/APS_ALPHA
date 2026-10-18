@@ -175,6 +175,7 @@ void SAPSTakeControlPrompt::Construct(const FArguments& InArgs)
 {
 	using namespace APSWalkerHudPrivate;
 	const TAttribute<FText> Subject = InArgs._Subject;
+	const TAttribute<FText> Action = InArgs._Action;
 	ChildSlot
 	[
 		APSHud::Card(
@@ -183,7 +184,11 @@ void SAPSTakeControlPrompt::Construct(const FArguments& InArgs)
 			[APSChrome::KeyChip(LOCTEXT("TakeControlKey", "F"), P().Text)]
 			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center)
 			[
-				SNew(STextBlock).Text(LOCTEXT("TakeControl", "TAKE CONTROL")).Font(APSHud::ValueFont(13))
+				SNew(STextBlock).Text_Lambda([Action]()
+				{
+					const FText Words = Action.Get();
+					return Words.IsEmpty() ? LOCTEXT("TakeControl", "TAKE CONTROL") : Words;
+				}).Font(APSHud::ValueFont(13))
 				.ColorAndOpacity(Colour([]() { return P().Text; }))
 			]
 			+ SHorizontalBox::Slot().AutoWidth().VAlign(VAlign_Center).Padding(12.0f, 0.0f, 0.0f, 0.0f)

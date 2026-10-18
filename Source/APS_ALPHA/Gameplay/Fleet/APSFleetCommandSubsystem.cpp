@@ -9,6 +9,7 @@
 #include "APS_ALPHA/Core/Diagnostics/APSSurfaceDiag.h"
 #include "APS_ALPHA/UI/Colony/APSMissionTracker.h"
 #include "APS_ALPHA/Gameplay/Origins/APSOriginQuests.h"
+#include "APS_ALPHA/Gameplay/Origins/APSOriginArk.h"
 #include "APS_ALPHA/Gameplay/Trips/APSSpaceTrips.h"
 #include "APS_ALPHA/Gameplay/Vehicles/APSGroundVehicles.h"
 #include "Engine/World.h"
@@ -91,6 +92,8 @@ void UAPSFleetCommandSubsystem::Tick(const float DeltaTime)
 		// Rio 13.10: the origin's story chain; asleep outside the ladder.
 		TRACE_CPUPROFILER_EVENT_SCOPE(APS_Fleet_OriginStory);
 		APSOriginQuests::Tick(GetWorld(), DeltaTime);
+		// Rio 18.10 (ARK): the ark's light wave and the story's camera moments; nothing outside an ARK world.
+		APSOriginArk::Tick(GetWorld(), DeltaTime);
 	}
 	{
 		TRACE_CPUPROFILER_EVENT_SCOPE(APS_Fleet_SurfaceDiagAndTracker);

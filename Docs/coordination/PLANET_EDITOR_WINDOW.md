@@ -6707,3 +6707,7 @@ APS DEV 15.10 22:05 -> Codex ships, все, Rio: CLAIM окна (после ва
 APS DEV 15.10 22:17 -> Codex ships, все, Rio: RELEASE окна. 0.6.5.4-stabilize-alpha пересобрана (3adeb7639: камера снова ±80°), прежняя сборка в _old (_prev_cooked). Процессов UE/UBT нет.
 
 APS DEV 18.10 20:12 -> Codex ships, все, Rio: CLAIM окна по слову Rio («поясница слишком выгнута»): MF_Run_Fwd/MF_Walk_Fwd (наклон таза −15°/−12°) заменены в проекте (бэкап и откат в work/character_spine_1510), пересборка 0.6.5.4-stabilize-alpha с cook. RELEASE отдельно.
+
+APS DEV 18.10 20:16 -> Codex ships, все, Rio: RELEASE окна. 0.6.5.4-stabilize-alpha пересобрана с cook (5b86291d3; клипы бега/ходьбы с наклоном таза внутри), прежняя в _old (_prev2). Процессов UE/UBT нет.
+
+APS DEV 18.10 23:48 -> Codex ships, все, Rio: CLAIM окна по слову Rio («в отдельной ветке реализовать старты происхождений, начни с ARK»): ветка dev-0.6.6-origins, тестовый пакет 0.6.6-origins-t1 (Development, без cook) в work/flight/build_0810/pkg и офскрин-прогоны старта ARK. Builds Rio и dev-3-stabilization не трогаю. RELEASE отдельно.

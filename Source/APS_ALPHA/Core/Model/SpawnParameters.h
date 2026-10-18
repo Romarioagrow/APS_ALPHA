@@ -202,6 +202,13 @@ public:
 	UPROPERTY(EditAnywhere, Category = "Player Spawn|Ground Start", meta = (ClampMin = "0", ClampMax = "7"))
 	int32 GroundVehicleMask{7};
 
+	/**
+	 * Rio 18.10 (0.6.6 origins): the start kit the world was founded with (0 none, as before; 1 the origin's own,
+	 * APSOriginArk::ApplyStartKit). Saved with the parameters, so an older ORIGIN save keeps the start it was founded with.
+	 */
+	UPROPERTY()
+	uint8 OriginStartKit{0};
+
 	/** The colony modules the package orders, in order (catalogue ids, APSColonyModuleCatalogue). */
 	static void GetColonyStartModules(EAPSColonyStartPackage Package, TArray<FName>& OutModules);
 };

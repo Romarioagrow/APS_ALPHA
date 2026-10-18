@@ -1,4 +1,5 @@
 #include "APSColonyOnboardingSubsystem.h"
+#include "APS_ALPHA/Core/Model/APSWorldRules.h"
 
 #include "APSColonyConstructionSubsystem.h"
 #include "APS_ALPHA/Actors/Astro/Moon.h"
@@ -109,6 +110,11 @@ UAPSQuestSubsystem* UAPSColonyOnboardingSubsystem::GetQuest() const
 
 void UAPSColonyOnboardingSubsystem::Tick(const float DeltaTime)
 {
+	// Rio 18.10 (one voice in ORIGIN): a tutorial left from an earlier world of the session does not speak in an origin.
+	if (APSWorldRules::IsLadder(GetWorld()))
+	{
+		return;
+	}
 	PollAccumulator += DeltaTime;
 	if (PollAccumulator < APSColonyOnboarding::PollIntervalSeconds)
 	{
@@ -388,6 +394,10 @@ void UAPSColonyOnboardingSubsystem::NotifyTerminalOpened()
 
 bool UAPSColonyOnboardingSubsystem::GetObjective(FText& OutTitle, FText& OutBody) const
 {
+	if (APSWorldRules::IsLadder(GetWorld()))
+	{
+		return false;
+	}
 	const UAPSQuestSubsystem* Quest = GetQuest();
 	FAPSQuestPromptSnapshot Prompt;
 	if (!Quest || !Quest->TryGetCurrentPromptSnapshot(Prompt) || Prompt.State != EAPSQuestPromptState::Active)

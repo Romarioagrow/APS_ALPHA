@@ -9,6 +9,7 @@
 #include "APS_ALPHA/Core/Controllers/GravityPlayerController.h"
 #include "APS_ALPHA/Gameplay/Expansion/APSInfrastructureCatalog.h"
 #include "APS_ALPHA/Gameplay/Expansion/APSMissions.h"
+#include "APS_ALPHA/Gameplay/Origins/APSOriginQuests.h"
 #include "APS_ALPHA/UI/Style/APSMenuChrome.h"
 #include "APS_ALPHA/UI/Style/APSUINumber.h"
 #include "Brushes/SlateColorBrush.h"
@@ -82,7 +83,14 @@ namespace APSMissionTrackerPrivate
 
 	bool IsMissionShown(const TWeakObjectPtr<UWorld>& World)
 	{
-		return CVarTracker.GetValueOnGameThread() != 0 && Tracked(World) && !IsMapOpen(World) && !IsTerminalOpen(World);
+		const FAPSMission* Mission = CVarTracker.GetValueOnGameThread() != 0 ? Tracked(World) : nullptr;
+		if (!Mission || IsMapOpen(World) || IsTerminalOpen(World))
+		{
+			return false;
+		}
+		// Rio 19.10 (ark-t5, one voice in ORIGIN): under the story's step only the Builders' chain that step is about (the
+		// quiet hull's "fly within 50 km" stood under the first steps on foot, with no ship yet).
+		return APSOriginQuests::IsMissionInStory(World.Get(), Mission->Template);
 	}
 
 	bool ReadObjective(const TWeakObjectPtr<UWorld>& World, FText& OutTitle, FText& OutBody)

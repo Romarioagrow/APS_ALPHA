@@ -38,6 +38,7 @@
 #include "UObject/UnrealType.h"
 #include "HAL/IConsoleManager.h"
 #include "UObject/ObjectKey.h"
+#include "APS_ALPHA/Gameplay/Origins/APSOriginArk.h"
 
 namespace APSCharacterQueryThrottle
 {
@@ -441,7 +442,8 @@ void ACustomGravityCharacter::Tick(float DeltaTime)
 	else if (AActor* Cached = CurrentInteractableActor.Get())
 	{
 		IVehicleControlling* CachedVehicle = Cast<IVehicleControlling>(Cached);
-		if (!CachedVehicle || !CachedVehicle->CanRequestVehicleControl(this))
+		// Rio 18.10 (ARK): the dark ark keeps its F (power) though its seat is never taken.
+		if (!CachedVehicle || (!CachedVehicle->CanRequestVehicleControl(this) && APSOriginArk::ActionFor(this, Cached).IsEmpty()))
 		{
 			CurrentInteractableActor = nullptr;
 		}
@@ -895,6 +897,12 @@ void ACustomGravityCharacter::TryInteract()
 		Candidate = FindInteractionCandidate();
 	}
 
+	// Rio 18.10 (ARK): F aboard the dark ark powers it (APSOriginArk); its seat is never taken.
+	if (APSOriginArk::TryInteract(this, Candidate))
+	{
+		CurrentInteractableActor = nullptr;
+		return;
+	}
 	IVehicleControlling* Vehicle = Candidate ? Cast<IVehicleControlling>(Candidate) : nullptr;
 	if (!Vehicle)
 	{
@@ -934,6 +942,11 @@ AActor* ACustomGravityCharacter::FindInteractionCandidate()
 	{
 		Candidate = ResolveVehicleActor(GravityDetector->CurrentSpaceship);
 	}
+	// Rio 19.10 (ARK): outside at the ark's exit its lift answers F (up to the bridge).
+	if (!Candidate)
+	{
+		Candidate = APSOriginArk::ExitCandidate(this);
+	}
 
 	// Rio 04.10 ("bring back taking the controls from anywhere once I'm in; when I get up I appear at the seat"): aboard
 	// any ship the controls are taken wherever the player stands (02.10 limited a modelled cabin to its seat); getting up
@@ -958,7 +971,7 @@ void ACustomGravityCharacter::UpdateInteractionCandidate()
 	AActor* Candidate = FindInteractionCandidate();
 	if (IVehicleControlling* Vehicle = Candidate ? Cast<IVehicleControlling>(Candidate) : nullptr)
 	{
-		if (!Vehicle->CanRequestVehicleControl(this))
+		if (!Vehicle->CanRequestVehicleControl(this) && APSOriginArk::ActionFor(this, Candidate).IsEmpty())
 		{
 			Candidate = nullptr;
 		}
@@ -1006,10 +1019,19 @@ void ACustomGravityCharacter::CreateInteractionPrompt()
 			[
 				// Rio 06.10 (Claude UI): a HUD card in the interface theme, naming the craft rather than its actor.
 				SNew(SAPSTakeControlPrompt)
+				.Action_Lambda([WeakThis]()
+				{
+					const ACustomGravityCharacter* Character = WeakThis.Get();
+					return Character ? APSOriginArk::ActionFor(Character, Character->CurrentInteractableActor.Get()) : FText::GetEmpty();
+				})
 				.Subject_Lambda([WeakThis]()
 				{
 					const ACustomGravityCharacter* Character = WeakThis.Get();
 					const AActor* Vehicle = Character ? Character->CurrentInteractableActor.Get() : nullptr;
+					if (APSOriginArk::IsArk(Vehicle))
+					{
+						return APSOriginArk::SubjectFor(Character->GetWorld());
+					}
 					if (const ASpaceship* Craft = Cast<ASpaceship>(Vehicle))
 					{
 						return Craft->IsGroundVehicle()

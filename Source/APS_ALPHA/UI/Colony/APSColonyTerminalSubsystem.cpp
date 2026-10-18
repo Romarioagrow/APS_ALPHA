@@ -1,4 +1,6 @@
 #include "APSColonyTerminalSubsystem.h"
+#include "APS_ALPHA/Core/Model/APSWorldRules.h"
+#include "APS_ALPHA/Gameplay/Origins/APSOriginQuests.h"
 
 #include "APSMissionTracker.h"
 #include "SAPSColonyTerminal.h"
@@ -264,8 +266,16 @@ void UAPSColonyTerminalSubsystem::ShowOverlays()
 		const AGravityPlayerController* Controller = Self ? Cast<AGravityPlayerController>(Self->BoundController.Get()) : nullptr;
 		const UAPSColonyOnboardingSubsystem* Onboarding = Self && Self->GetWorld()
 			? Self->GetWorld()->GetSubsystem<UAPSColonyOnboardingSubsystem>() : nullptr;
-		return Self && Onboarding && !Self->IsTerminalOpen() && !(Controller && Controller->IsStrategicMapOpen())
-			&& Onboarding->GetObjective(OutTitle, OutBody) && !OutTitle.IsEmpty();
+		if (!Self || Self->IsTerminalOpen() || (Controller && Controller->IsStrategicMapOpen()))
+		{
+			return false;
+		}
+		// Rio 18.10 (one voice in ORIGIN): the origin's story step heads the card; the onboarding route is off there.
+		if (APSWorldRules::IsLadder(Self->GetWorld()))
+		{
+			return APSOriginQuests::GetObjective(Self->GetWorld(), OutTitle, OutBody) && !OutTitle.IsEmpty();
+		}
+		return Onboarding && Onboarding->GetObjective(OutTitle, OutBody) && !OutTitle.IsEmpty();
 	});
 	OverlayWidget = SNew(SOverlay)
 		+ SOverlay::Slot().HAlign(HAlign_Center).VAlign(VAlign_Top).Padding(FMargin(0.0f, 28.0f, 0.0f, 0.0f))

@@ -32,6 +32,7 @@
 #include "APS_ALPHA/Generation/StarGenerator.h"
 #include "APS_ALPHA/Gameplay/Expansion/APSStarSystems.h"
 #include "APS_ALPHA/Gameplay/Civilizations/Civilization.h"
+#include "APS_ALPHA/Gameplay/Origins/APSOriginArk.h"
 #include "EngineUtils.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
@@ -169,6 +170,12 @@ void UWorldGenerationViewModel::Initialize(UObject* InWorldContext, UGeneratedWo
 			if (!GameplayInstance->SpawnParameters)
 			{
 				GameplayInstance->SpawnParameters = NewObject<USpawnParameters>(GameplayInstance);
+			}
+			else if (GameplayInstance->SpawnParameters->OriginStartKit != 0)
+			{
+				// Rio 18.10: back in the menu after an ORIGIN game, its start kit does not become the next world's numbers.
+				GameplayInstance->SpawnParameters = DuplicateObject<USpawnParameters>(GameplayInstance->SpawnParameters, GameplayInstance);
+				APSOriginArk::ClearStartKit(*GameplayInstance->SpawnParameters);
 			}
 			// Only the production custom-gravity pawn and pilots built on its native class
 			// satisfy the full generated-world movement/camera contract. Keep other pawns
@@ -2866,6 +2873,9 @@ void UWorldGenerationViewModel::CommitAndOpenLevel(FName LevelName)
 					GameplayInstance->bSpawnGeneratedCivilization = false;
 					return;
 				}
+				// Rio 18.10 (0.6.6 origins): an ORIGIN world starts with its own kit, not the last civilization page's
+				// numbers; only the game's copy gets it, the menu keeps the player's own choices.
+				APSOriginArk::ApplyStartKit(*GeneratedWorld, *GameplayInstance->SpawnParameters);
 				GameplayInstance->CurrentCivilization->InitializeFromSpawnParameters(
 					GameplayInstance->SpawnParameters);
 				UE_LOG(LogTemp, Log, TEXT("[APS.Civilization] Committed '%s': population=%d tech=%d fleet=%d"),

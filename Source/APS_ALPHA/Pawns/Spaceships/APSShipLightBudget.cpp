@@ -10,6 +10,7 @@
 //   aps.Ship.LightsReport              - every local light of the piloted or boarded ship.
 
 #include "Spaceship.h"
+#include "APS_ALPHA/Gameplay/Origins/APSOriginArk.h"
 
 #include "Camera/PlayerCameraManager.h"
 #include "Components/LocalLightComponent.h"
@@ -441,7 +442,9 @@ bool FAPSShipLightBudget::Tick(float)
 		for (TActorIterator<ASpaceship> It(World); It; ++It)
 		{
 			ASpaceship* Ship = *It;
-			if (!IsValid(Ship) || Ship->IsActorBeingDestroyed())
+			// Rio 19.10 (ARK): the landed ark's lights have their own budget (APSOriginArk); this one would give them back their
+			// authored shadows once the ship rested.
+			if (!IsValid(Ship) || Ship->IsActorBeingDestroyed() || APSOriginArk::IsArk(Ship))
 			{
 				continue;
 			}

@@ -215,6 +215,11 @@ void UAPSAudioSubsystem::PlayBack()
 	if (Bank) OneShot(Bank->UIBack, Bank->UIClass, 1.f, 1.f, true);
 }
 
+void UAPSAudioSubsystem::PlayPowerUp()
+{
+	if (Bank) OneShot(Bank->EngineStart, Bank->EffectsClass, 1.f, 0.75f, false);
+}
+
 void UAPSAudioSubsystem::UpdateLoop(TObjectPtr<UAudioComponent>& Slot, USoundBase* Sound,
 	USoundClass* Class, float Gain, float Pitch, float DeltaTime, bool bUI)
 {

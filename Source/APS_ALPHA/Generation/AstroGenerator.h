@@ -950,6 +950,11 @@ protected:
 	/** Prevents a second generation callback from duplicating the committed civilization starter set. */
 	UPROPERTY(Transient)
 	bool bStarterHierarchySpawned{false};
+	/**
+	 * Rio 18.10 (ARK honest start, APSOriginArk): the home complex is not built; where the headquarters would stand stays
+	 * the gameplay frame's anchor and the sunlit landing's bearing, kept as a direction in the home planet's own frame.
+	 */
+	FVector StarterAnchorOutwardLocal{FVector::ZeroVector};
 
 	void BeginGeneratedStarterCommit(const TSharedPtr<FPlanetModel>& PlanetModel);
 	void ContinueGeneratedStarterCommit(uint64 ExpectedSerial);

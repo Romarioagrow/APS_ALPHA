@@ -43,6 +43,8 @@ class SAPSTakeControlPrompt final : public SCompoundWidget
 public:
 	SLATE_BEGIN_ARGS(SAPSTakeControlPrompt) {}
 		SLATE_ATTRIBUTE(FText, Subject)
+		/** Rio 18.10 (ARK): what F does here; empty: TAKE CONTROL. */
+		SLATE_ATTRIBUTE(FText, Action)
 	SLATE_END_ARGS()
 
 	void Construct(const FArguments& InArgs);

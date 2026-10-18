@@ -15,7 +15,9 @@
 #include "APS_ALPHA/Generation/AstroGenerator.h"
 #include "APS_ALPHA/Generation/PlanetarySurfaceGenerator.h"
 #include "APS_ALPHA/Gameplay/Spawn/APSSpawnPlacementSubsystem.h"
+#include "APS_ALPHA/Gameplay/Origins/APSOriginArk.h"
 #include "APS_ALPHA/Pawns/Characters/CustomGravityCharacter.h"
+#include "Components/LightComponent.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
 #include "Components/CapsuleComponent.h"
 #include "EngineUtils.h"
@@ -96,6 +98,27 @@ namespace
 			Extremes.Y = FMath::Max(Extremes.Y, Along);
 		}
 		return Extremes;
+	}
+
+	/** Rio 18.10 (ARK): the base is an invisible site anchor for the modules and the pad is not there; both keep their
+	 * records (manifest, save, identity), neither is seen or collides. */
+	void HideStarterActor(AActor* Actor)
+	{
+		if (!IsValid(Actor))
+		{
+			return;
+		}
+		Actor->SetActorHiddenInGame(true);
+		Actor->SetActorEnableCollision(false);
+		TArray<ULightComponent*> Lights;
+		Actor->GetComponents<ULightComponent>(Lights, true);
+		for (ULightComponent* Light : Lights)
+		{
+			if (IsValid(Light))
+			{
+				Light->SetVisibility(false);
+			}
+		}
 	}
 
 	/** The resolver checks a few points of a footprint and the ground between them can rise higher: lifts the
@@ -585,9 +608,14 @@ void UAPSCivilizationMaterializationSubsystem::BeginPilotArrival(APlanetaryBody*
 	const FVector StandSide = FVector::DotProduct(-Side, SunAzimuth) >= FVector::DotProduct(Side, SunAzimuth)
 		? Side : -Side;
 	// The deck grows with the ship (up to 160 m): the old stand beside the middle of the base-pad line lay under it.
-	const double DeckRadiusCm = IsValid(MaterializedPad)
+	double DeckRadiusCm = IsValid(MaterializedPad)
 		? 0.5 * MinimumPadDiameterCm * MaterializedPad->GetActorScale3D().GetAbs().X
 		: 0.5 * FMath::Max(MinimumPadDiameterCm, PlacementShipEnvelopeDiameterCm);
+	if (APSOriginArk::IsArkWorld(World) && IsValid(MaterializedShip))
+	{
+		// Rio 18.10 (ARK): the stand point (only if the ark's deck never answers) lies beyond the ark's hull.
+		DeckRadiusCm = FMath::Max(DeckRadiusCm, ShipHullRadiusCm(MaterializedShip));
+	}
 	const FVector StandPoint = PadLocation - Along * (DeckRadiusCm + PilotArrivalBeyondDeckCm)
 		+ StandSide * PilotArrivalStandOffCm;
 	const FVector StandDirection = (StandPoint - RootCenter).GetSafeNormal();
@@ -616,7 +644,7 @@ void UAPSCivilizationMaterializationSubsystem::BeginPilotArrival(APlanetaryBody*
 		FVector::Dist(Pilot->GetActorLocation(), Arrival) / 100.0, PilotArrivalBeyondDeckCm / 100.0,
 		DeckRadiusCm / 50.0, PilotArrivalStandOffCm / 100.0);
 	Pilot->SetSurfaceHandoffSuspended(true);
-	if (bMaterializationComplete && PlacePilotInHeadquarters(Pilot))
+	if (bMaterializationComplete && (APSOriginArk::IsArkWorld(World) ? PlacePilotAboardArk(Pilot) : PlacePilotInHeadquarters(Pilot)))
 	{
 		return;
 	}
@@ -644,7 +672,16 @@ void UAPSCivilizationMaterializationSubsystem::TickPilotArrival()
 		return;
 	}
 	// Rio 03.10: a surface start begins inside the new headquarters, as soon as the colony stands.
-	if (bMaterializationComplete && PlacePilotInHeadquarters(Pilot))
+	// Rio 18.10 (ARK): aboard the ark instead, once its deck answers; until the deadline the pilot hovers at the stand point.
+	if (bMaterializationComplete && APSOriginArk::IsArkWorld(World) && IsValid(MaterializedShip))
+	{
+		if (PlacePilotAboardArk(Pilot) || World->GetTimeSeconds() < PilotArrivalDeadlineSeconds)
+		{
+			return;
+		}
+		UE_LOG(LogTemp, Warning, TEXT("[APS.Origin.Ark] no deck of the ark answered in time; the pilot stands beside it"));
+	}
+	else if (bMaterializationComplete && PlacePilotInHeadquarters(Pilot))
 	{
 		return;
 	}
@@ -749,6 +786,17 @@ void UAPSCivilizationMaterializationSubsystem::TickPilotArrival()
 	PilotArrivalDeadlineSeconds = Now + PilotArrivalTimeoutSeconds;
 	UE_LOG(LogTemp, Error,
 		TEXT("[APS.Civilization.Materialization] still no terrain collision under the landing site; the pilot keeps hovering"));
+}
+
+bool UAPSCivilizationMaterializationSubsystem::PlacePilotAboardArk(ACustomGravityCharacter* Pilot)
+{
+	ASpaceship* Ark = Cast<ASpaceship>(MaterializedShip.Get());
+	if (!IsValid(Pilot) || !IsValid(Ark) || !APSOriginArk::PlacePilotAboard(*Ark, *Pilot))
+	{
+		return false;
+	}
+	FinishPilotArrival(Pilot, TEXT("aboard the ark"));
+	return true;
 }
 
 bool UAPSCivilizationMaterializationSubsystem::PlacePilotInHeadquarters(ACustomGravityCharacter* Pilot)
@@ -967,7 +1015,8 @@ bool UAPSCivilizationMaterializationSubsystem::TryMaterializeEntities(
 	// a surface start begins inside it. A rough world's relaxed 50 x 35 m site gets it too: the lift below raises the
 	// foundation clear of the highest ground under all of it, and the construction's plinth fills beneath.
 	AColony* HomeColony = Cast<AColony>(MaterializedBase);
-	if (HomeColony)
+	const bool bArkWorld = APSOriginArk::IsArkWorld(GetWorld());
+	if (HomeColony && !bArkWorld)
 	{
 		HomeColony->UseHeadquartersLook();
 	}
@@ -1035,6 +1084,12 @@ bool UAPSCivilizationMaterializationSubsystem::TryMaterializeEntities(
 			MaterializedShip->SetActorTransform(ShipEntity->PlanetRelativeTransform
 				* HomeBody->GetActorTransform(), false, nullptr, ETeleportType::TeleportPhysics);
 		}
+		else if (bArkWorld)
+		{
+			// Rio 18.10 (ARK): the ark is down on the ground itself at the pad's site, its ramp foot on the ground.
+			PlaceBoundsOnSupportPlane(MaterializedShip, Placement.PadTransform, 0.0);
+			APSOriginArk::SettleRampOnGround(*MaterializedShip, *HomeBody);
+		}
 		else
 		{
 			// On the deck: the pad's top along its normal is the ship's support plane.
@@ -1053,6 +1108,41 @@ bool UAPSCivilizationMaterializationSubsystem::TryMaterializeEntities(
 		MaterializedShip->Tags.AddUnique(TEXT("APS.Civilization.InService"));
 	}
 	BindIdentity(MaterializedShip, *ShipEntity);
+
+	if (bArkWorld)
+	{
+		// Rio 18.10 (ARK): the modules' site anchor stands 60 m past the ark's hull on the base side of the old layout (the
+		// pad was sized for 160 m at most; the ark is half a kilometre long), on the ground there.
+		const APlanetarySurfaceGenerator* ArkSurface = HomeBody->PlanetaryEnvironmentGenerator;
+		AWorldScapeRoot* ArkRoot = IsValid(ArkSurface) ? ArkSurface->WorldScapeRootInstance : nullptr;
+		if (!BaseEntity->bHasPersistedTransform && IsValid(ArkRoot) && ArkRoot->PlanetScale > 0.0)
+		{
+			const FVector RootCentre = ArkRoot->GetActorLocation();
+			const FVector ShipSite = MaterializedShip->GetActorLocation();
+			const FVector SiteUp = (ShipSite - RootCentre).GetSafeNormal();
+			FVector Away = FVector::VectorPlaneProject(Placement.BaseTransform.GetLocation() - Placement.PadTransform.GetLocation(),
+				SiteUp).GetSafeNormal();
+			if (Away.IsNearlyZero())
+			{
+				Away = FVector::VectorPlaneProject(MaterializedShip->GetActorRightVector(), SiteUp).GetSafeNormal();
+			}
+			const double ReachCm = ShipHullRadiusCm(MaterializedShip) + 6000.0;
+			const FVector Toward = (ShipSite + Away * ReachCm - RootCentre).GetSafeNormal();
+			const double GroundCm = ArkRoot->GetGroundHeight(RootCentre + Toward * ArkRoot->PlanetScale, false);
+			if (FMath::IsFinite(GroundCm) && FMath::Abs(GroundCm) <= FMath::Max(2.0 * ArkRoot->NoiseIntensity, 100000.0))
+			{
+				const FVector Forward = FVector::VectorPlaneProject(MaterializedBase->GetActorForwardVector(), Toward).GetSafeNormal();
+				MaterializedBase->SetActorLocationAndRotation(RootCentre + Toward * (ArkRoot->PlanetScale + GroundCm + SupportClearanceCm),
+					FRotationMatrix::MakeFromZX(Toward, Forward.IsNearlyZero() ? Away : Forward).Rotator(), false, nullptr,
+					ETeleportType::TeleportPhysics);
+				UE_LOG(LogTemp, Log, TEXT("[APS.Origin.Ark] the colony's site anchor stands %.0f m from the ark's centre"),
+					ReachCm / 100.0);
+			}
+		}
+		HideStarterActor(MaterializedBase);
+		HideStarterActor(MaterializedPad);
+		APSOriginArk::AdoptArk(*MaterializedShip);
+	}
 
 	MaterializedBase->AttachToActor(HomeBody, FAttachmentTransformRules::KeepWorldTransform);
 	MaterializedPad->AttachToActor(HomeBody, FAttachmentTransformRules::KeepWorldTransform);

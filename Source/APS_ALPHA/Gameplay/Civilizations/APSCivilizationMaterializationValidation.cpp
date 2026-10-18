@@ -3,6 +3,8 @@
 #include "APSCivilizationIdentityComponent.h"
 #include "APSCivilizationStarterActors.h"
 #include "APS_ALPHA/Gameplay/Spawn/APSSpawnPlacementSubsystem.h"
+#include "APS_ALPHA/Gameplay/Origins/APSOriginArk.h"
+#include "Kismet/GameplayStatics.h"
 #include "APS_ALPHA/Actors/Astro/PlanetaryBody.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
 #include "Engine/OverlapResult.h"
@@ -229,7 +231,10 @@ bool UAPSCivilizationMaterializationSubsystem::ValidateMaterializedStarterSet(
 		return Fail(TEXT("base and landing pad bounds intersect"));
 	}
 
-	if (!bManifestRestoredFromSave)
+	// Rio 18.10 (ARK): the ark lies on the ground as it came down (its ramp foot on the ground, the hull may sink into a
+	// rise) and the base is an invisible anchor moved past it; neither stands on the resolver's support planes.
+	const bool bArkWorld = APSOriginArk::IsArkWorld(GetWorld());
+	if (!bManifestRestoredFromSave && !bArkWorld)
 	{
 		auto BottomClearance = [](const AActor* Actor, const FTransform& Support)
 		{
@@ -246,6 +251,11 @@ bool UAPSCivilizationMaterializationSubsystem::ValidateMaterializedStarterSet(
 	FCollisionQueryParams QueryParams(
 		SCENE_QUERY_STAT(APSCivilizationActorClearance), false);
 	QueryParams.AddIgnoredActor(HomeBody);
+	if (bArkWorld)
+	{
+		// The half-kilometre ark's box holds the pilot waiting to go aboard.
+		QueryParams.AddIgnoredActor(UGameplayStatics::GetPlayerPawn(GetWorld(), 0));
+	}
 	for (const FBinding& Binding : Bindings)
 	{
 		QueryParams.AddIgnoredActor(Binding.Actor);

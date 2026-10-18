@@ -10,7 +10,9 @@
 #include "APS_ALPHA/Gameplay/Expansion/APSInfrastructure.h"
 #include "APS_ALPHA/Gameplay/Expansion/APSMissions.h"
 #include "APS_ALPHA/Gameplay/Fleet/APSFleetCommand.h"
+#include "APS_ALPHA/Gameplay/Origins/APSOriginArk.h"
 #include "APS_ALPHA/Gameplay/Origins/APSOrigins.h"
+#include "APS_ALPHA/Core/Audio/APSAudioSubsystem.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
 #include "APS_ALPHA/Pawns/Spaceships/Spaceship.h"
 #include "APS_ALPHA/UI/Colony/APSColonyTerminalSubsystem.h"
@@ -81,22 +83,35 @@ namespace APSOriginQuestsLocal
 		return Step;
 	}
 
+	FStep Supplied(FStep Step, const int16 Metals, const int16 Energy)
+	{
+		Step.GrantMetals = Metals;
+		Step.GrantEnergy = Energy;
+		return Step;
+	}
+
+	FStep WithMoment(FStep Step, const EMoment Moment)
+	{
+		Step.Moment = Moment;
+		return Step;
+	}
+
 	// The steps every origin shares once the colony stands on the ground (concept section 4.1-4.3).
 	void AddGroundSteps(TArray<FStep>& Steps, const bool bWithYard)
 	{
 		Steps.Add(Make(TEXT("Light"), LOCTEXT("LightTitle", "LIGHT"),
 			LOCTEXT("LightStory", "Stores: energy only, and the Ark's cells are flat. First task: a solar array."),
-			LOCTEXT("LightObjective", "Build mode (B): raise a SOLAR ARRAY beside the base."),
+			LOCTEXT("LightObjective", "Colony terminal (Tab), INFRASTRUCTURE: a SOLAR ARRAY."),
 			LOCTEXT("LightDone", "Solar array online. Energy is the only currency we have."),
 			ETrigger::ModuleBuilt, FName(TEXT("SolarArray")), 0.0f, 0));
 		Steps.Add(Make(TEXT("Shelter"), LOCTEXT("ShelterTitle", "SHELTER"),
 			LOCTEXT("ShelterStory", "The hold is cold and the ramp is open. Somewhere to sleep that is not the hold."),
-			LOCTEXT("ShelterObjective", "Build mode (B): a HABITAT MODULE."),
+			LOCTEXT("ShelterObjective", "Colony terminal (Tab), INFRASTRUCTURE: a HABITAT MODULE."),
 			LOCTEXT("ShelterDone", "Habitat sealed. A place to sleep that is not the hold."),
 			ETrigger::ModuleBuilt, FName(TEXT("Habitat")), 0.0f, 0));
 		Steps.Add(Make(TEXT("Ears"), LOCTEXT("EarsTitle", "EARS"),
 			LOCTEXT("EarsStory", "The deep radar needs a mast. Whatever the ground hides, it will draw."),
-			LOCTEXT("EarsObjective", "Build mode (B): a COMMS MAST."),
+			LOCTEXT("EarsObjective", "Colony terminal (Tab), INFRASTRUCTURE: a COMMS MAST."),
 			LOCTEXT("EarsDone", "Comms mast raised. The deep radar wakes."),
 			ETrigger::ModuleBuilt, FName(TEXT("CommsMast")), 0.0f, 0));
 		Steps.Add(Make(TEXT("Signal"), LOCTEXT("SignalTitle", "THE SIGNAL"),
@@ -106,7 +121,7 @@ namespace APSOriginQuestsLocal
 			ETrigger::AncientsChain, FName(TEXT("Echoes")), 0.0f, 1));
 		Steps.Add(Make(TEXT("Wheels"), LOCTEXT("WheelsTitle", "WHEELS"),
 			LOCTEXT("WheelsStory", "Whatever it is, it is far. A fabrication bay prints a rover; we stop walking today."),
-			LOCTEXT("WheelsObjective", "Build mode (B): a FABRICATION BAY. The rover rolls out when it stands."),
+			LOCTEXT("WheelsObjective", "Colony terminal (Tab), INFRASTRUCTURE: a FABRICATION BAY. The rover rolls out when it stands."),
 			LOCTEXT("WheelsDone", "Fabricator running. First job: a rover. We stop walking today."),
 			ETrigger::ModuleBuilt, FName(TEXT("Fab")), 0.0f, 1, LOCTEXT("WheelsOpens", "THE ROVER")));
 		Steps.Add(Make(TEXT("Shape"), LOCTEXT("ShapeTitle", "A SHAPE ON THE HORIZON"),
@@ -118,12 +133,12 @@ namespace APSOriginQuestsLocal
 		{
 			Steps.Add(Make(TEXT("Yard"), LOCTEXT("YardTitle", "THE YARD"),
 				LOCTEXT("YardStory", "A yard on the ground, beside the pad. The Ark will never fly again; something else will."),
-				LOCTEXT("YardObjective", "CONSTRUCTION: raise the LAUNCH YARD (a construction order, or build mode)."),
+				LOCTEXT("YardObjective", "Build mode (B), INFRASTRUCTURE: a LAUNCH YARD on open ground."),
 				LOCTEXT("YardDone", "Launch yard complete. The first hull can be laid down."),
 				ETrigger::StructureBuilt, FName(TEXT("LaunchYard")), 0.0f, 2));
 			Steps.Add(Make(TEXT("Hull"), LOCTEXT("HullTitle", "THE FIRST HULL"),
 				LOCTEXT("HullStory", "The yard asks for metals and energy, then time. Class S: enough for the system."),
-				LOCTEXT("HullObjective", "SHIPYARD: order a class S hull at the launch yard and wait for it."),
+				LOCTEXT("HullObjective", "Colony terminal (Tab), SHIPYARD: order a class S hull at the launch yard and wait for it."),
 				LOCTEXT("HullDone", "Hull complete on the pad. Class S. She has no name yet."),
 				ETrigger::ShipsLaunched, NAME_None, 1.0f, 2));
 			Steps.Add(Make(TEXT("Liftoff"), LOCTEXT("LiftoffTitle", "LIFT-OFF"),
@@ -152,17 +167,83 @@ namespace APSOriginQuestsLocal
 			Chain.Origin = APSWorldRules::EOrigin::Ark;
 			Chain.Key = TEXT("Ark");
 			Chain.Name = LOCTEXT("ArkChain", "LANDING");
-			Chain.Steps.Add(Make(TEXT("Wake"), LOCTEXT("ArkWakeTitle", "POWER THE ARK"),
-				LOCTEXT("ArkWakeStory", "ARK: power 4 %. Drive: dead. Crew: one. One console answers."),
-				LOCTEXT("ArkWakeObjective", "Open the console (Tab)."),
-				LOCTEXT("ArkWakeDone", "Main bus restored. Lights in the bridge and the hold. The hull is cold but whole."),
-				ETrigger::TerminalOpened, NAME_None, 0.0f, 0));
-			Chain.Steps.Add(Make(TEXT("Ground"), LOCTEXT("ArkGroundTitle", "FIRST GROUND"),
+			// Rio 18.10 (0.6.6): the departments speak once the first hull is in orbit; until then the story is the one voice.
+			Chain.BoardOpensAfter = TEXT("Liftoff");
+			Chain.Steps.Add(Make(TEXT("Power"), LOCTEXT("ArkPowerTitle", "POWER THE ARK"),
+				LOCTEXT("ArkPowerStory", "ARK: main bus down. Drive: dead. Crew: one. The breaker still answers."),
+				LOCTEXT("ArkPowerObjective", "Restore the main bus: F, anywhere aboard."),
+				LOCTEXT("ArkPowerDone", "Main bus restored. The light runs through her from end to end. She will never fly again, but she is home."),
+				ETrigger::Token, APSOriginArk::PowerToken(), 0.0f, 0));
+			Chain.Steps.Add(WithMoment(Make(TEXT("Ground"), LOCTEXT("ArkGroundTitle", "FIRST GROUND"),
 				LOCTEXT("ArkGroundStory", "Atmosphere breathable. Gravity holds. Nobody has stood on this ground before."),
-				LOCTEXT("ArkGroundObjective", "Walk out: forty metres from the Ark."),
-				LOCTEXT("ArkGroundDone", "Ramp down. Nobody has stood on this ground before. Now it has a footprint."),
-				ETrigger::OnFootAway, NAME_None, 40.0f, 0));
-			AddGroundSteps(Chain.Steps, true);
+				LOCTEXT("ArkGroundObjective", "Go down to the ground: F aboard takes the ark's lift."),
+				LOCTEXT("ArkGroundDone", "First footprint. And on the horizon a shape too straight for rock."),
+				ETrigger::OnFootAway, NAME_None, 15.0f, 0), EMoment::Monument));
+			Chain.Steps.Add(Make(TEXT("Light"), LOCTEXT("ArkLightTitle", "LIGHT"),
+				LOCTEXT("ArkLightStory", "The ark's cells run down by the hour. The star does not."),
+				LOCTEXT("ArkLightObjective", "Colony terminal (Tab), INFRASTRUCTURE: a SOLAR ARRAY beside the ark."),
+				LOCTEXT("ArkLightDone", "Solar array online. Energy is the only currency we have."),
+				ETrigger::ModuleBuilt, FName(TEXT("SolarArray")), 0.0f, 0));
+			Chain.Steps.Add(Make(TEXT("Ears"), LOCTEXT("ArkEarsTitle", "EARS"),
+				LOCTEXT("ArkEarsStory", "That shape on the horizon. The deep radar needs a mast to look at it."),
+				LOCTEXT("ArkEarsObjective", "Colony terminal (Tab), INFRASTRUCTURE: a COMMS MAST."),
+				LOCTEXT("ArkEarsDone", "Comms mast raised. The deep radar wakes and turns to the horizon."),
+				ETrigger::ModuleBuilt, FName(TEXT("CommsMast")), 0.0f, 0));
+			Chain.Steps.Add(Make(TEXT("Signal"), LOCTEXT("ArkSignalTitle", "THE SIGNAL"),
+				LOCTEXT("ArkSignalStory", "The mast listens. The first pass of the radar takes a little while."),
+				LOCTEXT("ArkSignalObjective", "Wait for the deep radar (the JOURNAL tells it)."),
+				LOCTEXT("ArkSignalDone", "SIGNAL: straight edges, too regular for rock, and a pulse in them. Someone built it."),
+				ETrigger::AncientsChain, FName(TEXT("Echoes")), 0.0f, 1));
+			Chain.Steps.Add(Make(TEXT("Wheels"), LOCTEXT("ArkWheelsTitle", "WHEELS"),
+				LOCTEXT("ArkWheelsStory", "Kilometres of open ground to it. A fabrication bay prints a rover; we stop walking today."),
+				LOCTEXT("ArkWheelsObjective", "Colony terminal (Tab), INFRASTRUCTURE: a FABRICATION BAY. The rover rolls out when it stands."),
+				LOCTEXT("ArkWheelsDone", "Fabricator running. First job: a rover."),
+				ETrigger::ModuleBuilt, FName(TEXT("Fab")), 0.0f, 1, LOCTEXT("ArkWheelsOpens", "THE ROVER")));
+			Chain.Steps.Add(WithMoment(Make(TEXT("Shape"), LOCTEXT("ArkShapeTitle", "A SHAPE ON THE HORIZON"),
+				LOCTEXT("ArkShapeStory", "Take the rover to it. At night the top of it glows."),
+				LOCTEXT("ArkShapeObjective", "Drive to the structure and study it to its foot: the ECHOES chain in the JOURNAL."),
+				LOCTEXT("ArkShapeDone", "What the Builders knew of lifting stone to orbit is ours now. Look up: it was pointing at something all along."),
+				ETrigger::Token, APSProgressionTokens::Launch(), 0.0f, 1, LOCTEXT("ArkShapeOpens", "THE LAUNCH")), EMoment::Monument));
+			Chain.Steps.Add(Supplied(Make(TEXT("Mine"), LOCTEXT("ArkMineTitle", "THE FIRST SEAM"),
+				LOCTEXT("ArkMineStory", "A hull needs metal and the ark has none to spare. The radar marked ore near the landing."),
+				LOCTEXT("ArkMineObjective", "Build mode (B), INFRASTRUCTURE: a MINING OUTPOST. It opens the metals."),
+				LOCTEXT("ArkMineDone", "The crushers run. The first seam is rich: the bins fill at once (+150 metals)."),
+				ETrigger::Token, APSProgressionTokens::ResMetals(), 0.0f, 1, LOCTEXT("ArkMineOpens", "METALS")), 150, 0));
+			Chain.Steps.Add(Supplied(Make(TEXT("Yard"), LOCTEXT("ArkYardTitle", "THE YARD"),
+				LOCTEXT("ArkYardStory", "A yard on the ground, beside the ark. She will never fly again; something else will."),
+				LOCTEXT("ArkYardObjective", "Build mode (B), INFRASTRUCTURE: a LAUNCH YARD on open ground."),
+				LOCTEXT("ArkYardDone", "Launch yard complete. The ark gives her spare plates and cells to it (+180 metals, +80 energy)."),
+				ETrigger::StructureBuilt, FName(TEXT("LaunchYard")), 0.0f, 2), 180, 80));
+			Chain.Steps.Add(Make(TEXT("Hull"), LOCTEXT("ArkHullTitle", "THE FIRST HULL"),
+				LOCTEXT("ArkHullStory", "The yard asks for metals and energy, then time. Class S: enough for the system."),
+				LOCTEXT("ArkHullObjective", "Colony terminal (Tab), SHIPYARD: order a class S hull at the launch yard."),
+				LOCTEXT("ArkHullDone", "Hull complete on the yard. Class S. She has no name yet."),
+				ETrigger::ShipsLaunched, NAME_None, 1.0f, 2));
+			Chain.Steps.Add(Make(TEXT("Liftoff"), LOCTEXT("ArkLiftoffTitle", "LIFT-OFF"),
+				LOCTEXT("ArkLiftoffStory", "Board her (F at the hull). Below: the ark, a mast, a yard. Take her up."),
+				LOCTEXT("ArkLiftoffObjective", "Fly the new hull sixty kilometres up."),
+				LOCTEXT("ArkLiftoffDone", "Orbit. The planet turns under us, and the ark is a speck on it."),
+				ETrigger::InShipAboveKm, NAME_None, 60.0f, 2));
+			Chain.Steps.Add(Make(TEXT("ColdReturn"), LOCTEXT("ArkColdTitle", "A COLD RETURN"),
+				LOCTEXT("ArkColdStory", "In orbit the radar reaches further. Something up there is not a moon."),
+				LOCTEXT("ArkColdObjective", "Listen from orbit (the JOURNAL tells it)."),
+				LOCTEXT("ArkColdDone", "A COLD RETURN: a hull of the Builders in a high orbit, kilometres long. Dock with it."),
+				ETrigger::AncientsChain, FName(TEXT("QuietHull")), 0.0f, 2));
+			Chain.Steps.Add(Supplied(Make(TEXT("Drive"), LOCTEXT("ArkDriveTitle", "THE STELLAR DRIVE"),
+				LOCTEXT("ArkDriveStory", "The quiet hull keeps a drive that crosses the dark between suns. Wake it."),
+				LOCTEXT("ArkDriveObjective", "Fly to the quiet hull and finish its chain (QUIET HULL in the JOURNAL)."),
+				LOCTEXT("ArkDriveDone", "The drive core answers ours, and its holds keep Builders' alloys (+400 metals, +150 energy): enough for an M hull."),
+				ETrigger::Token, APSProgressionTokens::StellarDrive(), 0.0f, 2, LOCTEXT("ArkDriveOpens", "THE STELLAR DRIVE")), 400, 150));
+			Chain.Steps.Add(Make(TEXT("Keel"), LOCTEXT("ArkKeelTitle", "THE KEEL"),
+				LOCTEXT("ArkKeelStory", "The drive wants a bigger hull than the first one: class M, with room for the core."),
+				LOCTEXT("ArkKeelObjective", "Colony terminal (Tab), SHIPYARD: an M hull at the launch yard."),
+				LOCTEXT("ArkKeelDone", "An M hull on the yard, the Builders' core in her keel. The neighbouring suns are within reach."),
+				ETrigger::ShipsLaunched, NAME_None, 2.0f, 3));
+			Chain.Steps.Add(Make(TEXT("Road"), LOCTEXT("ArkRoadTitle", "THE BUILDERS' ROAD"),
+				LOCTEXT("ArkRoadStory", "The hull's chart has one star marked on it. Their road starts here."),
+				LOCTEXT("ArkRoadObjective", "Fly the M hull to the marked star (J: the stellar drive; the ROAD in the JOURNAL)."),
+				LOCTEXT("ArkRoadDone", "A new sun, and the Builders were here too. Their road goes on from star to star; so do we."),
+				ETrigger::AncientsStepDone, FName(TEXT("Road")), 1.0f, 3));
 		}
 		{
 			FChain& Chain = Chains.AddDefaulted_GetRef();
@@ -288,6 +369,11 @@ namespace APSOriginQuestsLocal
 			{
 				return false;
 			}
+			if (APSOriginArk::FindArk(World))
+			{
+				// Rio 18.10 (ARK): clear of the ark's hull by Number metres.
+				return APSOriginArk::IsOutside(World, Pawn, Step.Number * 100.0);
+			}
 			double NearestCm = TNumericLimits<double>::Max();
 			for (TActorIterator<AColony> It(World); It; ++It)
 			{
@@ -351,6 +437,23 @@ namespace APSOriginQuestsLocal
 			}
 			return Surveyed >= FMath::RoundToInt(Step.Number);
 		}
+		case ETrigger::AncientsStepDone:
+		{
+			// Ancients.<Key>.<site id>.<step>, kept among the board's completed templates.
+			const FString Prefix = FString::Printf(TEXT("Ancients.%s."), *Step.Param.ToString());
+			const FString Suffix = FString::Printf(TEXT(".%d"), FMath::RoundToInt(Step.Number));
+			FAPSMissionSaveData Data;
+			Board.CaptureSave(Data);
+			for (const FName& Template : Data.CompletedTemplates)
+			{
+				const FString Name = Template.ToString();
+				if (Name.StartsWith(Prefix) && Name.EndsWith(Suffix))
+				{
+					return true;
+				}
+			}
+			return false;
+		}
 		case ETrigger::OnHomeGround:
 		{
 			const double Height = HeightOverHomeKm(World, Pawn);
@@ -376,10 +479,37 @@ namespace APSOriginQuestsLocal
 		UE_LOG(LogTemp, Log, TEXT("[APS.Origin] %s step %d/%d open: %s"), Chain.Key, Index + 1, Chain.Steps.Num(), Step.Id);
 	}
 
+	void Deliver(UWorld* World, const FStep& Step)
+	{
+		if (FAPSInfrastructure* Infrastructure = (Step.GrantMetals > 0 || Step.GrantEnergy > 0) ? APSInfrastructureFind(World) : nullptr)
+		{
+			Infrastructure->AddStock(APSInfrastructure::EResource::Metals, Step.GrantMetals);
+			Infrastructure->AddStock(APSInfrastructure::EResource::Energy, Step.GrantEnergy);
+			UE_LOG(LogTemp, Log, TEXT("[APS.Origin] %s brings %d metals, %d energy"), Step.Id, Step.GrantMetals, Step.GrantEnergy);
+		}
+		if (Step.Moment == EMoment::Monument)
+		{
+			if (const AActor* Monument = APSOriginArk::FindMonument(World))
+			{
+				FVector Origin;
+				FVector Extent;
+				Monument->GetActorBounds(false, Origin, Extent);
+				const FVector Up = Monument->GetActorUpVector();
+				// The upper part of it, where the crown is: the horizon and the shape in one frame.
+				APSOriginArk::LookAt(World, Origin + Up * (FVector::DotProduct(Extent, Up.GetAbs()) * 0.4), 1.4f, 2.2f);
+			}
+		}
+		if (UAPSAudioSubsystem* Audio = World->GetSubsystem<UAPSAudioSubsystem>())
+		{
+			Audio->PlayConfirm();
+		}
+	}
+
 	void TellDone(UWorld* World, const FChain& Chain, const int32 Index)
 	{
 		const FStep& Step = Chain.Steps[Index];
 		UAPSCivilizationJournalSubsystem::Post(World, JournalCategory, Step.Done);
+		Deliver(World, Step);
 		const FText Next = Chain.Steps.IsValidIndex(Index + 1)
 			? FText::Format(LOCTEXT("NextStep", "Next: {0}."), Chain.Steps[Index + 1].Title)
 			: LOCTEXT("ChainDone", "The origin's story is told. The ladder goes on: the system, the cluster, the galaxy.");
@@ -453,6 +583,70 @@ APSOriginQuests::FView APSOriginQuests::View(const UWorld* World)
 		++V.Done;
 	}
 	return V;
+}
+
+bool APSOriginQuests::GetObjective(const UWorld* World, FText& OutTitle, FText& OutBody)
+{
+	const FView V = View(World);
+	const FStep* Step = V.IsValid() ? V.Current() : nullptr;
+	if (!Step)
+	{
+		return false;
+	}
+	OutTitle = FText::Format(LOCTEXT("ObjectiveTitle", "{0}   {1}/{2}"), Step->Title, FText::AsNumber(V.Done + 1),
+		FText::AsNumber(V.Chain->Steps.Num()));
+	OutBody = Step->Objective;
+	return true;
+}
+
+bool APSOriginQuests::IsMissionInStory(const UWorld* World, const FName Template)
+{
+	const FView V = View(World);
+	const FStep* Step = V.IsValid() ? V.Current() : nullptr;
+	if (!Step)
+	{
+		return true;
+	}
+	const FString Name = Template.ToString();
+	if (!Name.StartsWith(TEXT("Ancients.")))
+	{
+		return IsDepartmentBoardOpen(World);
+	}
+	// The chain each step is about: the monument's while its signal comes and it is studied, the hull's from orbit, the road's.
+	const FString Id(Step->Id);
+	const TCHAR* Chain = nullptr;
+	if (Step->Trigger == ETrigger::AncientsChain || Step->Trigger == ETrigger::AncientsStepDone)
+	{
+		return Name.StartsWith(FString::Printf(TEXT("Ancients.%s."), *Step->Param.ToString()));
+	}
+	if (Id == TEXT("Shape"))
+	{
+		Chain = TEXT("Echoes");
+	}
+	else if (Id == TEXT("Drive"))
+	{
+		Chain = TEXT("QuietHull");
+	}
+	return Chain && Name.StartsWith(FString::Printf(TEXT("Ancients.%s."), Chain));
+}
+
+bool APSOriginQuests::IsDepartmentBoardOpen(const UWorld* World)
+{
+	if (!World || !APSWorldRules::IsLadder(World))
+	{
+		return true;
+	}
+	const FChain* Chain = ChainOf(APSWorldRules::OfGame(World).Origin);
+	if (!Chain || FCString::Strlen(Chain->BoardOpensAfter) == 0)
+	{
+		return true;
+	}
+	const int32 Gate = Chain->Steps.IndexOfByPredicate([Chain](const FStep& Step)
+	{
+		return FCString::Strcmp(Step.Id, Chain->BoardOpensAfter) == 0;
+	});
+	const FAPSMissionBoard* Board = APSMissionsFind(World);
+	return Gate == INDEX_NONE || (Board && Board->IsUnlocked(StepToken(*Chain, Gate)));
 }
 
 void APSOriginQuests::Tick(UWorld* World, const float DeltaSeconds)

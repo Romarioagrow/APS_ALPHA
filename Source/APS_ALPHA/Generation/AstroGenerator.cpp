@@ -63,6 +63,7 @@ CSV_DECLARE_CATEGORY_EXTERN(APSPreview);
 #include "APS_ALPHA/Pawns/Characters/CustomGravityCharacter.h"
 #include "APS_ALPHA/Pawns/Characters/GravityCharacterPawn.h"
 #include "APS_ALPHA/Actors/Tech/SpaceHeadquarters.h"
+#include "APS_ALPHA/Gameplay/Origins/APSOriginArk.h"
 #include "Engine/World.h"
 #include "Engine/GameViewportClient.h"
 #include "Engine/LocalPlayer.h"
@@ -13407,7 +13408,9 @@ bool AAstroGenerator::ResolveSpawnLocation(const ASpaceship* NewHomeSpaceship, F
 		{
 			const FVector PreferredOutward = IsValid(HomeSpaceHeadquarters)
 				? HomeSpaceHeadquarters->GetActorLocation() - HomePlanet->GetActorLocation()
-				: HomePlanet->GetActorUpVector();
+				: !StarterAnchorOutwardLocal.IsNearlyZero()
+					? HomePlanet->GetActorTransform().TransformVectorNoScale(StarterAnchorOutwardLocal)
+					: HomePlanet->GetActorUpVector();
 			return ResolveSurfaceLocation(HomePlanet, PreferredOutward, CharSpawnLocation);
 		}
 		break;
@@ -14274,6 +14277,22 @@ void AAstroGenerator::DestroyConfiguredCivilizationAssets()
 bool AAstroGenerator::SpawnConfiguredCivilizationAssets(const USpawnParameters* Parameters)
 {
 	UWorld* World = GetWorld();
+	// Rio 18.10 (ARK honest start): the ark is the whole fleet and nothing else is raised (APSOriginArk::ApplyStartKit).
+	if (World && Parameters && IsValid(HomeSpaceship) && !IsValid(HomeSpaceShipyard) && APSOriginArk::IsArk(HomeSpaceship))
+	{
+		DestroyConfiguredCivilizationAssets();
+		GeneratedStartingFleet.Add(HomeSpaceship);
+		APSCivilizationSpawn::TagGeneratedActor(HomeSpaceship, TEXT("APS.Fleet.HomeShip"));
+		const bool bKit = Parameters->StartingFleetSize <= 1 && Parameters->StarOutposts == 0
+			&& Parameters->PlanetOutposts == 0 && Parameters->OrbitalOutposts <= 1 && Parameters->GroundOutposts == 0;
+		if (!bKit)
+		{
+			UE_LOG(LogTemp, Error, TEXT("[APS.Origin.Ark] the ark start asks for escorts or outposts (fleet %d, outposts %d/%d/%d/%d)"),
+				Parameters->StartingFleetSize, Parameters->StarOutposts, Parameters->PlanetOutposts, Parameters->OrbitalOutposts,
+				Parameters->GroundOutposts);
+		}
+		return bKit;
+	}
 	if (!World || !Parameters || !IsValid(HomePlanet) || !IsValid(HomeStar)
 		|| !IsValid(HomeSpaceShipyard) || !IsValid(HomeSpaceship)
 		|| !BP_HomeSpaceship || !BP_HomeSpaceStation)
@@ -14455,6 +14474,8 @@ bool AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> Start
 			IsValid(HomePlanet) ? TEXT("OK") : TEXT("NULL"), PlanetGenerator ? TEXT("OK") : TEXT("NULL"));
 		return false;
 	}
+	// Rio 18.10 (0.6.6 origins): the ARK starts with the ark alone; every other world builds the home complex as before.
+	const bool bArkStart = !bIsPreviewGeneration && APSOriginArk::IsArkWorld(World);
 	if (bStarterHierarchySpawned || IsValid(HomeSpaceHeadquarters) || IsValid(HomeSpaceStation)
 		|| IsValid(HomeSpaceShipyard) || IsValid(HomeSpaceship)
 		|| !GeneratedStartingFleet.IsEmpty() || !GeneratedCivilizationInfrastructure.IsEmpty())
@@ -14550,22 +14571,25 @@ bool AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> Start
 		HomeSpaceStationOrbitHeight, PlanetRadiusCm);
 	FVector PlanetPosition = ComplexBody->GetActorLocation();
 
-	HomeSpaceHeadquarters = World->SpawnActor<ASpaceHeadquarters>(
-		BP_HomeSpaceHeadquarters, PlanetPosition, FRotator::ZeroRotator, SpawnParams);
-	if (!HomeSpaceHeadquarters)
+	if (!bArkStart)
 	{
-		UE_LOG(LogTemp, Error, TEXT("Unable to spawn the selected home headquarters class"));
-		return false;
-	}
-	if (UGameInstance* GameInstance = World->GetGameInstance())
-	{
-		if (UMainGameplayInstance* GameplayInstance = GameInstance->GetSubsystem<UMainGameplayInstance>())
+		HomeSpaceHeadquarters = World->SpawnActor<ASpaceHeadquarters>(
+			BP_HomeSpaceHeadquarters, PlanetPosition, FRotator::ZeroRotator, SpawnParams);
+		if (!HomeSpaceHeadquarters)
 		{
-			HomeSpaceHeadquarters->Civilization = GameplayInstance->CurrentCivilization;
+			UE_LOG(LogTemp, Error, TEXT("Unable to spawn the selected home headquarters class"));
+			return false;
 		}
+		if (UGameInstance* GameInstance = World->GetGameInstance())
+		{
+			if (UMainGameplayInstance* GameplayInstance = GameInstance->GetSubsystem<UMainGameplayInstance>())
+			{
+				HomeSpaceHeadquarters->Civilization = GameplayInstance->CurrentCivilization;
+			}
+		}
+		HomeSpaceHeadquarters->AttachToActor(ComplexBody, FAttachmentTransformRules::KeepWorldTransform);
+		HomeSpaceHeadquarters->SetActorRelativeRotation(FRotator(0, 0, 0));
 	}
-	HomeSpaceHeadquarters->AttachToActor(ComplexBody, FAttachmentTransformRules::KeepWorldTransform);
-	HomeSpaceHeadquarters->SetActorRelativeRotation(FRotator(0, 0, 0));
 
 	const double SpawnOffset = FMath::Max(StationOrbitRadiusCm, PlanetRadiusCm * 1.01);
 	// Rio 04.10 evening ("again the night side: I asked for the sunlit side, the sun from the side, the star in view"):
@@ -14598,100 +14622,135 @@ bool AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> Start
 			TurnGameplay && TurnGameplay->bPendingSavedWorldReplay ? TEXT("as saved") : TEXT("sunlit from the side"));
 	}
 	const FQuat ComplexTurn(ComplexBody->GetActorUpVector(), FMath::DegreesToRadians(ComplexTurnDegrees));
-	if (!FMath::IsNearlyZero(ComplexTurnDegrees))
-	{
-		HomeSpaceHeadquarters->SetActorRotation(ComplexTurn * HomeSpaceHeadquarters->GetActorQuat());
-	}
 	FVector Offset = ComplexTurn.RotateVector(FVector(0, SpawnOffset, 0));
-	HomeSpaceHeadquarters->AddActorWorldOffset(Offset);
-
-	FVector HomeSpaceHeadquartersLocation = HomeSpaceHeadquarters->GetActorLocation();
-	FRotator HomeSpaceHeadquartersRotation = HomeSpaceHeadquarters->GetActorRotation();
-	HomeSpaceStation = World->SpawnActor<ASpaceStation>(
-		BP_HomeSpaceStation, HomeSpaceHeadquartersLocation,
-		HomeSpaceHeadquartersRotation, SpawnParams);
-	if (!IsValid(HomeSpaceStation))
+	// Where the headquarters stands (or, at an ARK start, would stand): the gameplay frame's anchor.
+	const FVector StarterAnchor = PlanetPosition + Offset;
+	ASpaceship* NewHomeSpaceship = nullptr;
+	if (bArkStart)
 	{
-		UE_LOG(LogTemp, Error, TEXT("[APS.Civilization] Unable to spawn the selected home station class"));
-		return false;
-	}
-	HomeSpaceStation->AttachToActor(HomeSpaceHeadquarters,
-	                                FAttachmentTransformRules::KeepWorldTransform);
-	//double HomeStationOffset = HomeSpaceStation->GravityCollisionZone->GetScaledSphereRadius() * 2;
-	double HomeStationOffset = 50000;
-	HomeSpaceStation->AddActorLocalOffset(FVector(0, HomeStationOffset, 0));
-	HomeSpaceStation->CalculateAffectionRadius();
-
-	// Spawn HomeShipyard
-	HomeSpaceShipyard = World->SpawnActor<ASpaceShipyard>(BP_HomeSpaceShipyard,
-	                                                      HomeSpaceHeadquartersLocation,
-	                                                      HomeSpaceHeadquartersRotation, SpawnParams);
-	if (!IsValid(HomeSpaceShipyard))
-	{
-		UE_LOG(LogTemp, Error, TEXT("[APS.Civilization] Unable to spawn the selected home shipyard class"));
-		return false;
-	}
-	/*double HomeSpaceShipyardLocationOffset = HomeSpaceShipyard->GravityCollisionZone->
-	                                                            GetScaledSphereRadius() * 2;*/
-	//double HomeSpaceShipyardLocationOffset = HomeSpaceShipyard->GetActorLocation();
-	//(X=6000.000000,Y=-15360.000001,Z=-500.000000)
-	HomeSpaceShipyard->AddActorLocalOffset(FVector(6000, -15360, -500));
-	HomeSpaceShipyard->AttachToActor(HomeSpaceHeadquarters,
-	                                 FAttachmentTransformRules::KeepWorldTransform);
-	HomeSpaceShipyard->CalculateAffectionRadius();
-
-	//Spawn HomeSpaceship
-	FActorSpawnParameters SpaceshipSpawnParams;
-	SpaceshipSpawnParams.SpawnCollisionHandlingOverride =
-		ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	if (!IsValid(HomeSpaceShipyard->SpawnPoint))
-	{
-		UE_LOG(LogTemp, Error, TEXT("[APS.Civilization] Home shipyard has no valid SpawnPoint"));
-		return false;
-	}
-	FVector HomeSpaceshipLocation = HomeSpaceShipyard->SpawnPoint->GetComponentLocation();
-
-	HomeSpaceshipLocation.Z += 1000;
-	ASpaceship* NewHomeSpaceship = World->SpawnActor<ASpaceship>(
-		BP_HomeSpaceship, HomeSpaceshipLocation, HomeSpaceShipyard->GetActorRotation(),
-		SpaceshipSpawnParams);
-	HomeSpaceship = NewHomeSpaceship;
-
-	if (!IsValid(NewHomeSpaceship) || !IsValid(GeneratedHomeStarSystem))
-	{
-		UE_LOG(LogTemp, Error,
-			TEXT("[APS.Civilization] Cannot complete starter hierarchy: Ship=%s HomeSystem=%s"),
-			IsValid(NewHomeSpaceship) ? TEXT("OK") : TEXT("NULL"),
-			IsValid(GeneratedHomeStarSystem) ? TEXT("OK") : TEXT("NULL"));
-		return false;
-	}
-
-	// Rio 08.10 (0.6.0-alpha): the HQ shipyard slot was laid out for the default M3, and an L or bigger flagship
-	// (500 m to 2 km) spawned there overlaps the HQ hub, pads and shipyard, so it cannot fly out. Only such hulls
-	// step out along the HQ's up axis to the first clear place; the accepted M3/M start stays exactly where it was.
-	if (NewHomeSpaceship->SizeClass >= ESpaceshipSizeClass::L)
-	{
-		const FQuat UpLine = FRotationMatrix::MakeFromYZ(
-			HomeSpaceHeadquarters->GetActorUpVector(), HomeSpaceHeadquarters->GetActorForwardVector()).ToQuat();
-		APSShipPlacement::PlaceClear(*NewHomeSpaceship, HomeSpaceshipLocation, UpLine);
-		UE_LOG(LogTemp, Log, TEXT("[APS.Civilization] home ship %s (size class %d) moved clear of the HQ to %s"),
-			*GetNameSafe(NewHomeSpaceship), static_cast<int32>(NewHomeSpaceship->SizeClass),
-			*NewHomeSpaceship->GetActorLocation().ToCompactString());
-	}
-
-	if (NewHomeSpaceship && GeneratedHomeStarSystem)
-	{
-		NewHomeSpaceship->AttachToActor(HomeSpaceShipyard,
-		                                FAttachmentTransformRules::KeepWorldTransform);
+		// Rio 18.10 (ARK honest start, APSOriginArk): no headquarters, station or orbital yard. Their place stays the frame's
+		// anchor (the saved positions use it) and the sunlit landing's bearing; the ark waits there until the colony lands
+		// it beside its site (APSCivilizationMaterializationSubsystem).
+		const FVector AnchorUp = (StarterAnchor - PlanetPosition).GetSafeNormal(UE_DOUBLE_SMALL_NUMBER, ComplexBody->GetActorUpVector());
+		StarterAnchorOutwardLocal = ComplexBody->GetActorTransform().InverseTransformVectorNoScale(AnchorUp);
+		FActorSpawnParameters ArkSpawnParams;
+		ArkSpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		NewHomeSpaceship = World->SpawnActor<ASpaceship>(BP_HomeSpaceship, StarterAnchor,
+			FRotationMatrix::MakeFromZ(AnchorUp).Rotator(), ArkSpawnParams);
+		HomeSpaceship = NewHomeSpaceship;
+		if (!IsValid(NewHomeSpaceship) || !IsValid(GeneratedHomeStarSystem))
+		{
+			UE_LOG(LogTemp, Error, TEXT("[APS.Origin.Ark] Cannot start: Ark=%s HomeSystem=%s"),
+				IsValid(NewHomeSpaceship) ? TEXT("OK") : TEXT("NULL"), IsValid(GeneratedHomeStarSystem) ? TEXT("OK") : TEXT("NULL"));
+			return false;
+		}
+		NewHomeSpaceship->Tags.AddUnique(APSOriginArk::Tag());
+		// Rides with the home system into the gameplay frame (the ship at a yard rides with the yard).
+		NewHomeSpaceship->AttachToActor(ComplexBody, FAttachmentTransformRules::KeepWorldTransform);
 		NewHomeSpaceship->OffsetSystem = GeneratedHomeStarSystem;
-
 		if (NewHomeSpaceship->OnboardComputer)
 		{
 			NewHomeSpaceship->OnboardComputer->OffsetSystem = GeneratedHomeStarSystem;
 		}
-		else
+		UE_LOG(LogTemp, Log, TEXT("[APS.Origin.Ark] the ark %s (size class %d) waits at the complex's place; no headquarters, station or yard"),
+			*GetNameSafe(NewHomeSpaceship), static_cast<int32>(NewHomeSpaceship->SizeClass));
+	}
+	else
+	{
+		if (!FMath::IsNearlyZero(ComplexTurnDegrees))
 		{
-			UE_LOG(LogTemp, Error, TEXT("Onboard Computer is nullptr!"));
+			HomeSpaceHeadquarters->SetActorRotation(ComplexTurn * HomeSpaceHeadquarters->GetActorQuat());
+		}
+		HomeSpaceHeadquarters->AddActorWorldOffset(Offset);
+
+		FVector HomeSpaceHeadquartersLocation = HomeSpaceHeadquarters->GetActorLocation();
+		FRotator HomeSpaceHeadquartersRotation = HomeSpaceHeadquarters->GetActorRotation();
+		HomeSpaceStation = World->SpawnActor<ASpaceStation>(
+			BP_HomeSpaceStation, HomeSpaceHeadquartersLocation,
+			HomeSpaceHeadquartersRotation, SpawnParams);
+		if (!IsValid(HomeSpaceStation))
+		{
+			UE_LOG(LogTemp, Error, TEXT("[APS.Civilization] Unable to spawn the selected home station class"));
+			return false;
+		}
+		HomeSpaceStation->AttachToActor(HomeSpaceHeadquarters,
+		                                FAttachmentTransformRules::KeepWorldTransform);
+		//double HomeStationOffset = HomeSpaceStation->GravityCollisionZone->GetScaledSphereRadius() * 2;
+		double HomeStationOffset = 50000;
+		HomeSpaceStation->AddActorLocalOffset(FVector(0, HomeStationOffset, 0));
+		HomeSpaceStation->CalculateAffectionRadius();
+
+		// Spawn HomeShipyard
+		HomeSpaceShipyard = World->SpawnActor<ASpaceShipyard>(BP_HomeSpaceShipyard,
+		                                                      HomeSpaceHeadquartersLocation,
+		                                                      HomeSpaceHeadquartersRotation, SpawnParams);
+		if (!IsValid(HomeSpaceShipyard))
+		{
+			UE_LOG(LogTemp, Error, TEXT("[APS.Civilization] Unable to spawn the selected home shipyard class"));
+			return false;
+		}
+		/*double HomeSpaceShipyardLocationOffset = HomeSpaceShipyard->GravityCollisionZone->
+		                                                            GetScaledSphereRadius() * 2;*/
+		//double HomeSpaceShipyardLocationOffset = HomeSpaceShipyard->GetActorLocation();
+		//(X=6000.000000,Y=-15360.000001,Z=-500.000000)
+		HomeSpaceShipyard->AddActorLocalOffset(FVector(6000, -15360, -500));
+		HomeSpaceShipyard->AttachToActor(HomeSpaceHeadquarters,
+		                                 FAttachmentTransformRules::KeepWorldTransform);
+		HomeSpaceShipyard->CalculateAffectionRadius();
+
+		//Spawn HomeSpaceship
+		FActorSpawnParameters SpaceshipSpawnParams;
+		SpaceshipSpawnParams.SpawnCollisionHandlingOverride =
+			ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+		if (!IsValid(HomeSpaceShipyard->SpawnPoint))
+		{
+			UE_LOG(LogTemp, Error, TEXT("[APS.Civilization] Home shipyard has no valid SpawnPoint"));
+			return false;
+		}
+		FVector HomeSpaceshipLocation = HomeSpaceShipyard->SpawnPoint->GetComponentLocation();
+
+		HomeSpaceshipLocation.Z += 1000;
+		NewHomeSpaceship = World->SpawnActor<ASpaceship>(
+			BP_HomeSpaceship, HomeSpaceshipLocation, HomeSpaceShipyard->GetActorRotation(),
+			SpaceshipSpawnParams);
+		HomeSpaceship = NewHomeSpaceship;
+
+		if (!IsValid(NewHomeSpaceship) || !IsValid(GeneratedHomeStarSystem))
+		{
+			UE_LOG(LogTemp, Error,
+				TEXT("[APS.Civilization] Cannot complete starter hierarchy: Ship=%s HomeSystem=%s"),
+				IsValid(NewHomeSpaceship) ? TEXT("OK") : TEXT("NULL"),
+				IsValid(GeneratedHomeStarSystem) ? TEXT("OK") : TEXT("NULL"));
+			return false;
+		}
+
+		// Rio 08.10 (0.6.0-alpha): the HQ shipyard slot was laid out for the default M3, and an L or bigger flagship
+		// (500 m to 2 km) spawned there overlaps the HQ hub, pads and shipyard, so it cannot fly out. Only such hulls
+		// step out along the HQ's up axis to the first clear place; the accepted M3/M start stays exactly where it was.
+		if (NewHomeSpaceship->SizeClass >= ESpaceshipSizeClass::L)
+		{
+			const FQuat UpLine = FRotationMatrix::MakeFromYZ(
+				HomeSpaceHeadquarters->GetActorUpVector(), HomeSpaceHeadquarters->GetActorForwardVector()).ToQuat();
+			APSShipPlacement::PlaceClear(*NewHomeSpaceship, HomeSpaceshipLocation, UpLine);
+			UE_LOG(LogTemp, Log, TEXT("[APS.Civilization] home ship %s (size class %d) moved clear of the HQ to %s"),
+				*GetNameSafe(NewHomeSpaceship), static_cast<int32>(NewHomeSpaceship->SizeClass),
+				*NewHomeSpaceship->GetActorLocation().ToCompactString());
+		}
+
+		if (NewHomeSpaceship && GeneratedHomeStarSystem)
+		{
+			NewHomeSpaceship->AttachToActor(HomeSpaceShipyard,
+			                                FAttachmentTransformRules::KeepWorldTransform);
+			NewHomeSpaceship->OffsetSystem = GeneratedHomeStarSystem;
+
+			if (NewHomeSpaceship->OnboardComputer)
+			{
+				NewHomeSpaceship->OnboardComputer->OffsetSystem = GeneratedHomeStarSystem;
+			}
+			else
+			{
+				UE_LOG(LogTemp, Error, TEXT("Onboard Computer is nullptr!"));
+			}
 		}
 	}
 	APawn* PlayerCharacter = PreviousPlayerCharacter;
@@ -14700,9 +14759,9 @@ bool AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> Start
 		&& PlayerCharacter->IsA(BP_CharacterClass);
 	if (!bExistingPawnMatchesSelection && BP_CharacterClass)
 	{
-		const FVector InitialSpawnLocation = HomeSpaceHeadquarters->GetStartPointPosition();
+		const FVector InitialSpawnLocation = bArkStart ? StarterAnchor : HomeSpaceHeadquarters->GetStartPointPosition();
 		APawn* SelectedPlayerCharacter = World->SpawnActor<APawn>(BP_CharacterClass, InitialSpawnLocation,
-			HomeSpaceShipyard->GetActorRotation(), SpawnParams);
+			bArkStart ? NewHomeSpaceship->GetActorRotation() : HomeSpaceShipyard->GetActorRotation(), SpawnParams);
 		if (IsValid(SelectedPlayerCharacter))
 		{
 			SpawnedSelectedPlayerCharacter = SelectedPlayerCharacter;
@@ -14719,7 +14778,7 @@ bool AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> Start
 		// AAstroGenerator root used to drag the galaxy/cluster presentation hierarchy
 		// after physics actors and cameras had already spawned, leaving gameplay actors
 		// under 1e9 parents with ~1e-9 compensated relative transforms.
-		FVector PlayerLocation = HomeSpaceHeadquarters->GetActorLocation();
+		FVector PlayerLocation = bArkStart ? StarterAnchor : HomeSpaceHeadquarters->GetActorLocation();
 		const bool bUseGameplayLocalFrame = !bIsPreviewGeneration && !bIntegrateStartPlanet;
 		if (bUseGameplayLocalFrame && IsValid(GeneratedHomeStarSystem))
 		{
@@ -14728,7 +14787,7 @@ bool AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> Start
 			UE_LOG(LogTemp, Log,
 				TEXT("[APS.FullScale.LocalFrame] Home system detached=%d anchorResidual=%.3fcm generatorScale=%.3e"),
 				GeneratedHomeStarSystem->GetAttachParentActor() == nullptr ? 1 : 0,
-				HomeSpaceHeadquarters->GetActorLocation().Size(),
+				bArkStart ? (StarterAnchor - PlayerLocation).Size() : HomeSpaceHeadquarters->GetActorLocation().Size(),
 				GetActorTransform().GetScale3D().GetAbsMax());
 		}
 		else
@@ -14775,6 +14834,10 @@ bool AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> Start
 					static_cast<int32>(CharSpawnPlace));
 				return false;
 			}
+			if (!IsValid(HomeSpaceHeadquarters))
+			{
+				return false;
+			}
 			SpawnLocation = HomeSpaceHeadquarters->GetStartPointPosition();
 			UE_LOG(LogTemp, Warning,
 				TEXT("[APS.Civilization] Start location %d has no runtime anchor; using Headquarters start point"),
@@ -14799,8 +14862,9 @@ bool AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> Start
 		// Station gravity is "down" along the station's own axis, so frame the start with it.
 		const ASpaceStation* OrbitalStartStation = CharSpawnPlace == ECharSpawnPlace::PlanetOrbit
 			|| CharSpawnPlace == ECharSpawnPlace::MoonOrbit ? GetOrbitalStartStation() : nullptr;
-		FVector CameraUp = (OrbitalStartStation ? OrbitalStartStation : HomeSpaceStation)
-			->GetActorUpVector().GetSafeNormal(UE_DOUBLE_SMALL_NUMBER, FVector::UpVector);
+		const AActor* CameraUpSource = OrbitalStartStation ? static_cast<const AActor*>(OrbitalStartStation)
+			: IsValid(HomeSpaceStation) ? static_cast<const AActor*>(HomeSpaceStation) : static_cast<const AActor*>(HomePlanet);
+		FVector CameraUp = CameraUpSource->GetActorUpVector().GetSafeNormal(UE_DOUBLE_SMALL_NUMBER, FVector::UpVector);
 		// In moon orbit the station looks at the moon it circles.
 		const AActor* OrbitedBody = CharSpawnPlace == ECharSpawnPlace::MoonOrbit && IsValid(HomeSpaceHeadquarters)
 			&& IsValid(HomeSpaceHeadquarters->GetAttachParentActor())
@@ -14813,7 +14877,7 @@ bool AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> Start
 					UE_DOUBLE_SMALL_NUMBER, HomePlanet->GetActorUpVector())
 				: (SpawnLocation - HomePlanet->GetActorLocation()).GetSafeNormal(
 					UE_DOUBLE_SMALL_NUMBER, HomePlanet->GetActorUpVector());
-			InitialViewDirection = ResolvedSurfaceSpawnBody.Get() == HomePlanet
+			InitialViewDirection = ResolvedSurfaceSpawnBody.Get() == HomePlanet || !IsValid(HomeSpaceHeadquarters)
 				? ResolvedSurfaceSpawnViewDirection
 				: HomeSpaceHeadquarters->GetActorLocation() - SpawnLocation;
 			InitialViewDirection = FVector::VectorPlaneProject(
@@ -14862,7 +14926,8 @@ bool AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> Start
 		}
 		if (InitialViewDirection.IsNearlyZero())
 		{
-			InitialViewDirection = HomeSpaceStation->GetActorForwardVector();
+			InitialViewDirection = (IsValid(HomeSpaceStation) ? static_cast<const AActor*>(HomeSpaceStation)
+				: static_cast<const AActor*>(NewHomeSpaceship))->GetActorForwardVector();
 		}
 		const FRotator InitialViewRotation = FRotationMatrix::MakeFromXZ(
 			InitialViewDirection.GetSafeNormal(), CameraUp).Rotator();
@@ -14919,11 +14984,15 @@ bool AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> Start
 			&& GeneratedCivilizationInfrastructure.Num() + 1
 				== CommittedSpawnParameters->GetPlannedInfrastructureActorCount();
 		// A Moon Orbit start hangs the complex on the first moon (see the complex spawn above).
-		const AActor* ComplexParent = HomeSpaceHeadquarters->GetAttachParentActor();
+		const AActor* ComplexParent = bArkStart ? nullptr : HomeSpaceHeadquarters->GetAttachParentActor();
 		const bool bComplexOnHomeBody = ComplexParent == HomePlanet
 			|| (CharSpawnPlace == ECharSpawnPlace::MoonOrbit && ComplexParent && IsValid(HomePlanet)
 				&& HomePlanet->Moons.ContainsByPredicate([ComplexParent](const AMoon* Moon) { return Moon == ComplexParent; }));
-		const bool bHierarchyValid =
+		// The ARK: the ark alone, of the selected class, the pilot possessed, nothing else raised.
+		const bool bArkValid = bArkStart && IsValid(HomeSpaceship) && HomeSpaceship->IsA(BP_HomeSpaceship)
+			&& APSOriginArk::IsArk(HomeSpaceship) && PlayerCharacter->IsA(BP_CharacterClass) && bTeleportSuccess
+			&& bSelectedCharacterPossessed && bPhysicalManifestValid;
+		const bool bHierarchyValid = bArkStart ? bArkValid :
 			bComplexOnHomeBody
 			&& HomeSpaceStation->GetAttachParentActor() == HomeSpaceHeadquarters
 			&& HomeSpaceShipyard->GetAttachParentActor() == HomeSpaceHeadquarters
@@ -14937,7 +15006,13 @@ bool AAstroGenerator::SpawnStartInteractiveActors(TSharedPtr<FPlanetModel> Start
 			&& bSelectedCharacterPossessed
 			&& bPhysicalManifestValid
 			&& (!GameplayInstance || HomeSpaceHeadquarters->Civilization == GameplayInstance->CurrentCivilization);
-		if (!bHierarchyValid)
+		if (!bHierarchyValid && bArkStart)
+		{
+			UE_LOG(LogTemp, Error, TEXT("[APS.Origin.Ark] Starter validation failed: Ark=%s Character=%s Possessed=%s Manifest=%s"),
+				*GetNameSafe(HomeSpaceship), PlayerCharacter->IsA(BP_CharacterClass) ? TEXT("OK") : TEXT("MISMATCH"),
+				bSelectedCharacterPossessed ? TEXT("OK") : TEXT("NO"), bPhysicalManifestValid ? TEXT("OK") : TEXT("MISMATCH"));
+		}
+		else if (!bHierarchyValid)
 		{
 			UE_LOG(LogTemp, Error,
 				TEXT("[APS.Civilization] Starter hierarchy validation failed: HQParent=%s StationParent=%s ShipyardParent=%s ShipParent=%s CharacterClass=%s Possessed=%s Manifest=%s Civilization=%s"),

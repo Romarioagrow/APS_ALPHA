@@ -78,6 +78,7 @@
 #include "Components/PointLightComponent.h"
 #include "APS_ALPHA/Gameplay/Vehicles/APSGroundVehicleTypes.h"
 #include "APS_ALPHA/Gameplay/Construction/APSShipBuildComponent.h"
+#include "APS_ALPHA/Gameplay/Origins/APSOriginArk.h"
 #include "Engine/CollisionProfile.h"
 #include "Containers/Ticker.h"
 #include "Misc/DelayedAutoRegister.h"
@@ -7332,6 +7333,11 @@ void ASpaceship::ThrustRoll(float Value)
 
 void ASpaceship::SetPilot(AGravityCharacterPawn* NewPilot)
 {
+}
+
+bool ASpaceship::CanRequestVehicleControl(APawn* RequestingPawn) const
+{
+	return !APSOriginArk::IsArk(this) && Super::CanRequestVehicleControl(RequestingPawn);
 }
 
 USceneComponent* ASpaceship::GetPilotSeatComponent() const

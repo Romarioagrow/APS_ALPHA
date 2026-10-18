@@ -5,6 +5,7 @@
 #include "APS_ALPHA/Actors/Astro/PlanetaryBody.h"
 #include "APS_ALPHA/Gameplay/Civilizations/APSCivilizationJournalSubsystem.h"
 #include "APS_ALPHA/Gameplay/Fleet/APSFleetCommand.h"
+#include "APS_ALPHA/Gameplay/Origins/APSOriginQuests.h"
 #include "APS_ALPHA/Generation/AstroGenerator.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
@@ -524,7 +525,9 @@ void FAPSMissionBoard::Tick(const float DeltaSeconds)
 		}
 	}
 	// Keep a couple of offers per department from the templates that fit what is known now.
-	for (int32 Department = 0; Department < DepartmentCount; ++Department)
+	// Rio 18.10 (one voice in ORIGIN): none while the origin's story has not reached its gate (APSOriginQuests).
+	const bool bOffersOpen = APSOriginQuests::IsDepartmentBoardOpen(LiveWorld);
+	for (int32 Department = 0; bOffersOpen && Department < DepartmentCount; ++Department)
 	{
 		int32 Offered = 0;
 		for (const FAPSMission& Mission : Missions)

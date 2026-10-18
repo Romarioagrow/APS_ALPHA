@@ -2,6 +2,7 @@
 
 #include "APSAncientsGeometry.h"
 #include "APSAncientsSites.h"
+#include "APS_ALPHA/Gameplay/Origins/APSOriginArk.h"
 #include "APS_ALPHA/Actors/Astro/Moon.h"
 #include "APS_ALPHA/Actors/Astro/Planet.h"
 #include "APS_ALPHA/Actors/Astro/PlanetaryBody.h"
@@ -853,6 +854,25 @@ bool FAPSAncients::ResolveSome(FSite& Site)
 	const double Sea = SeaRadiusOf(*Body, *Root);
 	const double DryRadius = Sea > 0.0 ? Sea + (Site.Spec.Size == ESize::Small ? 300.0 : 2000.0) : -1.0;
 	const double Yaw = APSAncientsSites::Yaw(Site.Spec.Seed);
+	// Rio 18.10 (0.6.6, ARK: "guaranteed points of interest, not right next to us, a little travel"): the home monument
+	// stands on a ring around the landed ark, on the horizon and too far to walk; it waits until the ark is down.
+	FVector RingCentre = FVector::ZeroVector;
+	FVector RingToward = FVector::ZeroVector;
+	double RingMinCm = 0.0;
+	double RingMaxCm = 0.0;
+	bool bRingWait = false;
+	const bool bMonument = Site.Spec.Id == TEXT("H_MONUMENT");
+	const bool bRing = bMonument && APSOriginArk::MonumentRing(Body->GetWorld(), Body, RingCentre, RingToward, RingMinCm, RingMaxCm, bRingWait);
+	if (bMonument && bRingWait)
+	{
+		Site.Stage = FSite::EStage::Waiting;
+		return false;
+	}
+	const auto CandidateAt = [&](const int32 Index)
+	{
+		return bRing ? APSOriginArk::RingDirection(RingCentre, RingToward, Root->PlanetScale, RingMinCm, RingMaxCm, Site.Spec.Seed, Index)
+			: APSAncientsSites::CandidateDirection(Site.Spec.Seed, Index);
+	};
 	int32 Chosen = INDEX_NONE;
 	for (int32 Batch = 0; Batch < CandidatesPerTick && Site.NextCandidate < MaxCandidates; ++Batch)
 	{
@@ -860,7 +880,7 @@ bool FAPSAncients::ResolveSome(FSite& Site)
 		FVector Up;
 		FVector Forward;
 		FVector Right;
-		SiteFrame(*Body, APSAncientsSites::CandidateDirection(Site.Spec.Seed, Index), Yaw, Up, Forward, Right);
+		SiteFrame(*Body, CandidateAt(Index), Yaw, Up, Forward, Right);
 		const FCandidateFit Fit = FitAt(*Root, DryRadius, Up, Forward, Right, Footprint);
 		// The first place in the seeded order with dry, gentle ground wins; failing all, the least steep and wet one.
 		const double Score = Fit.Slope + (Fit.bDry ? 0.0 : 10.0 + FMath::Max(DryRadius - Fit.Low, 0.0) / KmToCm);
@@ -886,7 +906,7 @@ bool FAPSAncients::ResolveSome(FSite& Site)
 			*Site.Spec.Id, *Site.BodyName.ToString(), MaxCandidates, Site.BestScore);
 	}
 	Site.Candidate = Chosen;
-	Site.LocalUp = APSAncientsSites::CandidateDirection(Site.Spec.Seed, Chosen);
+	Site.LocalUp = CandidateAt(Chosen);
 	Site.bResolved = true;
 	Site.Stage = FSite::EStage::Waiting;
 	UE_LOG(LogTemp, Log, TEXT("[APS.Ancients] %s: place on %s at %s (candidate %d of %d tried)"), *Site.Spec.Id,
