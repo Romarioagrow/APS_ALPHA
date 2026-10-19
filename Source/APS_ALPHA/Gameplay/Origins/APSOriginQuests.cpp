@@ -11,6 +11,7 @@
 #include "APS_ALPHA/Gameplay/Expansion/APSMissions.h"
 #include "APS_ALPHA/Gameplay/Fleet/APSFleetCommand.h"
 #include "APS_ALPHA/Gameplay/Origins/APSOriginAdrift.h"
+#include "APS_ALPHA/Gameplay/Origins/APSStoryFinds.h"
 #include "APS_ALPHA/Gameplay/Origins/APSOriginArk.h"
 #include "APS_ALPHA/Gameplay/Origins/APSOrigins.h"
 #include "APS_ALPHA/Core/Audio/APSAudioSubsystem.h"
@@ -188,7 +189,7 @@ namespace APSOriginQuestsLocal
 			Chain.Steps.Add(Make(TEXT("Ears"), LOCTEXT("ArkEarsTitle", "EARS"),
 				LOCTEXT("ArkEarsStory", "That shape on the horizon. The deep radar needs a mast to look at it."),
 				LOCTEXT("ArkEarsObjective", "Colony terminal (Tab), INFRASTRUCTURE: a COMMS MAST."),
-				LOCTEXT("ArkEarsDone", "Comms mast raised. The deep radar wakes and turns to the horizon."),
+				LOCTEXT("ArkEarsDone", "Comms mast raised. The deep radar wakes and turns to the horizon. On its first sweep it finds four echoes of our own fall nearby: they are marked, walk or drive out to them."),
 				ETrigger::ModuleBuilt, FName(TEXT("CommsMast")), 0.0f, 0));
 			Chain.Steps.Add(Make(TEXT("Signal"), LOCTEXT("ArkSignalTitle", "THE SIGNAL"),
 				LOCTEXT("ArkSignalStory", "The mast listens. The first pass of the radar takes a little while."),
@@ -276,7 +277,7 @@ namespace APSOriginQuestsLocal
 			Chain.Steps.Add(Make(TEXT("Down"), LOCTEXT("DownTitle", "DOWN"),
 				LOCTEXT("DownStory", "Air we can breathe, by the station's last survey. Land on it and walk out."),
 				LOCTEXT("DownObjective", "Land on the living world and step out of the ship."),
-				LOCTEXT("DownDone", "Down. The ship is the ark now; the colony's site is marked beside her."),
+				LOCTEXT("DownDone", "Down. The ship is the ark now; the colony's site is marked beside her. The scanner marks what the expedition before us left nearby."),
 				ETrigger::OnHomeGround, NAME_None, 0.0f, 1));
 			AddGroundSteps(Chain.Steps, false);
 		}
@@ -613,6 +614,11 @@ bool APSOriginQuests::GetObjective(const UWorld* World, FText& OutTitle, FText& 
 	if (const FText Reactor = APSOriginAdrift::ReactorLine(World); !Reactor.IsEmpty())
 	{
 		OutBody = FText::Format(LOCTEXT("ObjectiveReactor", "{0}\n{1}"), OutBody, Reactor);
+	}
+	// Rio 19.10: the finds round the colony, once the radar has marked them.
+	if (const FText Finds = APSStoryFinds::FindsLine(World); !Finds.IsEmpty())
+	{
+		OutBody = FText::Format(LOCTEXT("ObjectiveFinds", "{0}\n{1}"), OutBody, Finds);
 	}
 	return true;
 }

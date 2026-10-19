@@ -39,6 +39,7 @@
 #include "HAL/IConsoleManager.h"
 #include "UObject/ObjectKey.h"
 #include "APS_ALPHA/Gameplay/Origins/APSOriginArk.h"
+#include "APS_ALPHA/Gameplay/Origins/APSStoryFinds.h"
 
 namespace APSCharacterQueryThrottle
 {
@@ -442,8 +443,9 @@ void ACustomGravityCharacter::Tick(float DeltaTime)
 	else if (AActor* Cached = CurrentInteractableActor.Get())
 	{
 		IVehicleControlling* CachedVehicle = Cast<IVehicleControlling>(Cached);
-		// Rio 18.10 (ARK): the dark ark keeps its F (power) though its seat is never taken.
-		if (!CachedVehicle || (!CachedVehicle->CanRequestVehicleControl(this) && APSOriginArk::ActionFor(this, Cached).IsEmpty()))
+		// Rio 18.10 (ARK): the dark ark keeps its F (power) though its seat is never taken; 19.10: a story find keeps its F.
+		if (!CachedVehicle ? APSStoryFinds::ActionFor(this, Cached).IsEmpty()
+			: (!CachedVehicle->CanRequestVehicleControl(this) && APSOriginArk::ActionFor(this, Cached).IsEmpty()))
 		{
 			CurrentInteractableActor = nullptr;
 		}
@@ -903,6 +905,12 @@ void ACustomGravityCharacter::TryInteract()
 		CurrentInteractableActor = nullptr;
 		return;
 	}
+	// Rio 19.10: F at a story find (a lander, a pod, crystals, vents) takes what it holds (APSStoryFinds).
+	if (APSStoryFinds::TryInteract(this, Candidate))
+	{
+		CurrentInteractableActor = nullptr;
+		return;
+	}
 	IVehicleControlling* Vehicle = Candidate ? Cast<IVehicleControlling>(Candidate) : nullptr;
 	if (!Vehicle)
 	{
@@ -947,6 +955,11 @@ AActor* ACustomGravityCharacter::FindInteractionCandidate()
 	{
 		Candidate = APSOriginArk::ExitCandidate(this);
 	}
+	// Rio 19.10: a story find within reach answers F when nothing else does.
+	if (!Candidate)
+	{
+		Candidate = APSStoryFinds::Candidate(this);
+	}
 
 	// Rio 04.10 ("bring back taking the controls from anywhere once I'm in; when I get up I appear at the seat"): aboard
 	// any ship the controls are taken wherever the player stands (02.10 limited a modelled cabin to its seat); getting up
@@ -976,7 +989,7 @@ void ACustomGravityCharacter::UpdateInteractionCandidate()
 			Candidate = nullptr;
 		}
 	}
-	else
+	else if (APSStoryFinds::ActionFor(this, Candidate).IsEmpty())
 	{
 		Candidate = nullptr;
 	}
@@ -1022,7 +1035,12 @@ void ACustomGravityCharacter::CreateInteractionPrompt()
 				.Action_Lambda([WeakThis]()
 				{
 					const ACustomGravityCharacter* Character = WeakThis.Get();
-					return Character ? APSOriginArk::ActionFor(Character, Character->CurrentInteractableActor.Get()) : FText::GetEmpty();
+					if (!Character)
+					{
+						return FText::GetEmpty();
+					}
+					const FText Ark = APSOriginArk::ActionFor(Character, Character->CurrentInteractableActor.Get());
+					return Ark.IsEmpty() ? APSStoryFinds::ActionFor(Character, Character->CurrentInteractableActor.Get()) : Ark;
 				})
 				.Subject_Lambda([WeakThis]()
 				{
@@ -1031,6 +1049,10 @@ void ACustomGravityCharacter::CreateInteractionPrompt()
 					if (APSOriginArk::IsArk(Vehicle))
 					{
 						return APSOriginArk::SubjectFor(Character->GetWorld());
+					}
+					if (const FText Find = APSStoryFinds::SubjectFor(Vehicle); !Find.IsEmpty())
+					{
+						return Find;
 					}
 					if (const ASpaceship* Craft = Cast<ASpaceship>(Vehicle))
 					{

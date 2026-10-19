@@ -305,8 +305,14 @@ void UShipNavigationComponent::AddActorContact(AActor* Actor, const FVector& Obs
 	{
 		Contact.TypeLabel = TEXT("ANCIENT SITE");
 	}
+	// Rio 19.10 (the story's finds round an ORIGIN colony, APSStoryFinds): charted always too, under their own label.
+	const bool bStoryFind = Actor->ActorHasTag(TEXT("APS.Story.Find"));
+	if (bStoryFind)
+	{
+		Contact.TypeLabel = TEXT("FIND");
+	}
 	if (!IsContactTypeVisible(Contact.Type) && !Contact.bOwnColony && Contact.StableId != PinnedCourseId && !bAncient
-		&& Contact.StableId != KeepStableId)
+		&& !bStoryFind && Contact.StableId != KeepStableId)
 	{
 		return;
 	}

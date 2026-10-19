@@ -10,6 +10,7 @@
 #include "APS_ALPHA/UI/Colony/APSMissionTracker.h"
 #include "APS_ALPHA/Gameplay/Origins/APSOriginQuests.h"
 #include "APS_ALPHA/Gameplay/Origins/APSOriginAdrift.h"
+#include "APS_ALPHA/Gameplay/Origins/APSStoryFinds.h"
 #include "APS_ALPHA/Gameplay/Origins/APSOriginArk.h"
 #include "APS_ALPHA/Gameplay/Trips/APSSpaceTrips.h"
 #include "APS_ALPHA/Gameplay/Vehicles/APSGroundVehicles.h"
@@ -97,6 +98,8 @@ void UAPSFleetCommandSubsystem::Tick(const float DeltaTime)
 		APSOriginArk::Tick(GetWorld(), DeltaTime);
 		// Rio 19.10 (ADRIFT): the reactor, the wrecks, the dead station; nothing outside an ADRIFT world.
 		APSOriginAdrift::Tick(GetWorld(), DeltaTime);
+		// Rio 19.10 ("fill the planets with objects along the story"): the finds round an ARK or ADRIFT colony.
+		APSStoryFinds::Tick(GetWorld(), DeltaTime);
 	}
 	{
 		TRACE_CPUPROFILER_EVENT_SCOPE(APS_Fleet_SurfaceDiagAndTracker);

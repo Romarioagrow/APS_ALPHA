@@ -75,7 +75,8 @@ void UAPSFoliageExclusionComponent::RefreshFootprints()
             auto* Actor = *It;
             const bool Base = Actor->ActorHasTag(TEXT("APS.Civilization.Base")) || Actor->IsA<AColony>();
             const bool Pad = Actor->ActorHasTag(TEXT("APS.Civilization.LandingPad"));
-            if ((!Base && !Pad && !Actor->ActorHasTag(TEXT("APS.Colony.Module")))
+            // Rio 19.10: the story's finds and waymarks (APSStoryFinds) clear their own ground too.
+            if ((!Base && !Pad && !Actor->ActorHasTag(TEXT("APS.Colony.Module")) && !Actor->ActorHasTag(TEXT("APS.Story.Site")))
                 || Actor->IsHidden() || !BelongsTo(Actor, Body)) continue;
             FBox Box = UAPSSpawnPlacementSubsystem::VisualLocalBounds(Actor);
             if (!Box.IsValid || Next.Num() >= MaxVolumes) continue;
